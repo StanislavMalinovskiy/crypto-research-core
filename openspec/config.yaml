@@ -1,0 +1,34 @@
+schema: spec-driven
+
+context: |
+  Crypto Research Core is a research-first crypto signal measurement system.
+  Baseline: Java 25, Spring Boot 4.1.1, Spring Modulith 2.1.1, Maven,
+  synchronous Spring MVC, Spring Data JDBC/JdbcClient, PostgreSQL and Flyway.
+  It remains one repository, one Maven module, one deployable JAR and one database.
+  Package root: io.cryptoresearch. Modules: kernel, governance, marketdata, risk,
+  wallet, strategy, measurement and research.
+  Read AGENTS.md and these project sources before planning or applying work:
+  docs/PROJECT_SUMMARY.md, docs/ROADMAP.md, docs/ARCHITECTURE.md,
+  docs/TECH_STACK.md and docs/modules/.
+
+rules:
+  proposal:
+    - State explicit non-goals and affected modules.
+    - Do not add production dependencies or change module boundaries silently.
+  specs:
+    - Use testable SHALL requirements with WHEN, THEN and AND scenarios.
+    - Describe externally verifiable behavior, not internal Java class names.
+  design:
+    - Record module ownership, transaction boundaries and verification strategy.
+    - Justify every new production dependency and infrastructure component.
+  tasks:
+    - Order tasks so architecture and tests can be verified incrementally.
+    - Include documentation and exact verification commands.
+
+operations:
+  apply:
+    guidance:
+      - Preserve unrelated user changes and update task checkboxes only after verification.
+  archive:
+    guidance:
+      - Archive only after strict validation and Maven verification succeed.

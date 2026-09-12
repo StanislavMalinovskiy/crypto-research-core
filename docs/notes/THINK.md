@@ -1,5 +1,3 @@
-<!-- Экспортировано из Notion 2026-09-12. Исходная страница: https://app.notion.com/p/34d7a744d2df804298abefe8d6460807?pvs=204 -->
-
 # Think — идеи и направления
 
 ## 2. Crypto Market Inefficiency Radar

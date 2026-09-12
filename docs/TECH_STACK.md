@@ -1,5 +1,3 @@
-<!-- Экспортировано из Notion 2026-09-12. Исходная страница: https://app.notion.com/p/29f7a744d2df80088cd4fb8ceb297a50?pvs=204 -->
-
 # Tech stack — current baseline
 **Обновлено:** 12 сентября 2026
 ## Runtime and framework
@@ -32,8 +30,8 @@ One modular monolith with eight Spring Modulith application modules:
 Each module owns its domain, persistence and provider adapters. Cross-module access is allowed only through named public interfaces. Module structure and cycles are verified in tests.
 ## Infrastructure
 - **Database:** PostgreSQL 16 with monthly partitioning for high-volume time-series tables
-- **Cache:** Redis 7 + Caffeine
-- **Observability:** Micrometer, Prometheus, Grafana, structured JSON logs, correlation ID
+- **Cache:** no cache dependency in the bootstrap baseline. Redis/Caffeine require a separate evidence-backed change and ADR when they become necessary.
+- **Observability:** Actuator health in the bootstrap baseline. Prometheus, Grafana, structured JSON logs and correlation IDs are later operational increments.
 - **Tests:** Testcontainers, Spring Modulith Test, ArchUnit, JUnit managed by Spring Boot
 ## Phase 1 scope
 - Telegram integration is not included.

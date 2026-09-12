@@ -1,10 +1,8 @@
-<!-- Экспортировано из Notion 2026-09-12. Исходная страница: https://app.notion.com/p/3557a744d2df80fca758da841906fd26?pvs=204 -->
-
 # Crypto Research Core — короткий обзор
 1. Мы строим не торгового бота, а research-систему для проверки on-chain сигналов.
 2. Первая цель — не заработать сразу, а понять, какие сигналы реально дают edge.
 3. MVP делаем Solana-first, но архитектура сразу готовится под Base/Arbitrum/EVM.
-4. Архитектура: один синхронный modular monolith — Java 25, Spring Boot 4.1.1, Spring MVC, Spring Modulith 2.1.1, Spring Data JDBC, Maven, PostgreSQL, Redis, Flyway, Prometheus/Grafana.
+4. Архитектура: один синхронный modular monolith — Java 25, Spring Boot 4.1.1, Spring MVC, Spring Modulith 2.1.1, Spring Data JDBC, Maven, PostgreSQL и Flyway. Redis, Caffeine и внешняя observability-инфраструктура отложены до отдельного обоснованного change.
 5. Восемь вертикальных модулей (`kernel`, `governance`, `marketdata`, `risk`, `wallet`, `strategy`, `measurement`, `research`) владеют своими domain, persistence и provider adapters; система сохраняет immutable raw events, а затем формирует swaps, token metrics, wallet activity и risk facts.
 6. Все события храним chain-aware: `chain + tx_hash + event_index`.
 7. Кошельки оцениваем по истории: trade count, win-rate, profit factor, avg win/loss.

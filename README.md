@@ -18,32 +18,34 @@
 
 | Файл | Назначение |
 |---|---|
-| [docs/ROADMAP.md](docs/ROADMAP.md) | Главный документ и источник истины по архитектуре и этапам |
+| [docs/ROADMAP.md](docs/ROADMAP.md) | Продуктовые цели, этапы и приоритеты |
 | [docs/PROJECT_SUMMARY.md](docs/PROJECT_SUMMARY.md) | Краткий контекст проекта для новой сессии |
-| [docs/TECH_STACK.md](docs/TECH_STACK.md) | Зафиксированный технологический стек |
-| [docs/WIKI.md](docs/WIKI.md) | Развёрнутые продуктовые и исследовательские заметки |
-| [docs/API_SERVICES_ARCHIVE.md](docs/API_SERVICES_ARCHIVE.md) | Архив обзора API и сервисов; не источник истины |
-| [docs/PAID_API_ARCHIVE.md](docs/PAID_API_ARCHIVE.md) | Архив платных API; не источник истины |
-| [docs/THINK.md](docs/THINK.md) | Черновые идеи и вопросы |
+| [docs/TECH_STACK.md](docs/TECH_STACK.md) | Разрешённые технологии и версии |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Текущее сводное состояние архитектуры |
+| [docs/GLOSSARY.md](docs/GLOSSARY.md) | Развёрнутый глоссарий проекта |
+| [docs/modules/README.md](docs/modules/README.md) | Карта документации логических модулей |
+| [docs/adr/README.md](docs/adr/README.md) | Журнал архитектурных решений |
+| [docs/archive/API_SERVICES_ARCHIVE.md](docs/archive/API_SERVICES_ARCHIVE.md) | Архив обзора API и сервисов; не источник истины |
+| [docs/archive/PAID_API_ARCHIVE.md](docs/archive/PAID_API_ARCHIVE.md) | Архив платных API; не источник истины |
+| [docs/notes/THINK.md](docs/notes/THINK.md) | Черновые идеи и вопросы |
 
 ## Как передать контекст Codex CLI
 
-В начале работы попросите Codex сначала прочитать этот файл, затем:
+Перед изменением кода Codex следует порядку из [AGENTS.md](AGENTS.md):
 
-1. `docs/PROJECT_SUMMARY.md`
-2. `docs/ROADMAP.md`
-3. `docs/TECH_STACK.md`
+1. `AGENTS.md`.
+2. `docs/PROJECT_SUMMARY.md`.
+3. Relevant OpenSpec change.
+4. `docs/modules/<module>.md` for every affected module.
+5. Applicable ADRs.
+6. Existing code and tests.
 
-`ROADMAP.md` имеет приоритет при расхождениях. Архивные документы используются только как справочные материалы.
+Документы имеют разные области ответственности, а не общий линейный приоритет. Правила разрешения конфликтов зафиксированы в `AGENTS.md`. Архивные документы используются только как справочные материалы.
 
 ## Первый технический шаг
 
-1. Поместить `pom.xml` и каталог `docs/` в корень Java-проекта.
-2. Сгенерировать Maven Wrapper.
-3. Создать минимальное приложение и восемь корневых пакетов модулей.
-4. Добавить тест `ApplicationModules.of(...).verify()`.
-5. Поднять PostgreSQL через Testcontainers и выполнить первую миграцию Flyway.
-6. Только после проверки границ начать реализацию `marketdata` vertical slice.
+Технический bootstrap описан change `bootstrap-modular-foundation` в `openspec/changes/`.
+После его проверки отдельный change `establish-chain-identity-kernel` должен ввести минимальные chain-aware identities. Затем отдельные changes последовательно реализуют первый `marketdata` vertical slice; governance gates откладываются до появления PAPER/LIVE execution.
 
 ## Java preview
 
@@ -52,4 +54,3 @@
 ```bash
 java --enable-preview -jar target/crypto-research-core-0.0.1-SNAPSHOT.jar
 ```
-

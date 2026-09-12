@@ -1,13 +1,13 @@
-package io.cryptoresearch.crypto_research_core;
+package io.cryptoresearch;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
 @SpringBootApplication
-public class CryptoResearchCoreApplication {
+public class CryptoResearchApplication {
 
 	public static void main(String[] args) {
-		SpringApplication.run(CryptoResearchCoreApplication.class, args);
+		SpringApplication.run(CryptoResearchApplication.class, args);
 	}
 
 }

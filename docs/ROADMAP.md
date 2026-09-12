@@ -1,5 +1,3 @@
-<!-- Экспортировано из Notion 2026-09-12. Исходная страница: https://app.notion.com/p/34d7a744d2df809a9cbad9e0037bc4b3?pvs=204 -->
-
 # Crypto Research Core — Roadmap v7.7
 
 **Версия:** v7.7 (Spring Modulith + synchronous Java 25 baseline)<br>**Дата:** 12 сентября 2026<br>**Базис:** v7.6 + approved modular architecture and Maven build<br>**Подход:** Solana-first, not Solana-only. MVP остаётся Solana-focused, но core data model, identity, partitioning strategy и provider boundaries сразу проектируются так, чтобы позже безболезненно добавить Base / Arbitrum / EVM-сети.
@@ -210,25 +208,9 @@ crypto-research-core
 ```
 There are no top-level `domain`, `persistence`, `provider` or `observability` modules. Each vertical module owns its domain model, repositories, database access and external adapters. Observability is implemented inside the owning module and composed at application level.
 ### 10.4 Allowed dependencies
-```plain text
-kernel       → none
-governance   → kernel
-marketdata   → kernel
-risk         → kernel, marketdata::api
-wallet       → kernel, marketdata::api
-strategy     → kernel, marketdata::api, risk::api, wallet::api
-measurement  → kernel, marketdata::api, strategy::api, governance::api
-research     → public APIs of marketdata, risk, wallet, strategy, measurement
-```
-Rules:
-- every module has `package-info.java` with `@ApplicationModule`;
-- exposed contracts live in an `api` package marked with `@NamedInterface("api")`;
-- `internal` packages are never imported by another module;
-- repositories and persistence entities are not public module contracts;
-- no cyclic module dependencies;
-- `ApplicationModules.of(CryptoResearchApplication.class).verify()` is a mandatory architecture test;
-- each module has focused `@ApplicationModuleTest` integration tests;
-- backtest and online processing reuse the same pure strategy/risk evaluation code.
+The Roadmap fixes the product direction: data collection stays below evaluation, measurement does not control strategy, and research is never a dependency of operational modules. The current exact allowed/forbidden DAG is maintained in [Architecture](ARCHITECTURE.md) and enforced by Spring Modulith descriptors and tests. Changing an edge requires an ADR; a Roadmap edit cannot silently override an accepted architecture decision.
+
+Exposed contracts live in named `api` interfaces. Internal packages, repositories, persistence entities and provider adapters never cross module boundaries. Backtest and online processing reuse the same pure strategy/risk evaluation code.
 ### 10.5 Synchronous programming model
 Application and module APIs are synchronous and imperative:
 - Spring MVC, not WebFlux;
