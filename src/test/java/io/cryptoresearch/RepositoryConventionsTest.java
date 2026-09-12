@@ -10,7 +10,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import org.junit.jupiter.api.Test;
@@ -19,9 +21,18 @@ class RepositoryConventionsTest {
 
 	private static final Pattern MARKDOWN_LINK = Pattern.compile("!?\\[[^]]*]\\(([^)\\s]+)[^)]*\\)");
 	private static final List<String> EXPORT_MARKERS = List.of("app.notion.com", "Exported from Notion", "Экспортировано из Notion");
-	private static final List<String> PREVIEW_API_MARKERS = List.of("StructuredTaskScope", "ScopedValue");
+	private static final List<String> LEGACY_MODULE_NAMES = List.of(
+			"provider-api", "provider-helius", "provider-bitquery", "ingest-solana", "strategy-plugins");
+	private static final List<String> LEGACY_ACTIVE_TERMS = List.of("venue-gate");
+	private static final List<String> LEGACY_ENTITY_NAMES = List.of(
+			"paper_trades", "paper_fills", "owner_clusters", "risk_filter_decisions",
+			"execution_simulations", "venue_policy_decisions");
+	private static final Set<String> EXPECTED_MODULES = Set.of(
+			"kernel", "governance", "marketdata", "risk",
+			"wallet", "strategy", "measurement", "research");
 
 	private final Path repositoryRoot = Path.of("").toAbsolutePath().normalize();
+	private final Path moduleRoot = repositoryRoot.resolve("src/main/java/io/cryptoresearch");
 
 	@Test
 	void markdownHasNoExportMarkersOrBrokenRelativeLinks() throws IOException {
@@ -37,17 +48,80 @@ class RepositoryConventionsTest {
 	}
 
 	@Test
-	void publicModuleApisDoNotExposePreviewTypes() throws IOException {
+	void glossaryDoesNotPresentLegacyArchitectureAsCurrent() throws IOException {
+		var violations = new ArrayList<String>();
+		var glossary = repositoryRoot.resolve("docs/GLOSSARY.md");
+		var content = Files.readString(glossary);
+
+		LEGACY_MODULE_NAMES.stream()
+				.filter(content::contains)
+				.map(name -> "docs/GLOSSARY.md contains legacy module name: " + name)
+				.forEach(violations::add);
+		LEGACY_ENTITY_NAMES.forEach(name -> checkLegacyEntity(content, name, violations));
+
+		assertThat(violations).isEmpty();
+	}
+
+	@Test
+	void activeDocumentationDoesNotUseLegacyArchitectureTerms() throws IOException {
 		var violations = new ArrayList<String>();
 
-		try (var paths = Files.walk(repositoryRoot.resolve("src/main/java/io/cryptoresearch"))) {
-			paths.filter(Files::isRegularFile)
-					.filter(path -> path.toString().endsWith(".java"))
-					.filter(path -> path.toString().contains("\\api\\"))
-					.forEach(path -> checkPreviewMarkers(path, violations));
+		for (var markdown : activeDocumentationFiles()) {
+			var content = Files.readString(markdown).toLowerCase();
+			LEGACY_ACTIVE_TERMS.stream()
+					.filter(content::contains)
+					.map(term -> relative(markdown) + " contains legacy architecture term: " + term)
+					.forEach(violations::add);
 		}
 
 		assertThat(violations).isEmpty();
+	}
+
+	@Test
+	void qualityGateWorkflowHasDurableContract() throws IOException {
+		var workflow = repositoryRoot.resolve(".github/workflows/quality-gate.yml");
+		var content = Files.readString(workflow);
+
+		assertThat(content)
+				.contains("name: quality-gate", "  quality-gate:", "    name: quality-gate")
+				.contains("runs-on: ubuntu-24.04")
+				.contains("./mvnw clean verify")
+				.contains("openspec validate --all --strict --no-interactive", "openspec doctor")
+				.contains("actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02")
+				.contains("target/surefire-reports/**", "target/failsafe-reports/**")
+				.doesNotContain("run: mvn ", "run: mvn.cmd ");
+	}
+
+	@Test
+	void engineeringOperatingContractsAreDiscoverable() throws IOException {
+		var architecture = Files.readString(repositoryRoot.resolve("docs/ARCHITECTURE.md"));
+		var operations = Files.readString(repositoryRoot.resolve("docs/OPERATIONS.md"));
+		var testing = Files.readString(repositoryRoot.resolve("docs/TESTING.md"));
+
+		assertThat(architecture)
+				.contains("| Simple aggregate CRUD |", "| High-volume write |", "Cross-module SQL")
+				.contains("[Operating contract](OPERATIONS.md)", "[Testing strategy](TESTING.md)");
+		assertThat(operations)
+				.contains("## Configuration and secrets", "## Health semantics", "## Resource budgets")
+				.contains("`livenessState` only", "`readinessState`, `db`");
+		assertThat(testing)
+				.contains("## Test levels", "PostgreSQL integration", "## Maven lifecycle");
+	}
+
+	@Test
+	void publicApiRootsMatchExpectedModules() throws IOException {
+		try (Stream<Path> modules = Files.list(moduleRoot)) {
+			var apiRoots = modules.filter(Files::isDirectory)
+					.map(module -> module.resolve("api"))
+					.filter(Files::isDirectory)
+					.toList();
+			var moduleNames = apiRoots.stream()
+					.map(apiRoot -> apiRoot.getParent().getFileName().toString())
+					.collect(Collectors.toUnmodifiableSet());
+
+			assertThat(moduleNames).containsExactlyInAnyOrderElementsOf(EXPECTED_MODULES);
+			assertThat(apiRoots).allSatisfy(this::containsJavaSource);
+		}
 	}
 
 	private List<Path> markdownFiles() throws IOException {
@@ -55,6 +129,17 @@ class RepositoryConventionsTest {
 			return paths.filter(Files::isRegularFile)
 					.filter(path -> path.toString().endsWith(".md"))
 					.filter(path -> !path.startsWith(repositoryRoot.resolve("target")))
+					.toList();
+		}
+	}
+
+	private List<Path> activeDocumentationFiles() throws IOException {
+		var docs = repositoryRoot.resolve("docs");
+		try (Stream<Path> paths = Files.walk(docs)) {
+			return paths.filter(Files::isRegularFile)
+					.filter(path -> path.toString().endsWith(".md"))
+					.filter(path -> !path.startsWith(docs.resolve("archive")))
+					.filter(path -> !path.startsWith(docs.resolve("notes")))
 					.toList();
 		}
 	}
@@ -87,19 +172,23 @@ class RepositoryConventionsTest {
 		return Files.exists(markdown.getParent().resolve(decoded).normalize());
 	}
 
-	private void checkPreviewMarkers(Path path, List<String> violations) {
-		try {
-			var content = Files.readString(path);
-			PREVIEW_API_MARKERS.stream()
-					.filter(content::contains)
-					.map(marker -> relative(path) + " exposes preview API marker: " + marker)
-					.forEach(violations::add);
-		} catch (IOException exception) {
-			throw new IllegalStateException("Cannot inspect " + path, exception);
-		}
+	private void checkLegacyEntity(String content, String name, List<String> violations) {
+		content.lines()
+				.filter(line -> line.contains("`" + name + "`"))
+				.filter(line -> !line.contains("Historical/deferred"))
+				.map(line -> "docs/GLOSSARY.md does not locally mark legacy entity: " + name)
+				.forEach(violations::add);
 	}
 
 	private String relative(Path path) {
 		return repositoryRoot.relativize(path).toString();
+	}
+
+	private void containsJavaSource(Path apiRoot) {
+		try (Stream<Path> paths = Files.walk(apiRoot)) {
+			assertThat(paths).anyMatch(path -> path.getFileName().toString().endsWith(".java"));
+		} catch (IOException exception) {
+			throw new IllegalStateException("Cannot inspect " + relative(apiRoot), exception);
+		}
 	}
 }

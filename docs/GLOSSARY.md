@@ -2,7 +2,7 @@
 **Версия:** 1.2
 **Дата:** 12 сентября 2026
 **Формат:** пояснительный глоссарий, включающий текущие и исторические термины проекта.
-> **Важно:** области ответственности нормативных источников и правила конфликтов определены в [AGENTS.md](../AGENTS.md). Упоминания v5, старых фаз, multi-module структуры, `paper_trades` и других прежних сущностей ниже являются историческими пояснениями, а не обязательной спецификацией реализации.
+> **Важно:** области ответственности нормативных источников и правила конфликтов определены в [AGENTS.md](../AGENTS.md). Историческая multi-module структура вынесена в [архив v5](archive/LEGACY_V5_ARCHITECTURE_MAPPING.md). Термины будущих возможностей не являются спецификацией реализации без локальной пометки Target или Deferred и соответствующего OpenSpec change.
 ---
 ## 1. Общие термины проекта
 | Термин | Простое объяснение | Где используется |
@@ -15,7 +15,7 @@
 | Alpha-гипотеза | Предположение, что конкретный сигнал может зарабатывать. | Strategy experiments |
 | Disposable alpha | Торговые гипотезы можно менять и удалять, если они не прошли проверку. | Философия v5 |
 | Core is permanent | Ядро должно быть стабильным и переиспользуемым для разных стратегий. | Архитектурный принцип |
-| Execution is gated | Реальное исполнение сделок запрещено, пока не пройдены проверки. | VenueGate, CapitalGate |
+| Execution is gated | Реальное исполнение сделок запрещено, пока будущий governance change не определит и не проверит необходимые политики. | Target governance capability |
 | Capital is protected | Любой сигнал проходит через risk/capital manager до позиции. | Capital Manager |
 | Data first | Сначала качественные данные, потом стратегии. | Roadmap |
 | Research second | После данных проверяются гипотезы. | Roadmap |
@@ -26,7 +26,7 @@
 ## 2. Режимы исполнения и gates
 | Термин | Простое объяснение | Где используется |
 | --- | --- | --- |
-| ExecutionMode | Режим работы сигнала: backtest, paper, alert-only, manual, live. | Domain, VenueGate |
+| ExecutionMode | Целевой режим работы: research, paper или live; точный контракт пока не утверждён. | Future governance change |
 | BACKTEST | Проверка стратегии на исторических данных. | Backtest Engine |
 | PAPER | Торговля на виртуальном капитале в реальном времени. | Paper Trading |
 | ALERT_ONLY | Система только показывает сигнал, но не исполняет сделку. | Dashboard, alerts |
@@ -34,15 +34,9 @@
 | LIVE | Реальное автоматическое или полуавтоматическое исполнение. | Только после gates |
 | Gate | Контрольная точка, которая разрешает или запрещает следующий этап. | Validation pipeline |
 | Legal Gate | Проверка юридической допустимости реального исполнения. | Перед real money |
-| Venue Gate | Проверяет, можно ли использовать конкретную площадку и режим. | `venue-gate` |
 | Capital Gate | Проверяет, можно ли рисковать капиталом по этому сигналу. | Capital Manager |
-| LIVE_BLOCKED | Живое исполнение заблокировано. | VenueDecision |
-| PAPER_ALLOWED | Разрешён только paper mode. | VenueGate |
-| ALERT_ONLY_ALLOWED | Разрешены только уведомления. | VenueGate |
 | MANUAL_ONLY | Можно исполнять только вручную после подтверждения. | Semi-auto execution |
 | LIVE_ALLOWED | Реальное исполнение разрешено. В MVP должно быть недоступно. | Поздний этап |
-| VenueDecision | Решение VenueGate по конкретному сигналу/площадке. | Domain |
-| VenuePolicyProvider | Интерфейс, который оценивает разрешённость venue. | Provider / VenueGate |
 ---
 ## 3. Данные, Solana и on-chain
 | Термин | Простое объяснение | Где используется |
@@ -103,8 +97,8 @@
 | --- | --- | --- |
 | PostgreSQL | Основная реляционная БД проекта. | Persistence |
 | Flyway | Управление миграциями БД. | Persistence |
-| Redis | Быстрый cache/queue/state storage. | Cache, dedup |
-| Partitioning | Разделение большой таблицы на партиции по времени. | `swaps` |
+| Redis | **Deferred:** возможный cache/queue/state storage; сейчас не выбран. | Future infrastructure |
+| Partitioning | **Target decision:** разделение high-volume таблицы после обоснования объёма и query patterns. | Owning persistence change |
 | BRIN index | Компактный индекс для больших таблиц с упорядоченными данными. | `swaps.ts`, slot |
 | JSONB | JSON-данные в PostgreSQL с возможностью индексации. | Reasoning, evidence |
 | Materialized view | Сохранённый результат тяжёлого SQL-запроса. | Wallet stats |
@@ -116,16 +110,16 @@
 | `wallet_score_history` | История скоринга кошельков для point-in-time backtest. | Backtest correctness |
 | `signals` | Созданные торговые/аналитические сигналы. | Signal Aggregation |
 | `signal_reasoning` | Объяснение причин сигнала. | Explainability |
-| `paper_trades` | Виртуальные сделки paper trading. | Paper Trading |
-| `paper_fills` | Детали виртуального исполнения. | Execution Simulator |
-| `backtest_runs` | Запуски backtest и результаты. | Backtest Engine |
-| `capital_events` | Решения CapitalManager и изменения состояния капитала. | Capital Manager |
-| `system_state` | Системные флаги и прогресс процессов. | Orchestration |
-| `owner_clusters` | Кластеры связанных кошельков. | Wallet Clustering |
-| `risk_filter_decisions` | Решения risk filters. | Risk analytics |
+| `paper_trades` | **Historical/deferred name:** возможные виртуальные сделки paper trading; текущая схема не утверждена. | Future PAPER change |
+| `paper_fills` | **Historical/deferred name:** возможные детали виртуального исполнения; текущая схема не утверждена. | Future PAPER change |
+| `backtest_runs` | **Target draft name:** метаданные запусков backtest; текущая схема не утверждена. | Future research change |
+| `capital_events` | **Target draft name:** события capital policy; текущая схема не утверждена. | Future governance/measurement change |
+| `system_state` | **Target draft name:** технический прогресс процессов; ownership и схема не утверждены. | Future owning-module change |
+| `owner_clusters` | **Historical/deferred name:** возможные кластеры связанных кошельков; не MVP schema. | Future wallet research |
+| `risk_filter_decisions` | **Historical/deferred name:** прежнее имя решений risk filters. | Future risk change |
 | `strategy_experiments` | Версионированные research-гипотезы. | Research module |
-| `execution_simulations` | Расчётные издержки исполнения. | Execution Simulator |
-| `venue_policy_decisions` | Решения legal/venue gate. | VenueGate |
+| `execution_simulations` | **Historical/deferred name:** прежняя модель расчётных издержек исполнения. | Future measurement change |
+| `venue_policy_decisions` | **Historical/deferred name:** прежнее имя решений legal/venue gate. | Future governance change |
 | Idempotency | Повторный запуск не должен создавать дубликаты или ломать состояние. | Ingest, backfill |
 | `ON CONFLICT DO NOTHING` | SQL-паттерн для безопасной вставки без дублей. | Persistence |
 ---
@@ -228,7 +222,7 @@
 | Strategy Framework | Единый механизм подключения и запуска стратегий. | Phase 6 |
 | Entry strategy | Стратегия входа в позицию. | Strategy API |
 | Exit strategy | Стратегия выхода из позиции. | Exit Engine |
-| Strategy plugin | Отдельная реализация стратегии как компонент. | `strategy-plugins` |
+| Strategy plugin | Target concept: отдельная реализация стратегии внутри модуля `strategy`; отдельного Maven-модуля нет. | `strategy` |
 | Strategy version | Версия стратегии, чтобы сравнивать результаты корректно. | Research |
 | StrategyConfig | Конфигурация стратегии. | Strategy API |
 | StrategyConfigSnapshot | Снимок настроек на момент backtest/paper. | Reproducibility |
@@ -360,15 +354,15 @@
 ## 15. Архитектура Java / Spring Modulith
 | Термин | Простое объяснение | Где используется |
 | --- | --- | --- |
-| Java 25 | Текущая версия Java проекта. Virtual threads используются для blocking I/O; preview API изолируются за внутренними абстракциями. | Current baseline |
+| Java 25 | Текущая версия Java проекта. Stable virtual threads используются для подходящего blocking I/O; preview-функции не включены. | Current baseline |
 | Spring Boot 4.1.1 | Текущая стабильная версия Spring Boot, совместимая с Java 25. | Current baseline |
 | Spring MVC | Синхронный REST/API и control-plane поверх virtual threads; WebFlux не используется. | Application framework |
 | Vert.x / WebFlux / Reactor | Не используются в проекте. Прикладная модель синхронная и императивная; транспортный WebSocket callback изолирован внутри adapter. | Explicitly excluded |
 | Maven single-module | Один Maven-модуль, один deployable JAR и восемь логических Spring Modulith application modules. | Current build structure |
-| `domain` package | Чистый домен без Spring/JPA/Jackson. | Architecture |
+| Module-local `domain` package | Чистый домен внутри owning vertical module, без Spring/JPA/provider dependencies. | Architecture |
 | Module-owned persistence | Каждый вертикальный модуль владеет своими repositories, SQL, Flyway migrations и RowMapper; общего persistence-модуля нет. | Data access |
-| Module-owned provider adapters | Helius/Bitquery/DexScreener находятся внутри `marketdata`, GoPlus — внутри `risk`; наружу выставляются только domain-neutral ports. | DIP |
-| `app` | Composition root: сборка Spring beans и запуск приложения. | Application |
+| Module-owned provider adapters | Выбранные будущими changes adapters принадлежат owning-модулям; наружу выставляются только domain-neutral contracts. | DIP |
+| Application root | `io.cryptoresearch.CryptoResearchApplication` запускает единый Spring Boot JAR. | Current application |
 | Record | Immutable data carrier в Java. | Domain objects |
 | Sealed interface | Ограниченная иерархия типов. | Domain modeling |
 | Value object | Доменный тип для значения: адрес, сумма, score и т.п. | Domain |
@@ -378,7 +372,7 @@
 | JPA | ORM, которую проект намеренно не использует. | Anti-pattern |
 | Spring Modulith application events | Используются только для завершённых низкочастотных business facts; high-volume swaps остаются внутри `marketdata`. | Module integration |
 | Domain event | Событие внутри системы: SwapPersisted, SignalCreated и т.п. | Event-driven modules |
-| Composition root | Место, где собираются реализации интерфейсов. | `app` |
+| Composition root | Корень Spring Boot application, а не отдельный Maven-модуль или top-level `app` package. | `io.cryptoresearch` |
 | DIP | Dependency Inversion Principle: бизнес зависит от интерфейсов, не от vendor-классов. | Architecture |
 | SRP | Single Responsibility Principle: модуль/класс делает одну понятную вещь. | Code design |
 | KISS | Не усложнять без необходимости. | Engineering principle |
@@ -387,10 +381,10 @@
 ## 16. Observability и эксплуатация
 | Термин | Простое объяснение | Где используется |
 | --- | --- | --- |
-| Observability | Видимость состояния системы через метрики, логи, health checks. | Phase 1+ |
-| Metrics | Числовые показатели системы. | Prometheus |
-| Prometheus | Сбор метрик. | Observability |
-| Grafana | Дашборды по метрикам. | Observability |
+| Observability | Видимость состояния системы через метрики, логи, health checks. | Actuator health currently; more is Target/Deferred |
+| Metrics | Числовые показатели системы. | Target operational capability |
+| Prometheus | **Deferred:** возможная платформа сбора метрик; сейчас не подключена. | Future observability change |
+| Grafana | **Deferred:** возможная платформа дашбордов; сейчас не подключена. | Future observability change |
 | Actuator | Spring Boot endpoints для health/metrics. | App |
 | Health check | Проверка живости и готовности системы. | Monitoring |
 | Structured logs | Логи в JSON/структурированном формате. | Debugging |
@@ -427,10 +421,10 @@
 | Hyperliquid | On-chain/perp venue; технически доступно, но юридически требует осторожности. | Possible future strategy |
 | Polymarket | Prediction market; обсуждался как рискованный research-направление. | Alternative strategy |
 | Prop firm | Компания, дающая капитал трейдерам после challenge/evaluation. | Alternative discussion |
-| Legal risk | Риск нарушения правил/закона/регуляторных требований. | VenueGate |
+| Legal risk | Риск нарушения правил/закона/регуляторных требований. | Future execution governance |
 | Banking risk | Риск вопросов от банка при вводе/выводе средств. | Legal discussion |
 | Source of funds | Происхождение средств, которое могут попросить объяснить. | AML/KYC |
-| Compliance score | Условная оценка юридической чистоты стратегии/venue. | VenueGate idea |
+| Compliance score | Условная будущая оценка юридической чистоты стратегии/venue. | Deferred governance idea |
 ---
 ## 18. Альтернативные стратегии из обсуждения
 | Термин | Простое объяснение | Где используется |
@@ -507,9 +501,3 @@
 | Когда реальные деньги? | Только после backtest, paper, legal/venue/capital gates. | Validation Gates |
 | Что не делаем сначала? | Auto-trading, expensive APIs, latency-war, multi-chain. | Anti-patterns |
 | Что останется, если smart money не выгорит? | Универсальное research-core ядро для других стратегий. | Architecture |
-## Соответствие: старые слои A/B/C ↔ новый план v5
-| Старый слой | Что значил раньше | Что это в v5 | Какие модули v5 | Какие сервисы / провайдеры |
-| --- | --- | --- | --- | --- |
-| **A** | Базовые блокчейн-данные, ingest, raw stream, RPC, WebSocket, история транзакций | **Data Layer / Ingest Layer** | `provider-api`, `provider-helius`, `provider-bitquery`, `ingest-solana`, `persistence`, часть `app` | **Helius**, **Bitquery**, позже для EVM: **Alchemy / Chainstack / Moralis** |
-| **B** | Обогащение: цены, ликвидность, пары, holders, token metadata, parsed/enriched data | **Token Intelligence + Token Risk facts** | `token-intelligence`, `token-risk`, часть `provider-dexscreener`, `provider-birdeye`, `provider-goplus` | **DexScreener**, **Birdeye**, **GoPlus**, часть **Helius DAS/metadata**, иногда **CoinGecko** |
-| **C** | Labels, smart money analytics, attribution, high-level interpretation | **Wallet Intelligence + Strategy + Decision Layer** | `wallet-intelligence`, `wallet-clustering`, `strategy-api`, `strategy-plugins`, `signal-aggregation`, `risk`, `capital`, `execution-simulator`, `paper-trading`, `venue-gate`, `research` | **Arkham**, **Nansen** как enrichment, плюс твоя собственная логика scoring / intent / reasoning / capital rules |

@@ -1,7 +1,9 @@
 # ADR 0003: Synchronous Java 25 baseline
 
-- Status: Accepted
+- Status: Superseded by [ADR 0007](0007-stable-java-25-baseline.md)
 - Date: 2026-09-13
+
+This record preserves the original bootstrap decision. ADR 0007 replaces its preview-enabled portion while retaining the synchronous programming model.
 
 ## Context
 

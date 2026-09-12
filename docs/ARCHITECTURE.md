@@ -47,7 +47,7 @@ The graph preserves these directional invariants: `marketdata` never knows about
 ## Inter-module interaction
 
 - Use synchronous public module APIs when the caller requires an immediate answer.
-- Public contracts use ordinary Java values, collections and domain types. Reactive, provider-specific, persistence and preview-JDK types must not cross module boundaries.
+- Public contracts use ordinary stable Java values, collections and domain types. Reactive, provider-specific and persistence execution types must not cross module boundaries.
 - Use application events only for completed, low-frequency business facts. Event schemas and exact publishers/consumers remain TBD until their implementing changes.
 - High-volume swaps and price ticks stay inside `marketdata`; they are not written to the Spring Modulith Event Publication Registry.
 - A module never imports another module's `application`, `domain` or `infrastructure` packages.
@@ -77,15 +77,27 @@ Every-swap publication through the Spring Modulith Event Publication Registry is
 - Each data-owning module uses its own PostgreSQL schema. `kernel` never has a schema; `governance` receives one only with real durable state. Schemas are namespace boundaries, not database-role security isolation.
 - Physical migration files live below `db/migration/<module>/`. Flyway uses one ordered history for the database; the first real object of a module introduces its schema.
 - Allowed data exchange is a public API, immutable projection, defined event, or an analytical read model explicitly approved by ADR.
-- Spring Data JDBC and `JdbcClient` are allowed. JPA/Hibernate, R2DBC and automatic schema mutation are forbidden.
+- Persistence tools are selected by operation shape:
+
+| Operation | Required approach |
+|---|---|
+| Simple aggregate CRUD | Spring Data JDBC repository, only when aggregate load/save semantics fit |
+| Projection, explicit query, upsert or targeted write | `JdbcClient` with visible SQL |
+| High-volume write | `JdbcTemplate` or prepared JDBC batch inside the owning module |
+| DDL | Flyway migration only |
+| Cross-module analytical read | Separately approved read-model design or ADR |
+
+- JPA/Hibernate, R2DBC and automatic schema mutation are forbidden.
+- Cross-module SQL, joins, repository reuse, persistence entities and row mappers are forbidden. Another module uses the owner's API, immutable projection, defined event or approved read model.
+- The connection pool is database admission control. Exact pool sizes, timeouts and batch limits are selected from measured workload evidence, not bootstrap guesses.
 - Tables and keys are chain-aware where the Roadmap requires identity by `chain + address` or `chain + tx_hash + event_index`.
 - `IF NOT EXISTS` and `CREATE OR REPLACE` are used only when migration semantics make rerun-safe behavior intentional. Indexes require a documented query pattern.
 
-See [ADR 0004](adr/0004-module-data-ownership.md).
+See [ADR 0002](adr/0002-spring-data-jdbc.md), [ADR 0004](adr/0004-module-data-ownership.md) and the [operating contract](OPERATIONS.md).
 
 ## Concurrency policy
 
-Module APIs remain synchronous. Virtual threads are preferred for suitable blocking HTTP/RPC/database tasks, but never serve as admission control. Each provider adapter has an explicit concurrency limit, rate limit, timeout and finite retry policy for transient errors. Queues and batches are bounded; cancellation is propagated; ingestion and jobs are idempotent. Database concurrency is limited by a deliberate budget no larger than connection-pool capacity, regardless of virtual-thread count. CPU-bound work uses bounded platform-thread executors. Preview APIs remain internal. WebSocket callbacks hand work to bounded queues for synchronous batch processing.
+Module APIs remain synchronous. Virtual threads are preferred for suitable blocking HTTP/RPC/database tasks, but never serve as admission control. Each provider adapter has an explicit concurrency limit, rate limit, timeout and finite retry policy for transient errors. Queues and batches are bounded; cancellation is propagated; ingestion and jobs are idempotent. Database concurrency is limited by a deliberate budget no larger than connection-pool capacity, regardless of virtual-thread count. CPU-bound work uses bounded platform-thread executors. Preview features are disabled by [ADR 0007](adr/0007-stable-java-25-baseline.md). WebSocket callbacks hand work to bounded queues for synchronous batch processing.
 
 ## Background work
 
@@ -106,6 +118,9 @@ Scale the modular monolith vertically and optimize measured database/provider bo
 - [ADR 0004: Module data ownership](adr/0004-module-data-ownership.md)
 - [ADR 0005: Transactions and events](adr/0005-transactions-and-events.md)
 - [ADR 0006: Background work and bounded concurrency](adr/0006-background-work-and-bounded-concurrency.md)
+- [ADR 0007: Stable Java 25 baseline](adr/0007-stable-java-25-baseline.md)
 - [Module documentation](modules/README.md)
+- [Operating contract](OPERATIONS.md)
+- [Testing strategy](TESTING.md)
 - [Roadmap](ROADMAP.md)
 - [Tech stack](TECH_STACK.md)

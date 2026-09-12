@@ -9,13 +9,17 @@ The Maven verification lifecycle SHALL reject modern and legacy JPA, Hibernate O
 - **AND** allowed synchronous JDBC, servlet and future Bean Validation provider dependencies SHALL remain unaffected.
 
 ### Requirement: Markdown hygiene
-Repository verification SHALL inspect active Markdown documentation for tool-export-specific markers, broken relative file links and obsolete architecture presented as current.
+Repository verification SHALL inspect all tracked Markdown documentation for tool-export-specific markers and broken relative file links, and SHALL inspect `docs/GLOSSARY.md` for obsolete architecture presented as current.
 
 #### Scenario: Documentation verification
-- **WHEN** repository convention checks scan Markdown files
+- **WHEN** repository convention checks scan tracked Markdown files
 - **THEN** tool-export-specific markers SHALL be absent
-- **AND** every relative Markdown file link SHALL resolve to an existing repository path
-- **AND** legacy module names or database entities SHALL appear only in archive documents or entries locally marked as historical or deferred.
+- **AND** every relative Markdown file link SHALL resolve to an existing repository path.
+
+#### Scenario: Active architecture terminology
+- **WHEN** repository convention checks scan `docs/GLOSSARY.md`
+- **THEN** legacy module names or database entities SHALL not be presented as current
+- **AND** any retained legacy module name or database entity SHALL be locally marked as historical or deferred.
 
 ## ADDED Requirements
 

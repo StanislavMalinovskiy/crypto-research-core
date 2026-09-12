@@ -1,6 +1,14 @@
 # Crypto Research Core — Roadmap v7.7
 
 **Версия:** v7.7 (Spring Modulith + synchronous Java 25 baseline)<br>**Дата:** 12 сентября 2026<br>**Базис:** v7.6 + approved modular architecture and Maven build<br>**Подход:** Solana-first, not Solana-only. MVP остаётся Solana-focused, но core data model, identity, partitioning strategy и provider boundaries сразу проектируются так, чтобы позже безболезненно добавить Base / Arbitrum / EVM-сети.
+
+## Статусы решений в этом документе
+
+- **Current baseline** — уже присутствует в репозитории и подтверждено Maven/OpenSpec verification.
+- **Target MVP** — продуктовое направление или предварительная техническая модель, которая требует отдельного approved OpenSpec change до реализации.
+- **Deferred** — возможное расширение, которое не принято и требует доказанной необходимости.
+
+Roadmap определяет цели, порядок и исследовательские гипотезы. Точные Java-контракты, provider selection, бизнес-схемы, ключи, индексы, partitioning и operational implementation утверждаются только соответствующими OpenSpec changes и, когда меняется архитектурная политика, ADR. Если раздел не помечен как current baseline и не ссылается на принятый ADR/main spec, его технические детали следует читать как target draft, а не как уже принятое решение.
 ---
 ## 1. Краткая суть
 Crypto Research Core — личная research-платформа на Java 25 + Spring Boot + PostgreSQL для **записи on-chain сигналов и измерения их forward outcome**.
@@ -27,7 +35,7 @@ Add modules, don't rewrite.
 | 1 | Architecture | single-module layered monolith with 9 technical packages | Spring Modulith 2.1.1 modular monolith with 8 vertical application modules |
 | 2 | Build | Gradle Wrapper | Maven Wrapper; one Maven module and one deployable JAR |
 | 3 | Programming model | virtual threads mentioned, framework model implicit | synchronous imperative Spring MVC + Spring Data JDBC on virtual threads |
-| 4 | Java 25 | preview APIs only mentioned generally | modern Java 25 features are the default; preview features enabled and isolated behind internal boundaries |
+| 4 | Java 25 | preview APIs only mentioned generally | stable Java 25 features are the default; preview is disabled until a dedicated approved change demonstrates a need |
 | 5 | Ownership | top-level provider/persistence/domain technical layers | each business module owns its domain, persistence and provider adapters |
 | 6 | Delivery | future module split left open | one repository, one process and one database until evidence requires physical separation |
 **Не меняется:** все measurement-correctness и auditability исправления v7.6; Solana-first MVP; Outcome Tracker как главный value; no auto-trading before validation gates.
@@ -98,14 +106,17 @@ Measurement before money.
 | Backtest | walk-forward 9m | 90-day window | later |
 | Capital pipeline | parallel funding-bot | deferred | separate project |
 ---
-## 8. Что НЕ упрощается
+## 8. Что НЕ упрощается в Target MVP
+
+Следующие пункты являются целевыми продуктовыми ограничениями. Они не входят автоматически в текущий bootstrap и реализуются отдельными changes.
+
 | Компонент | Почему сохраняется |
 | --- | --- |
 | Chain-aware identity | иначе Base/EVM потом потребует болезненную миграцию |
 | ExecutionMode + VenueGate + CapitalGate | защита от случайного live |
 | Append-only `wallet_score_history` | point-in-time queries |
 | Append-only `signal_outcomes` | главный value MVP |
-| Postgres partitioning | дёшево сейчас, дорого потом |
+| Оценка необходимости Postgres partitioning | решение по каждой high-volume таблице принимается до её первой production migration |
 | Provider interfaces | новый провайдер = новый adapter |
 | Strategy versioning | изменение config = новая версия |
 | Token Risk Engine | иначе outcome загрязнён scam/rug токенами |
@@ -116,22 +127,36 @@ Measurement before money.
 | `profit_factor` | win-rate alone = self-deception |
 | JSONB validation through sealed types | чтобы risk facts не стали неконтролируемой схемой |
 ---
-## 9. Стек
+## 9. Стек и статус решений
+
+### Current baseline
+
 - **Language/runtime:** Java 25; records, sealed types, pattern matching, switch expressions, virtual threads and other production-ready Java 25 features where appropriate
-- **Preview:** Structured Concurrency and other selected preview features enabled in Maven; preview types stay behind internal abstractions
+- **Preview:** disabled in the current baseline; any future feature requires a dedicated OpenSpec change and superseding ADR
 - **Framework:** Spring Boot 4.1.1 + Spring MVC, synchronous imperative model
 - **Modularity:** Spring Modulith 2.1.1
-- **Concurrency:** virtual threads for blocking I/O; bounded `StructuredTaskScope` fan-out for independent provider calls
-- **БД:** PostgreSQL 16 с monthly partitioning
-- **Cache:** Redis 7 + Caffeine
+- **Concurrency:** stable virtual threads for suitable blocking I/O; all future fan-out must be bounded
+- **БД:** PostgreSQL 18, verified against 18.6; bootstrap creates no business schema or partitioned table
 - **Persistence:** Spring Data JDBC / JdbcClient, not JPA or R2DBC
 - **Build:** Maven Wrapper; Maven 3.9.x baseline, one Maven module
 - **Migrations:** Flyway version managed by Spring Boot dependency management
-- **Observability:** Micrometer + Prometheus + Grafana + Logback JSON + correlation ID
-- **Test:** Testcontainers, Spring Modulith Test, ArchUnit, JUnit version managed by Spring Boot
+- **Observability:** Spring Boot Actuator health only
+- **Test:** Testcontainers, Spring Modulith Test and JUnit version managed by Spring Boot
 - **Not used:** Spring WebFlux, Reactor application pipelines, Vert.x, R2DBC
-- **MVP Providers:** Helius WebSocket/RPC, Bitquery, DexScreener, GoPlus
-- **Future Providers:** Alchemy/Moralis/Chainstack for Base/EVM, Birdeye, Arkham, Jupiter, Jito
+
+### Target MVP
+
+- Chain-aware kernel identities, idempotent module-owned persistence and the first Solana `marketdata` vertical slice are delivered through separate changes.
+- Candidate Solana providers include Helius, Bitquery, DexScreener and GoPlus. Each provider requires coverage/limit/terms validation, an OpenSpec design and approval of any new production dependency. An ADR is needed only if the provider boundary or general architecture changes.
+- A concrete high-volume table may be partitioned by its owning migration only after volume, retention and query-pattern evidence is documented. Changing the general persistence strategy requires an ADR.
+- Structured logging, correlation metadata and operational metrics are later increments, not bootstrap completion criteria.
+
+### Deferred
+
+- Redis and Caffeine are not selected. Any cache, broker, additional database, deployable or external observability platform requires measured need and an approved OpenSpec change; an ADR is required when the architectural baseline changes.
+- Prometheus and Grafana infrastructure are not part of the current repository baseline.
+- Alchemy, Moralis, Chainstack, Birdeye, Arkham, Jupiter and Jito remain provider candidates, not approved integrations.
+
 > **Budget note:** provider prices and limits below are planning assumptions from April 2026. Verify current vendor terms before purchase; they are not architectural invariants.
 | Component | Cost/мес |
 | --- | --- |
@@ -167,7 +192,7 @@ Spring Modulith modules are package-based business boundaries, not separate Mave
 ```plain text
 crypto-research-core
 ├── pom.xml
-└── src/main/java/com/yourorg/crc
+└── src/main/java/io/cryptoresearch
     ├── CryptoResearchApplication.java
     ├── kernel
     ├── governance
@@ -217,10 +242,10 @@ Application and module APIs are synchronous and imperative:
 - Spring Data JDBC / JdbcClient, not R2DBC or JPA;
 - no Reactor `Mono` / `Flux`, Vert.x `Future` or provider-specific async types in module contracts;
 - blocking HTTP/RPC/database calls execute on virtual threads;
-- `StructuredTaskScope` is used for bounded parallel fan-out to independent providers;
-- `ScopedValue` may carry immutable task context such as correlation metadata;
+- parallel fan-out to independent providers remains bounded and uses only stable Java APIs approved by the implementing change;
+- stable context propagation mechanisms may be selected by the implementing change when correlation metadata is introduced;
 - records, sealed interfaces, pattern matching and switch expressions are preferred where they improve the model;
-- preview APIs are enabled in Maven compile/test configuration but hidden behind internal project abstractions.
+- preview APIs are not enabled; introducing one requires an explicit architecture and build-baseline decision.
 WebSocket providers may use callbacks at the transport boundary because the protocol is event-driven. The adapter immediately writes events to a bounded internal queue; downstream application processing remains synchronous, batched and protected by backpressure.
 ### 10.6 Module communication
 Use direct synchronous API calls when the caller needs an immediate answer: current risk decision, wallet score or point-in-time price.
@@ -242,6 +267,9 @@ Records: `Signal`, `SignalReasoning`, `TokenRiskFacts`, `CommonTokenRiskFacts`, 
 Future placeholder: `EvmTokenRiskFacts`.
 ---
 ## 13. БД схема — chain-ready минимальный набор
+
+**Status: Target MVP draft.** Список ниже фиксирует исследовательские потребности, но не утверждает окончательные table ownership, DDL, keys, indexes или partitioning. Каждый объект проектируется и проверяется в отдельном change owning-модуля с учётом [ADR 0004](adr/0004-module-data-ownership.md).
+
 Core tables:
 - `raw_chain_events(chain, tx_hash, event_index, block_height, observed_at, provider, payload JSONB, payload_hash, parser_version, ingested_at), PK(chain, tx_hash, event_index, provider), PARTITION BY RANGE(observed_at)`; append-only, payload is never overwritten
 - `wallets(chain, address, first_seen, last_active, source, basic_profile), PK(chain, address)`
@@ -270,7 +298,7 @@ Strategy/execution/system:
 - `system_state(key, value JSONB)`
 ---
 ## 14. Partitioning strategy
-MVP: `swaps PARTITION BY RANGE(ts)`, `token_metrics PARTITION BY RANGE(ts)`, `token_prices PARTITION BY RANGE(ts)`, `wallet_score_history PARTITION BY RANGE(calculated_at)`.
+**Status: Target MVP hypothesis, not current baseline.** Для каждой high-volume таблицы owning change должен обосновать объём, retention и query patterns до выбора partitioning. Предварительный вариант для оценки: `swaps PARTITION BY RANGE(ts)`, `token_metrics PARTITION BY RANGE(ts)`, `token_prices PARTITION BY RANGE(ts)`, `wallet_score_history PARTITION BY RANGE(calculated_at)`.
 `token_prices` retention policy: keep high-resolution snapshots for the 90-day MVP Evidence window.<br>Expected scale example: 1,000 tokens × 5-minute snapshots ≈ 288k rows/day, ≈26M rows/90d, manageable with monthly partitions and focused indexes.<br>After Evidence Report, apply downsampling or cold archival if storage/query cost becomes meaningful.
 Phase B note: при добавлении Base/EVM оценить миграцию к `PARTITION BY LIST(chain) SUBPARTITION BY RANGE(ts)` или отдельным monthly partitions с chain-aware indexes.
 Причина: Solana и Base имеют разную плотность событий, cadence и semantics (`slot` vs `block_number/log_index`).
@@ -284,8 +312,10 @@ Phase B: `chain_specific_factors = serialized EvmTokenRiskFacts`, `risk_schema_v
 Validation: serialize only through domain mappers; deserialize in tests/reports through sealed type registry; unknown schema version fails fast; no ad-hoc JSONB writes from random services.
 ---
 ## 16. Provider abstractions
-Provider API: `BlockchainStreamProvider`, `ChainRpcProvider`, `SolanaRpcProvider`, `EvmRpcProvider`, `HistoricalIngestProvider`, `MarketDataProvider`, `RiskDataProvider`, `WalletLabelProvider`, `ExecutionProvider`, `JitoTipFloorProvider`.
-MVP implementations: `marketdata.internal.infrastructure.provider.helius`, `marketdata.internal.infrastructure.provider.bitquery`, `marketdata.internal.infrastructure.provider.dexscreener`, `risk.internal.infrastructure.provider.goplus`.
+**Status: Target MVP candidates.** Exact ports and implementations are not approved by bootstrap; each appears only in its implementing change.
+
+Candidate provider APIs: `BlockchainStreamProvider`, `ChainRpcProvider`, `SolanaRpcProvider`, `EvmRpcProvider`, `HistoricalIngestProvider`, `MarketDataProvider`, `RiskDataProvider`, `WalletLabelProvider`, `ExecutionProvider`, `JitoTipFloorProvider`.
+Candidate MVP implementations: Helius, Bitquery and DexScreener inside `marketdata`; GoPlus inside `risk`.
 Future Base/EVM implementations stay inside the owning vertical module, for example `marketdata.internal.infrastructure.provider.alchemy` and `risk.internal.infrastructure.provider.evm.goplus`.
 Rules: domain-neutral DTOs where possible; chain-specific fields stay in implementations; provider stale data lowers confidence or blocks signal; provider failures never produce fake data.
 ---
@@ -423,22 +453,37 @@ MVP decision gates:
 - if nothing works, extend data or pivot.
 ---
 ## 24. Phase breakdown
-| Phase | Срок | Cumulative | Суть |
-| --- | --- | --- | --- |
-| 1. Foundation + Gates | 1.5–2.5 нед | 2.5 нед | Maven project, Spring Modulith boundaries, DB, chain-aware kernel, gates |
-| 2. Data Layer | 2 нед | 4.5 нед | Solana providers, normalizer, 90-day backfill |
-| 3. Token Risk Engine | 1 нед | 5.5 нед | Solana risk facts, common risk model |
-| 4. Wallet Intelligence | 2 нед | 7.5 нед | Basic scoring + profit_factor |
-| 5. Signal Families + Journal | 1.5 нед | 9 нед | 4 entry + 1 avoidance |
-| 6. Position + Simulator | 1 нед | 10 нед | virtual_positions, 4 triggers |
-| 7. Outcome Tracker | 1 нед | 11 нед | forward outcomes |
-| 8. Backtest + Evidence Report | 1.5 нед | 12.5 нед | first decision report |
+| Phase | Status | Срок | Cumulative | Суть |
+| --- | --- | --- | --- | --- |
+| 0. Technical bootstrap | Current baseline | completed | — | Maven project, Spring Modulith boundaries, PostgreSQL/Flyway/Testcontainers foundation, health and architecture verification |
+| 1. Architecture and data foundation | Target MVP | 1.5–2.5 нед | 2.5 нед | Guardrails, chain-aware kernel and idempotent market-data storage through separate changes; governance behavior remains later |
+| 2. Data Layer | Target MVP | 2 нед | 4.5 нед | Solana providers, normalizer, 90-day backfill |
+| 3. Token Risk Engine | Target MVP | 1 нед | 5.5 нед | Solana risk facts, common risk model |
+| 4. Wallet Intelligence | Target MVP | 2 нед | 7.5 нед | Basic scoring + profit_factor |
+| 5. Signal Families + Journal | Target MVP | 1.5 нед | 9 нед | 4 entry + 1 avoidance |
+| 6. Position + Simulator | Target MVP | 1 нед | 10 нед | virtual_positions, 4 triggers |
+| 7. Outcome Tracker | Target MVP | 1 нед | 11 нед | forward outcomes |
+| 8. Backtest + Evidence Report | Target MVP | 1.5 нед | 12.5 нед | first decision report |
 Primary commitment: 10–12 weeks. Conservative expectation with chain-ready overhead: up to 12.5 weeks.
 ---
-## 25. Phase 1 — Foundation + Gates
-Goal: project поднимается, БД готова, live физически невозможен, domain уже chain-ready.
-Реализовать: Maven Wrapper single-module; Spring Boot 4.1.1; Spring Modulith 2.1.1; 8 application modules with explicit allowed dependencies; synchronous Spring MVC / Spring Data JDBC model; Java 25 virtual threads and isolated preview configuration; chain-aware kernel (`Chain`, `TokenId`, `WalletId`, `TransactionId`, `EventId`, `BlockRef`); Flyway migrations with partitions/indexes/chain-aware constraints, including `raw_chain_events`, `signal_candidates` and mandatory strategy-version linkage; Docker Compose; ExecutionMode state; VenueGate; CapitalGate; provider interfaces; Modulith verification tests; ArchUnit; Actuator; structured logging.
-DoD: Maven build passes; infra starts; health OK; `ApplicationModules.verify()` passes; module graph has no cycles; internal packages are not imported cross-module; LIVE is blocked by code; chain-aware tables exist; domain packages have no Spring/persistence/provider dependencies.
+## 25. Phase 1 — Architecture and data foundation
+
+**Current baseline completed:** Maven Wrapper single-module; Spring Boot 4.1.1; Spring Modulith 2.1.1; eight application modules with explicit allowed dependencies; synchronous Spring MVC/Spring Data JDBC baseline; stable Java 25 configuration; PostgreSQL/Flyway/Testcontainers foundation; Actuator health; Maven Enforcer; Modulith verification tests. Bootstrap creates no business tables and implements no gates.
+
+**Planned change sequence:**
+
+1. `harden-bootstrap-guardrails`
+2. `establish-chain-identity-kernel`
+3. `establish-idempotent-marketdata-storage`
+4. `add-solana-marketdata-ingestion`
+5. `normalize-and-store-solana-swaps`
+6. `add-marketdata-replay-and-gap-recovery`
+
+Any change that introduces or mutates persisted data must include idempotency in its own acceptance criteria. Idempotency is not deferred to a later repair change.
+
+Chain identities, provider contracts, business DDL, indexes, partitioning, Docker Compose, structured logging and governance gates are target capabilities requiring their own approved changes. Governance behavior is introduced before PAPER/LIVE execution needs it, not as part of technical bootstrap.
+
+Phase 1 DoD is cumulative across the relevant approved changes; it is not the DoD of `bootstrap-modular-foundation`.
 ---
 ## 26. Phase 2 — Data Layer
 Goal: clean reproducible Solana swap data.
@@ -464,7 +509,7 @@ DoD: token risk decision within 1–3s; append-only decisions; common and chain-
 ## 28. Phase 4 — Wallet Intelligence
 Goal: generate watchlist with basic point-in-time scoring.
 Реализовать: CandidateWalletProfiler, BasicWalletScorer, WalletPnlCalculator with FIFO closed-trade methodology, WalletGraduationService, WatchlistService, append-only `wallet_score_history`, hot snapshot `wallet_scores`.
-DoD: 50–200 STRONG wallets if data supports it; FIFO cross-venue closed-trade PnL implemented; profit_factor calculated; open positions excluded from win_rate/profit_factor; false high-winrate wallets classified as NOISE if profit_factor poor; Redis watchlist updated every 6h.
+DoD: 50–200 STRONG wallets if data supports it; FIFO cross-venue closed-trade PnL implemented; profit_factor calculated; open positions excluded from win_rate/profit_factor; false high-winrate wallets classified as NOISE if profit_factor poor; watchlist refresh behavior is verified. Storage and caching are selected in a separate approved change; Redis remains deferred.
 ---
 ## 29. Phase 5 — Signal Families + Journal
 Goal: generate and record comparable signal families.
@@ -549,7 +594,7 @@ OpEx review monthly: Helius limits, storage growth, provider failures, whether B
 - Не использовать win_rate без profit_factor.
 - Не пропускать Token Risk Engine.
 - Не пропускать ExecutionMode/VenueGate/CapitalGate.
-- Не пропускать partitioning.
+- Не пропускать явную оценку необходимости partitioning до первой migration каждой high-volume таблицы.
 - Не начинать funding-bot параллельно с MVP.
 - Не сравнивать Solana и Base по raw win-rate.
 - Не писать chain-specific JSONB без sealed type validation.

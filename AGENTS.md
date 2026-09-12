@@ -27,6 +27,8 @@ An accepted or superseding ADR must update `ARCHITECTURE.md`; an inconsistency i
 5. Read applicable ADRs.
 6. Inspect existing code and tests before editing.
 
+Read `docs/OPERATIONS.md` for runtime/configuration work and `docs/TESTING.md` when choosing or changing a test level.
+
 Also read the nearest module-level `AGENTS.md` before changing that module, if one exists. A nearer file may add module-specific rules but may not relax this root contract.
 
 ## Architecture rules
@@ -38,13 +40,13 @@ Also read the nearest module-level `AGENTS.md` before changing that module, if o
 - Every table, SQL statement, repository and row mapper has exactly one owning module. Cross-module SQL and repository reuse are forbidden.
 - Never create top-level `domain`, `service`, `repository`, `persistence`, `provider`, `controller`, `util` or `common` packages.
 - No cyclic module dependencies or imports of another module's implementation packages.
-- Module APIs are synchronous and must not expose persistence, provider, reactive or preview-JDK types.
+- Module APIs are synchronous and must not expose persistence, provider or reactive execution types.
 - Changing module boundaries or dependency directions requires an accepted ADR and updated module docs first.
 - Keep one repository, one Maven module, one deployable JAR and one PostgreSQL database until an ADR backed by measured evidence says otherwise.
 
 ## Java and Spring rules
 
-- Use Java 25. Preview features are allowed only behind internal implementation APIs; compile, test and run with `--enable-preview`.
+- Use Java 25 without preview features. Do not add `--enable-preview` or use a preview API without an approved OpenSpec change and superseding ADR that names and justifies the exact feature.
 - Prefer immutable objects, records for data carriers, constructor injection, small cohesive classes and explicit exception handling.
 - Use sealed types only for genuinely closed hierarchies. Prefer `Optional` over nullable return values where absence is expected.
 - Use synchronous Spring MVC, Spring Data JDBC and `JdbcClient`.
@@ -82,6 +84,8 @@ Also read the nearest module-level `AGENTS.md` before changing that module, if o
 
 Tests must cover the smallest meaningful behavior at the owning module boundary. Use unit tests for pure domain behavior, Spring Modulith tests for module integration, and Testcontainers for PostgreSQL/Flyway behavior. Every architecture-affecting change must keep `ApplicationModules.verify()` green.
 
+Follow the detailed test-level ownership in `docs/TESTING.md` and runtime, secret, health, logging and resource rules in `docs/OPERATIONS.md`.
+
 Required commands from the repository root:
 
 ```bash
@@ -91,6 +95,8 @@ openspec doctor
 ```
 
 On Windows, `mvnw.cmd clean verify` is equivalent. Report skipped or blocked checks with the exact command and cause. Do not claim completion when a required check has not run successfully.
+
+GitHub Actions runs the same contract in the stable `quality-gate` job for pushes and pull requests. Surefire and Failsafe reports are published as the `maven-test-reports` workflow artifact when files exist. Repository files define the job but cannot enable branch protection: after an authorized push and the first successful remote run, a repository administrator must require `quality-gate` in the primary-branch ruleset.
 
 ## Definition of Done
 
