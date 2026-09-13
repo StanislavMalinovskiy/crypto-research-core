@@ -19,7 +19,7 @@
 | Файл | Назначение |
 |---|---|
 | [docs/DELIVERY_PLAN.md](docs/DELIVERY_PLAN.md) | Текущий этап, следующий change и укрупнённый путь до Evidence Report |
-| [docs/AGENT_WORKFLOW.md](docs/AGENT_WORKFLOW.md) | Возможный трёхролевой процесс работы с Codex-агентами |
+| [docs/AGENT_WORKFLOW.md](docs/AGENT_WORKFLOW.md) | Возможный пятиролевой процесс работы с Codex-агентами |
 | [docs/ROADMAP.md](docs/ROADMAP.md) | Продуктовые гипотезы, долгосрочные возможности и приоритеты |
 | [docs/PROJECT_SUMMARY.md](docs/PROJECT_SUMMARY.md) | Краткий контекст проекта для новой сессии |
 | [docs/TECH_STACK.md](docs/TECH_STACK.md) | Разрешённые технологии и версии |
