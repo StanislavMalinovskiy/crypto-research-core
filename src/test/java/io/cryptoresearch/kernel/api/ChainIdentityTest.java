@@ -18,10 +18,13 @@ class ChainIdentityTest {
 	@Test
 	void acceptsCanonicalChainIdentifiers() {
 		var solana = new ChainId("solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp");
+		var representativeNetworks = List.of(
+				solana.value(), "eip155:1", BASE_MAINNET.value(), "eip155:42161", "cosmos:cosmoshub-4");
 
+		assertThat(representativeNetworks).allSatisfy(value ->
+				assertThat(new ChainId(value).value()).isEqualTo(value));
 		assertThat(solana).isEqualTo(ChainId.SOLANA_MAINNET);
 		assertThat(solana.hashCode()).isEqualTo(ChainId.SOLANA_MAINNET.hashCode());
-		assertThat(BASE_MAINNET.value()).isEqualTo("eip155:8453");
 		assertThat(List.of(solana, BASE_MAINNET).stream().sorted()).containsExactly(BASE_MAINNET, solana);
 	}
 
@@ -104,6 +107,7 @@ class ChainIdentityTest {
 		var secondTransaction = new TransactionId(ChainId.SOLANA_MAINNET, "tx-b");
 		var otherChainTransaction = new TransactionId(BASE_MAINNET, "tx-a");
 		var firstEvent = new EventId(firstTransaction, "1");
+		var receiptLog = new EventId(firstTransaction, "receipt.logs:3");
 
 		assertThat(Set.of(
 				firstEvent,
@@ -112,6 +116,8 @@ class ChainIdentityTest {
 				new EventId(otherChainTransaction, "1"))).hasSize(4);
 		assertThat(new EventId(firstTransaction, "1")).isEqualTo(firstEvent);
 		assertThat(firstEvent.locator()).isEqualTo("1");
+		assertThat(receiptLog.locator()).isEqualTo("receipt.logs:3");
+		assertThat(new EventId(firstTransaction, receiptLog.locator())).isEqualTo(receiptLog);
 		assertThat(List.of(new EventId(secondTransaction, "1"), firstEvent).stream().sorted())
 				.containsExactly(firstEvent, new EventId(secondTransaction, "1"));
 		assertThatThrownBy(() -> new EventId(null, "1")).isInstanceOf(NullPointerException.class);

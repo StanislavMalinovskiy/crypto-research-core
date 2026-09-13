@@ -18,7 +18,7 @@ Do not make pure domain tests start Spring or Docker. Do not replace PostgreSQL-
 ## Kernel identity tests
 
 - Construct identity values as pure unit tests without Spring or Docker.
-- Cover canonical chain slugs, exact opaque-value preservation, explicit null-chain rejection and invalid whitespace/control characters.
+- Cover exact customary CAIP-2 networks, including representative Solana/EVM and unknown valid identifiers, reference case sensitivity, exact opaque-value preservation, explicit null-chain rejection and invalid whitespace/control characters.
 - Prove that identical local values on different chains and event locators under different transactions remain distinct keys.
 - Prove deterministic same-category sorting, including numeric `BlockPosition` ordering.
 - Keep chain-specific base58/checksum parsing in future adapter contract tests rather than kernel tests.
@@ -29,7 +29,7 @@ Do not make pure domain tests start Spring or Docker. Do not replace PostgreSQL-
 - Negative readiness checks restore paused infrastructure in a `finally` block and use bounded polling rather than an unbounded wait.
 - The healthy startup smoke test remains independent from failure-path tests.
 - PostgreSQL integration tests assert the exact supported server version and Flyway state when version-specific behavior matters.
-- Raw market-data storage tests assert exact CAIP-2 network validation, physical column names, absence of ambiguous legacy names, primary-key order, check constraints, cross-network distinction, exact readback, immutable retry semantics and concurrent uniqueness behavior against PostgreSQL rather than a repository mock.
+- Raw market-data storage tests assert exact CAIP-2 network validation, physical column names, absence of ambiguous legacy names, unpartitioned table shape, primary-key order and explicit `C` collation, absence of surrogate/secondary indexes, check constraints, synthetic EVM persistence, cross-network/provider/case distinction, exact readback, immutable retry semantics and concurrent uniqueness behavior against PostgreSQL rather than a repository mock.
 - Storage concurrency tests invoke the transactional application boundary from separate threads so each submission owns a real database transaction.
 
 ## Maven lifecycle

@@ -33,18 +33,15 @@ class RawChainEventSchemaIT {
 	@Container
 	@ServiceConnection
 	static final PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:18.6-alpine");
-
 	private final StoreRawObservationUseCase useCase;
 	private final JdbcClient jdbcClient;
 	private final Flyway flyway;
-
 	@Autowired
 	RawChainEventSchemaIT(StoreRawObservationUseCase useCase, JdbcClient jdbcClient, Flyway flyway) {
 		this.useCase = useCase;
 		this.jdbcClient = jdbcClient;
 		this.flyway = flyway;
 	}
-
 	@BeforeEach
 	void resetTable() {
 		jdbcClient.sql("DELETE FROM marketdata.raw_chain_events").update();
@@ -80,6 +77,12 @@ class RawChainEventSchemaIT {
 				.doesNotContain("chain", "transaction_id", "event_id", "block_position", "block_hash");
 
 		assertThat(primaryKeyColumns()).isEqualTo("chain_id,transaction_value,event_locator,provider");
+		assertThat(jdbcClient.sql("""
+				SELECT collation_name FROM information_schema.columns
+				WHERE table_schema = 'marketdata' AND table_name = 'raw_chain_events'
+				  AND column_name IN ('chain_id', 'transaction_value', 'event_locator', 'provider')
+				ORDER BY ordinal_position
+				""").query(String.class).list()).containsExactly("C", "C", "C", "C");
 		assertThat(checkConstraints()).containsExactly(
 				"raw_chain_events_chain_id_caip2_check",
 				"raw_chain_events_event_locator_format_check",
@@ -99,6 +102,12 @@ class RawChainEventSchemaIT {
 				SELECT count(*) FROM pg_indexes
 				WHERE schemaname = 'marketdata' AND tablename = 'raw_chain_events'
 				""").query(Integer.class).single()).isOne();
+		assertThat(jdbcClient.sql("""
+				SELECT table_definition.relkind = 'r' AND NOT table_definition.relispartition
+				FROM pg_class table_definition
+				JOIN pg_namespace schema_definition ON schema_definition.oid = table_definition.relnamespace
+				WHERE schema_definition.nspname = 'marketdata' AND table_definition.relname = 'raw_chain_events'
+				""").query(Boolean.class).single()).isTrue();
 	}
 
 	@Test
@@ -186,7 +195,7 @@ class RawChainEventSchemaIT {
 		return new ColumnShape(name, "timestamp with time zone", null, 6, nullable ? "YES" : "NO");
 	}
 
-	private record ColumnShape(
-			String name, String type, Integer maximumLength, Integer datetimePrecision, String nullable) {
+	private record ColumnShape(String name, String type, Integer maximumLength,
+			Integer datetimePrecision, String nullable) {
 	}
 }

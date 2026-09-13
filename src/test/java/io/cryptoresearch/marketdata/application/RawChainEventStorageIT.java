@@ -104,18 +104,31 @@ class RawChainEventStorageIT {
 	}
 
 	@Test
-	void keepsEqualLocalIdentityValuesDistinctAcrossNetworks() {
-		var baseMainnet = new ChainId("eip155:8453");
-		var solana = observation(ChainId.SOLANA_MAINNET, "same-transaction", "same-event", "provider",
-				42, Optional.empty(), Optional.empty(), OBSERVED_AT, PAYLOAD, "parser-v1");
-		var base = observation(baseMainnet, "same-transaction", "same-event", "provider",
-				42, Optional.empty(), Optional.empty(), OBSERVED_AT, PAYLOAD, "parser-v1");
-
-		assertThat(useCase.store(solana)).isEqualTo(StoreRawObservationOutcome.INSERTED);
-		assertThat(useCase.store(base)).isEqualTo(StoreRawObservationOutcome.INSERTED);
+	void keepsEqualLocalIdentityValuesDistinctAcrossNetworksAndReferenceCase() {
+		var chains = List.of(ChainId.SOLANA_MAINNET, new ChainId("eip155:8453"),
+				new ChainId("example:Network"), new ChainId("example:network"));
+		for (var chain : chains) {
+			var input = observation(chain, "same-transaction", "same-event", "provider",
+					42, Optional.empty(), Optional.empty(), OBSERVED_AT, PAYLOAD, "parser-v1");
+			assertThat(useCase.store(input)).isEqualTo(StoreRawObservationOutcome.INSERTED);
+		}
 		assertThat(jdbcClient.sql("SELECT chain_id FROM marketdata.raw_chain_events")
 				.query(String.class).list())
-				.containsExactlyInAnyOrder(ChainId.SOLANA_MAINNET.value(), baseMainnet.value());
+				.containsExactlyInAnyOrderElementsOf(chains.stream().map(ChainId::value).toList());
+	}
+
+	@Test
+	void storesSyntheticEvmObservationThroughTheCommonContract() {
+		var baseMainnet = new ChainId("eip155:8453");
+		var input = observation(baseMainnet, "0xtransaction", "receipt.logs:3", "synthetic",
+				19_000_000, Optional.of("0xblock"), Optional.of(SOURCE_TIME), OBSERVED_AT, PAYLOAD, "fixture-v1");
+
+		assertThat(useCase.store(input)).isEqualTo(StoreRawObservationOutcome.INSERTED);
+		var row = readSingleRow(jdbcClient);
+		assertThat(row.chainId()).isEqualTo(baseMainnet.value());
+		assertThat(row.transactionValue()).isEqualTo("0xtransaction");
+		assertThat(row.eventLocator()).isEqualTo("receipt.logs:3");
+		assertThat(row.observedBlockPosition()).isEqualTo(19_000_000);
 	}
 
 	@Test

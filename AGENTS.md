@@ -6,7 +6,8 @@ Crypto Research Core is a research-first crypto signal evaluation system. The cu
 
 There is no universal document priority. Use each source only for its responsibility:
 
-- `docs/ROADMAP.md`: product goals, stages and priorities.
+- `docs/ROADMAP.md`: product hypotheses, long-term capabilities and directional priorities.
+- `docs/DELIVERY_PLAN.md`: operational stage sequence, current and next work, and stage exit outcomes.
 - `docs/adr/*`: accepted architectural decisions and rationale.
 - `docs/ARCHITECTURE.md`: current consolidated architecture.
 - `docs/TECH_STACK.md`: allowed technologies and versions.

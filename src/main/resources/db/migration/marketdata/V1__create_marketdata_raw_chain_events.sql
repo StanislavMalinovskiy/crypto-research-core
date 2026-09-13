@@ -1,10 +1,10 @@
 CREATE SCHEMA marketdata;
 
 CREATE TABLE marketdata.raw_chain_events (
-    chain_id VARCHAR(41) NOT NULL,
-    transaction_value VARCHAR(512) NOT NULL,
-    event_locator VARCHAR(256) NOT NULL,
-    provider VARCHAR(64) NOT NULL,
+    chain_id VARCHAR(41) COLLATE "C" NOT NULL,
+    transaction_value VARCHAR(512) COLLATE "C" NOT NULL,
+    event_locator VARCHAR(256) COLLATE "C" NOT NULL,
+    provider VARCHAR(64) COLLATE "C" NOT NULL,
     observed_block_position BIGINT NOT NULL,
     observed_block_hash VARCHAR(256),
     source_event_time TIMESTAMPTZ(6),

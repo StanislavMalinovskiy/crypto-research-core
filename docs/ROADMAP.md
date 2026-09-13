@@ -8,7 +8,7 @@
 - **Target MVP** — продуктовое направление или предварительная техническая модель, которая требует отдельного approved OpenSpec change до реализации.
 - **Deferred** — возможное расширение, которое не принято и требует доказанной необходимости.
 
-Roadmap определяет цели, порядок и исследовательские гипотезы. Точные Java-контракты, provider selection, бизнес-схемы, ключи, индексы, partitioning и operational implementation утверждаются только соответствующими OpenSpec changes и, когда меняется архитектурная политика, ADR. Если раздел не помечен как current baseline и не ссылается на принятый ADR/main spec, его технические детали следует читать как target draft, а не как уже принятое решение.
+Roadmap определяет продуктовые цели, порядок целевых возможностей и исследовательские гипотезы; оперативные стадии и Current/Next принадлежат [Delivery Plan](DELIVERY_PLAN.md). Точные Java-контракты, provider selection, бизнес-схемы, ключи, индексы, partitioning и operational implementation утверждаются только соответствующими OpenSpec changes и, когда меняется архитектурная политика, ADR. Если раздел не помечен как current baseline и не ссылается на принятый ADR/main spec, его технические детали следует читать как target draft, а не как уже принятое решение.
 ---
 ## 1. Краткая суть
 Crypto Research Core — личная research-платформа на Java 25 + Spring Boot + PostgreSQL для **записи on-chain сигналов и измерения их forward outcome**.
@@ -443,37 +443,17 @@ MVP decision gates:
 - if only avoidance works, build defensive overlay, not trading strategy;
 - if nothing works, extend data or pivot.
 ---
-## 24. Phase breakdown
-| Phase | Status | Срок | Cumulative | Суть |
-| --- | --- | --- | --- | --- |
-| 0. Technical bootstrap | Current baseline | completed | — | Maven project, Spring Modulith boundaries, PostgreSQL/Flyway/Testcontainers foundation, health and architecture verification |
-| 1. Architecture and data foundation | Target MVP | 1.5–2.5 нед | 2.5 нед | Guardrails, six-module topology, reproducibility contract and chain-aware kernel through separate changes; execution remains out of scope |
-| 2. Data Layer | Target MVP | 2 нед | 4.5 нед | Solana providers, normalizer, 90-day backfill |
-| 3. Token Risk Engine | Target MVP | 1 нед | 5.5 нед | Solana risk facts, common risk model |
-| 4. Wallet Intelligence | Target MVP | 2 нед | 7.5 нед | Basic scoring + profit_factor |
-| 5. Signal Families + Journal | Target MVP | 1.5 нед | 9 нед | 4 entry + 1 avoidance |
-| 6. Position + Simulator | Target MVP | 1 нед | 10 нед | virtual_positions, 4 triggers |
-| 7. Outcome Tracker | Target MVP | 1 нед | 11 нед | forward outcomes |
-| 8. Backtest + Evidence Report | Target MVP | 1.5 нед | 12.5 нед | first decision report |
-Primary commitment: 10–12 weeks. Conservative expectation with chain-ready overhead: up to 12.5 weeks.
+## 24. Delivery sequence
+
+The current stage, next change and seven-stage route to the Evidence Report are maintained in the [Delivery Plan](DELIVERY_PLAN.md). The detailed phases below remain product targets and hypotheses; they do not define active OpenSpec scope or current implementation status.
+
+Primary product horizon: 10–12 weeks. Conservative expectation with chain-ready overhead: up to 12.5 weeks.
 ---
 ## 25. Phase 1 — Architecture and data foundation
 
 **Current baseline completed:** Maven Wrapper single-module; Spring Boot 4.1.1; Spring Modulith 2.1.1; six application modules with explicit allowed dependencies; synchronous Spring MVC/Spring Data JDBC baseline; stable Java 25 configuration; PostgreSQL/Flyway/Testcontainers foundation; Actuator health; Maven Enforcer; Modulith verification tests. The first market-data storage slice adds only `marketdata.raw_chain_events` with immutable idempotency semantics; provider ingestion, normalization, swaps, signals and execution remain absent.
 
-**Planned change sequence:**
-
-1. `harden-bootstrap-guardrails` — completed
-2. `establish-ci-quality-gate` — completed
-3. `establish-engineering-operating-contracts` — completed
-4. `simplify-mvp-module-boundaries` — completed architecture change
-5. `establish-research-reproducibility-contract` — completed architecture contract
-6. `establish-chain-identity-kernel` — completed business-foundation change
-7. `establish-idempotent-marketdata-storage` — first market-data schema and persistence contracts
-8. `build-first-signal-evaluation-skeleton` — recorded fixture walking skeleton
-9. `add-helius-marketdata-ingestion` — real provider adapter after the fixture path
-10. `add-risk-assessment`
-11. `add-wallet-observation`
+The operational change sequence and Current/Next position are owned by the [Delivery Plan](DELIVERY_PLAN.md). Detailed scope and task progress remain in each OpenSpec change.
 
 Any change that introduces or mutates persisted data must include idempotency in its own acceptance criteria. Idempotency is not deferred to a later repair change.
 
