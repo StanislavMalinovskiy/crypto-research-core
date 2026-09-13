@@ -1,6 +1,6 @@
 # Crypto Research Core agent guide
 
-Crypto Research Core is a research-first, measurement-first crypto signal evaluation system. The current deployment is one synchronous Spring Modulith modular monolith: one repository, one Maven module, one JAR and one PostgreSQL database.
+Crypto Research Core is a research-first crypto signal evaluation system. The current deployment is one synchronous Spring Modulith modular monolith: one repository, one Maven module, one JAR and one PostgreSQL database.
 
 ## Source responsibilities
 
@@ -10,6 +10,7 @@ There is no universal document priority. Use each source only for its responsibi
 - `docs/adr/*`: accepted architectural decisions and rationale.
 - `docs/ARCHITECTURE.md`: current consolidated architecture.
 - `docs/TECH_STACK.md`: allowed technologies and versions.
+- `docs/REPRODUCIBILITY.md`: time, numeric, provenance and deterministic-result rules.
 - `openspec/specs/*`: accepted observable system behavior.
 - `openspec/changes/*`: proposed or partially implemented changes, not yet current behavior.
 - Code and tests: evidence of the implementation that actually runs.
@@ -28,13 +29,14 @@ An accepted or superseding ADR must update `ARCHITECTURE.md`; an inconsistency i
 6. Inspect existing code and tests before editing.
 
 Read `docs/OPERATIONS.md` for runtime/configuration work and `docs/TESTING.md` when choosing or changing a test level.
+Read `docs/REPRODUCIBILITY.md` before introducing time-dependent logic, financial values, datasets, signals, evaluations or reports.
 
 Also read the nearest module-level `AGENTS.md` before changing that module, if one exists. A nearer file may add module-specific rules but may not relax this root contract.
 
 ## Architecture rules
 
 - Package root: `io.cryptoresearch`.
-- Modules: `kernel`, `governance`, `marketdata`, `risk`, `wallet`, `strategy`, `measurement`, `research`.
+- Modules: `kernel`, `marketdata`, `risk`, `wallet`, `signal`, `evaluation`.
 - Follow the complete allowed/forbidden dependency graph in `docs/ARCHITECTURE.md`; every cross-module edge targets `module::api`.
 - Each module owns its domain, use cases, persistence, provider adapters, migrations and tests.
 - Every table, SQL statement, repository and row mapper has exactly one owning module. Cross-module SQL and repository reuse are forbidden.
@@ -42,6 +44,7 @@ Also read the nearest module-level `AGENTS.md` before changing that module, if o
 - No cyclic module dependencies or imports of another module's implementation packages.
 - Module APIs are synchronous and must not expose persistence, provider or reactive execution types.
 - Changing module boundaries or dependency directions requires an accepted ADR and updated module docs first.
+- The MVP has no signing, order submission, PAPER/LIVE execution or executable governance gates. Any execution capability requires a dedicated approved change and ADR before code is added.
 - Keep one repository, one Maven module, one deployable JAR and one PostgreSQL database until an ADR backed by measured evidence says otherwise.
 
 ## Java and Spring rules
@@ -51,6 +54,9 @@ Also read the nearest module-level `AGENTS.md` before changing that module, if o
 - Use sealed types only for genuinely closed hierarchies. Prefer `Optional` over nullable return values where absence is expected.
 - Use synchronous Spring MVC, Spring Data JDBC and `JdbcClient`.
 - Use virtual threads for suitable blocking I/O. Bound fan-out and queues; use bounded platform-thread executors for CPU-bound work.
+- Domain and application logic receives `Clock` or an explicit reference `Instant`; direct machine-clock reads are forbidden.
+- Authoritative amounts, prices, costs, PnL, ratios and scores use raw integer units or exact decimal arithmetic with explicit precision, scale and rounding. Do not use `float` or `double` for financial facts.
+- Order-sensitive work defines a total order and stable tie-break; randomized research receives and records an explicit seed.
 - Treat virtual threads as execution, not admission control: bound provider concurrency, rate, database access, batches, timeouts and retries.
 - Do not add JPA/Hibernate, WebFlux, Reactor, R2DBC, Vert.x, Kafka, Redis, Lombok, microservices or Maven modules.
 - Do not add or upgrade a production dependency silently. Document the need in the OpenSpec design and obtain explicit approval when it is outside the accepted baseline.
@@ -79,6 +85,7 @@ Also read the nearest module-level `AGENTS.md` before changing that module, if o
 - Do not keep a database transaction open across provider I/O or mutate another module's tables.
 - Keep high-volume market data in bounded batch pipelines and tables. Reserve Modulith events for low-frequency completed facts; durable delivery needs a separate ADR/change.
 - One JAR may run multiple workload roles. Recurring work must be idempotent and claimed through PostgreSQL so multiple instances do not duplicate it.
+- Reproducible runs identify build/source revision, algorithm/configuration version, dataset fingerprint, cutoff and seed as defined in `docs/REPRODUCIBILITY.md`.
 
 ## Testing and verification
 

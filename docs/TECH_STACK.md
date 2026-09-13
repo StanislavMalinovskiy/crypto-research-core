@@ -13,7 +13,7 @@ This document records allowed technologies and their decision state. Product seq
 - **Spring Modulith:** 2.1.1.
 - **Web framework:** Spring MVC with a synchronous imperative model.
 - **Persistence:** Spring Data JDBC and `JdbcClient`.
-- **Database:** PostgreSQL 18; one database instance and no business schema in bootstrap.
+- **Database:** PostgreSQL 18; one database instance. The current durable baseline has the module-owned `marketdata` schema and its append-only `raw_chain_events` table keyed by exact CAIP-2 network identity, transaction value, canonical event locator and provider.
 - **Migrations:** Flyway managed by Spring Boot dependency management.
 - **Build:** Maven Wrapper with checksum-verified Maven 3.9.16, one Maven module and one deployable JAR.
 - **Health:** Spring Boot Actuator health endpoint.
@@ -37,18 +37,25 @@ This document records allowed technologies and their decision state. Product seq
 
 ### Modularity and persistence ownership
 
-The application is one modular monolith with `kernel`, `governance`, `marketdata`, `risk`, `wallet`, `strategy`, `measurement` and `research`. Cross-module access uses only named public interfaces. Each data-owning module owns its SQL, repositories, row mappers and Flyway migrations as defined by [ADR 0004](adr/0004-module-data-ownership.md).
+The application is one modular monolith with `kernel`, `marketdata`, `risk`, `wallet`, `signal` and `evaluation`. Cross-module access uses only named public interfaces. Each data-owning module owns its SQL, repositories, row mappers and Flyway migrations as defined by [ADR 0004](adr/0004-module-data-ownership.md).
+
+### Research data and arithmetic
+
+- Authoritative time uses `java.time.Instant`/UTC and explicitly supplied `Clock` or reference instants.
+- Chain-native quantities retain raw integer units; authoritative calculated financial values use `BigDecimal` and PostgreSQL `NUMERIC` with explicit precision, scale and rounding selected by the owning change.
+- Binary `float`/`double` is not used for authoritative amounts, prices, costs, PnL, ratios or scores.
+- Dataset/configuration fingerprints, build/source revision, algorithm version, cutoff and seed form the reproducibility evidence described in [Research reproducibility](REPRODUCIBILITY.md).
 
 ## Target MVP
 
 The following are planned directions, not installed bootstrap components:
 
 - chain-aware kernel identities;
-- idempotent module-owned market-data storage;
+- provider-backed market-data ingestion on top of the implemented idempotent raw-observation storage;
 - Solana provider adapters, normalization and replay;
 - table-specific partitioning where the owning change demonstrates volume, retention and query-pattern need;
 - structured logging, correlation metadata and workload-specific operational metrics;
-- governance gates before PAPER/LIVE execution.
+- a dedicated gate design before any future PAPER/LIVE execution; execution is absent from the MVP topology.
 
 A concrete provider requires coverage, rate-limit and commercial-terms validation, an OpenSpec design and explicit approval for any new production dependency. An ADR is required only when its introduction changes the provider boundary or general architecture.
 
@@ -85,5 +92,6 @@ Helius, Bitquery, DexScreener and GoPlus are Target MVP candidates, not approved
 
 - [Operating contract](OPERATIONS.md)
 - [Testing strategy](TESTING.md)
+- [Research reproducibility](REPRODUCIBILITY.md)
 - [Spring Boot 4.1.1 requirements](https://docs.spring.io/spring-boot/system-requirements.html)
 - [Spring Modulith](https://spring.io/projects/spring-modulith/)

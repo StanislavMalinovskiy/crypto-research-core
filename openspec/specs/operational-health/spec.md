@@ -12,7 +12,7 @@ The configured application SHALL start a Spring context against a migrated Postg
 #### Scenario: Foundation startup
 - **WHEN** the application starts with a reachable PostgreSQL database
 - **THEN** the application context SHALL become ready
-- **AND** no market-data, strategy or execution integration SHALL be invoked.
+- **AND** no market-data provider, signal processing or execution integration SHALL be invoked.
 
 ### Requirement: Health endpoint
 The application SHALL expose aggregate, liveness and readiness Actuator health information while leaving unrelated management endpoints unexposed by default.

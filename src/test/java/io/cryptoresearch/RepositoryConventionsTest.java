@@ -28,8 +28,12 @@ class RepositoryConventionsTest {
 			"paper_trades", "paper_fills", "owner_clusters", "risk_filter_decisions",
 			"execution_simulations", "venue_policy_decisions");
 	private static final Set<String> EXPECTED_MODULES = Set.of(
-			"kernel", "governance", "marketdata", "risk",
-			"wallet", "strategy", "measurement", "research");
+			"kernel", "marketdata", "risk", "wallet", "signal", "evaluation");
+	private static final List<String> REMOVED_MODULE_REFERENCES = List.of(
+			"`governance`", "`strategy`", "`measurement`", "`research`");
+	private static final List<String> TOPOLOGY_DOCUMENTS = List.of(
+			"AGENTS.md", "README.md", "docs/PROJECT_SUMMARY.md", "docs/ARCHITECTURE.md",
+			"docs/TECH_STACK.md", "docs/modules/README.md");
 
 	private final Path repositoryRoot = Path.of("").toAbsolutePath().normalize();
 	private final Path moduleRoot = repositoryRoot.resolve("src/main/java/io/cryptoresearch");
@@ -111,17 +115,50 @@ class RepositoryConventionsTest {
 	@Test
 	void publicApiRootsMatchExpectedModules() throws IOException {
 		try (Stream<Path> modules = Files.list(moduleRoot)) {
-			var apiRoots = modules.filter(Files::isDirectory)
+			var moduleDirectories = modules.filter(Files::isDirectory).toList();
+			var moduleNames = moduleDirectories.stream()
+					.map(module -> module.getFileName().toString())
+					.collect(Collectors.toUnmodifiableSet());
+			var apiRoots = moduleDirectories.stream()
 					.map(module -> module.resolve("api"))
 					.filter(Files::isDirectory)
 					.toList();
-			var moduleNames = apiRoots.stream()
-					.map(apiRoot -> apiRoot.getParent().getFileName().toString())
-					.collect(Collectors.toUnmodifiableSet());
 
 			assertThat(moduleNames).containsExactlyInAnyOrderElementsOf(EXPECTED_MODULES);
+			assertThat(apiRoots).hasSize(EXPECTED_MODULES.size());
 			assertThat(apiRoots).allSatisfy(this::containsJavaSource);
 		}
+	}
+
+	@Test
+	void activeTopologyDocumentationUsesExactlyCurrentModules() throws IOException {
+		var violations = new ArrayList<String>();
+
+		for (var relativePath : TOPOLOGY_DOCUMENTS) {
+			var document = repositoryRoot.resolve(relativePath);
+			var content = Files.readString(document);
+			EXPECTED_MODULES.stream()
+					.map(module -> "`" + module + "`")
+					.filter(module -> !content.contains(module))
+					.map(module -> relativePath + " does not name current module: " + module)
+					.forEach(violations::add);
+			REMOVED_MODULE_REFERENCES.stream()
+					.filter(content::contains)
+					.map(module -> relativePath + " presents removed module as current: " + module)
+					.forEach(violations::add);
+		}
+
+		try (Stream<Path> pages = Files.list(repositoryRoot.resolve("docs/modules"))) {
+			var documentedModules = pages.filter(Files::isRegularFile)
+					.map(path -> path.getFileName().toString())
+					.filter(name -> name.endsWith(".md"))
+					.filter(name -> !name.equals("README.md"))
+					.map(name -> name.substring(0, name.length() - 3))
+					.collect(Collectors.toUnmodifiableSet());
+			assertThat(documentedModules).containsExactlyInAnyOrderElementsOf(EXPECTED_MODULES);
+		}
+
+		assertThat(violations).isEmpty();
 	}
 
 	private List<Path> markdownFiles() throws IOException {

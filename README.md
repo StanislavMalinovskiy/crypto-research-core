@@ -12,7 +12,7 @@
 - Spring Data JDBC и `JdbcClient`; JPA/Hibernate не используются.
 - PostgreSQL 18 + Flyway.
 - Один Git-репозиторий, один Maven-модуль, один deployable JAR.
-- Восемь логических модулей Spring Modulith: `kernel`, `governance`, `marketdata`, `risk`, `wallet`, `strategy`, `measurement`, `research`.
+- Шесть логических модулей Spring Modulith: `kernel`, `marketdata`, `risk`, `wallet`, `signal`, `evaluation`.
 
 ## Документы
 
@@ -24,6 +24,7 @@
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Текущее сводное состояние архитектуры |
 | [docs/OPERATIONS.md](docs/OPERATIONS.md) | Runtime, configuration, secrets, health и resource budgets |
 | [docs/TESTING.md](docs/TESTING.md) | Уровни тестов и правила выбора test infrastructure |
+| [docs/REPRODUCIBILITY.md](docs/REPRODUCIBILITY.md) | UTC, точная арифметика, provenance и deterministic research contract |
 | [docs/GLOSSARY.md](docs/GLOSSARY.md) | Развёрнутый глоссарий проекта |
 | [docs/modules/README.md](docs/modules/README.md) | Карта документации логических модулей |
 | [docs/adr/README.md](docs/adr/README.md) | Журнал архитектурных решений |
@@ -49,9 +50,9 @@
 
 - Active changes: see [openspec/changes](openspec/changes/) excluding its `archive/` directory.
 - Completed bootstrap: [2026-09-13-bootstrap-modular-foundation](openspec/changes/archive/2026-09-13-bootstrap-modular-foundation/).
-- Next planned business change: `establish-chain-identity-kernel`.
+- Accepted behavior: see [openspec/specs](openspec/specs/); active change names are intentionally not pinned here because completed changes move to `archive/`.
 
-После kernel change отдельные changes последовательно формируют idempotent `marketdata` vertical slice. Governance gates остаются целевой capability перед PAPER/LIVE execution, а не частью технического bootstrap.
+Текущий storage boundary сохраняет stable-inclusion raw provider evidence с точным CAIP-2 network identity и payload в `marketdata.raw_chain_events`, принимает равный retry без изменения первой записи и отклоняет конфликтующие immutable evidence. Сам storage не проверяет finality; provisional ingestion требует отдельного finality/reorg change. Следующий walking skeleton использует записанный provider fixture: raw input → normalized swap → signal snapshot → outcome → reproducible report. Реальный provider adapter следует отдельным change. PAPER/LIVE execution отсутствует в MVP; любые execution gates потребуют отдельного одобренного change и ADR.
 
 ## Java baseline
 

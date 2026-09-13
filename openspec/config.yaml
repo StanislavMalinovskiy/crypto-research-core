@@ -1,12 +1,12 @@
 schema: spec-driven
 
 context: |
-  Crypto Research Core is a research-first crypto signal measurement system.
+  Crypto Research Core is a research-first crypto signal evaluation system.
   Baseline: Java 25, Spring Boot 4.1.1, Spring Modulith 2.1.1, Maven,
   synchronous Spring MVC, Spring Data JDBC/JdbcClient, PostgreSQL and Flyway.
   It remains one repository, one Maven module, one deployable JAR and one database.
-  Package root: io.cryptoresearch. Modules: kernel, governance, marketdata, risk,
-  wallet, strategy, measurement and research.
+  Package root: io.cryptoresearch. Modules: kernel, marketdata, risk, wallet,
+  signal and evaluation.
   Read AGENTS.md and these project sources before planning or applying work:
   docs/PROJECT_SUMMARY.md, docs/ROADMAP.md, docs/ARCHITECTURE.md,
   docs/TECH_STACK.md and docs/modules/.

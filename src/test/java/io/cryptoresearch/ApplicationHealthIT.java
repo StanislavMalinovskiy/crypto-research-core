@@ -51,8 +51,14 @@ class ApplicationHealthIT {
 		assertThat(liveness.body()).contains("\"livenessState\"").doesNotContain("\"db\"");
 		assertThat(readiness.body()).contains("\"readinessState\"", "\"db\"");
 		assertThat(jdbcClient.sql("SHOW server_version").query(String.class).single()).isEqualTo("18.6");
-		assertThat(flyway.info().applied()).isEmpty();
+		assertThat(flyway.info().applied()).singleElement().satisfies(migration -> {
+			assertThat(migration.getVersion().getVersion()).isEqualTo("1");
+			assertThat(migration.getDescription()).isEqualTo("create marketdata raw chain events");
+		});
 		assertThat(flyway.info().pending()).isEmpty();
+		assertThat(jdbcClient.sql("SELECT to_regclass('marketdata.raw_chain_events') IS NOT NULL")
+				.query(Boolean.class)
+				.single()).isTrue();
 	}
 
 	private HttpResponse<String> get(String path) throws Exception {

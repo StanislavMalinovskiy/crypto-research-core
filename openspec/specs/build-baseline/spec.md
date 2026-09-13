@@ -29,8 +29,8 @@ The build SHALL compile, test and run all production and test sources on Java 25
 
 #### Scenario: Exact public API roots
 - **WHEN** repository verification inspects public module API source roots
-- **THEN** exactly the eight expected business-module `api` roots SHALL be present
-- **AND** no unexpected top-level module API root SHALL be accepted.
+- **THEN** exactly the six expected business-module `api` roots SHALL be present
+- **AND** no removed or unexpected top-level module API root SHALL be accepted.
 
 ### Requirement: Synchronous application baseline
 The deployable application SHALL use synchronous servlet and JDBC programming models and SHALL enable virtual threads for suitable blocking work.

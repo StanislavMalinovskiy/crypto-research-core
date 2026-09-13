@@ -14,13 +14,11 @@ class CryptoResearchApplicationTests {
 
 	private static final Map<String, Set<String>> EXPECTED_DEPENDENCIES = Map.of(
 			"kernel", Set.of(),
-			"governance", Set.of("kernel::api"),
 			"marketdata", Set.of("kernel::api"),
 			"risk", Set.of("kernel::api", "marketdata::api"),
 			"wallet", Set.of("kernel::api", "marketdata::api"),
-			"strategy", Set.of("kernel::api", "marketdata::api", "risk::api", "wallet::api"),
-			"measurement", Set.of("kernel::api", "marketdata::api", "strategy::api", "governance::api"),
-			"research", Set.of("marketdata::api", "risk::api", "wallet::api", "strategy::api", "measurement::api"));
+			"signal", Set.of("kernel::api", "marketdata::api", "risk::api", "wallet::api"),
+			"evaluation", Set.of("kernel::api", "marketdata::api", "signal::api"));
 
 	@Test
 	void verifiesApplicationModuleBoundaries() {
@@ -28,8 +26,7 @@ class CryptoResearchApplicationTests {
 
 		modules.verify();
 		assertThat(moduleNames(modules)).containsExactlyInAnyOrder(
-				"kernel", "governance", "marketdata", "risk",
-				"wallet", "strategy", "measurement", "research");
+				"kernel", "marketdata", "risk", "wallet", "signal", "evaluation");
 	}
 
 	@Test

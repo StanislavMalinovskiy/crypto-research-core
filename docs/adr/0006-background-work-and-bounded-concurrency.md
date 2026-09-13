@@ -9,7 +9,7 @@ Polling, ingestion, enrichment, replay and measurement dominate the expected wor
 
 ## Decision
 
-Keep one codebase and one deployable JAR. Instances may select workload roles such as `api`, `ingestion` or `measurement`; roles enable workloads but do not create service ownership or separate artifacts.
+Keep one codebase and one deployable JAR. Instances may select workload roles such as `api`, `ingestion` or `evaluation`; roles enable workloads but do not create service ownership or separate artifacts.
 
 Every recurring or recoverable job is idempotent and claims work through PostgreSQL. Short database-local batches may use `FOR UPDATE SKIP LOCKED`. Work that spans remote calls uses a durable expiring lease such as `locked_until`, committed before provider I/O. Claim, completion and retry transitions carry stable idempotency keys.
 

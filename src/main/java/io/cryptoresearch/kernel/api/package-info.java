@@ -1,4 +1,4 @@
-/** Public contracts of the kernel module. */
+/** Stable CAIP-2-network-aware identity contracts shared by business modules. */
 @NamedInterface("api")
 package io.cryptoresearch.kernel.api;
 

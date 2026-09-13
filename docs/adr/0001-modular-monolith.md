@@ -1,6 +1,6 @@
 # ADR 0001: Spring Modulith modular monolith
 
-- Status: Accepted
+- Status: Accepted for deployment shape; module topology superseded by [ADR 0008](0008-six-module-mvp-topology.md)
 - Date: 2026-09-13
 
 ## Context
@@ -9,7 +9,7 @@ The research platform needs strong business boundaries and one operationally sim
 
 ## Decision
 
-Use one repository, one Maven module, one Spring Boot application, one deployable JAR and one PostgreSQL database. Define the eight vertical package-based modules in [Architecture](../ARCHITECTURE.md) with Spring Modulith descriptors and automated `ApplicationModules.verify()` checks.
+Use one repository, one Maven module, one Spring Boot application, one deployable JAR and one PostgreSQL database. The original bootstrap defined eight vertical package-based modules with Spring Modulith descriptors and automated `ApplicationModules.verify()` checks. [ADR 0008](0008-six-module-mvp-topology.md) supersedes only that initial topology; the modular-monolith deployment decision remains accepted.
 
 ## Consequences
 

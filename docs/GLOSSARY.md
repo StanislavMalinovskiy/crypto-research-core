@@ -8,14 +8,23 @@
 | Термин | Простое объяснение | Где используется |
 | --- | --- | --- |
 | Smart Money Platform | Личная платформа для поиска, проверки и мониторинга торговых гипотез по on-chain данным. | Весь проект |
-| v7.7 | Текущая версия плана: synchronous Spring Modulith modular monolith, research-first, measurement-first, chain-ready core, real execution only through gates. | Roadmap — source of truth |
+| v7.8 | Текущая версия плана: synchronous six-module Spring Modulith modular monolith, research-first, chain-ready signal/evaluation core; execution отсутствует в MVP. | Roadmap — product sequencing |
+| Current modules | `kernel`, `marketdata`, `risk`, `wallet`, `signal`, `evaluation`; все межмодульные вызовы идут только через named `api`. | Architecture / ADR 0008 |
+| Reproducible result | Одинаковые dataset snapshot/cutoff, build/commit, algorithm/configuration и seed дают одинаковый упорядоченный вычислительный результат. | Reproducibility contract |
+| Provenance manifest | Идентичность build/source, algorithm/configuration, dataset, cutoff и seed, необходимая для аудита результата. | Evaluation evidence |
+| Dataset fingerprint | Algorithm-qualified checksum канонического immutable dataset snapshot. | Market-data lineage |
+| Deterministic tie-break | Стабильный вторичный ключ, устраняющий неоднозначность при равных значениях. | Signal/evaluation ordering |
+| ChainId | Канонический lowercase идентификатор сети; `solana` — текущая MVP chain. | `kernel::api` |
+| TransactionId | Сеть плюс opaque идентификатор транзакции; для Solana value является signature, для EVM — transaction hash. | `kernel::api` |
+| EventId | `TransactionId` плюс opaque locator конкретного события внутри транзакции. | `kernel::api`, marketdata identity |
+| BlockPosition | Неотрицательная упорядоченная позиция блока: Solana slot или EVM block number; это не block hash и не Solana block height. | `kernel::api`, marketdata ordering |
 | Research-first | Сначала исследуем и проверяем гипотезы, а не сразу торгуем реальными деньгами. | Философия проекта |
 | Production-core | Ядро системы пишется качественно сразу: домен, БД, ingestion, backtest, paper, observability. | Архитектура |
 | Alpha | Торговое преимущество: сигнал или закономерность, которая потенциально даёт прибыль. | Стратегии, research |
 | Alpha-гипотеза | Предположение, что конкретный сигнал может зарабатывать. | Strategy experiments |
 | Disposable alpha | Торговые гипотезы можно менять и удалять, если они не прошли проверку. | Философия v5 |
 | Core is permanent | Ядро должно быть стабильным и переиспользуемым для разных стратегий. | Архитектурный принцип |
-| Execution is gated | Реальное исполнение сделок запрещено, пока будущий governance change не определит и не проверит необходимые политики. | Target governance capability |
+| Execution is excluded | MVP не содержит signing, order submission или PAPER/LIVE execution; будущий execution change обязан определить и проверить необходимые gates. | Current architecture constraint |
 | Capital is protected | Любой сигнал проходит через risk/capital manager до позиции. | Capital Manager |
 | Data first | Сначала качественные данные, потом стратегии. | Roadmap |
 | Research second | После данных проверяются гипотезы. | Roadmap |
@@ -26,7 +35,7 @@
 ## 2. Режимы исполнения и gates
 | Термин | Простое объяснение | Где используется |
 | --- | --- | --- |
-| ExecutionMode | Целевой режим работы: research, paper или live; точный контракт пока не утверждён. | Future governance change |
+| ExecutionMode | **Deferred concept:** возможный режим research, paper или live; тип и граница не утверждены и отсутствуют в MVP. | Future execution change |
 | BACKTEST | Проверка стратегии на исторических данных. | Backtest Engine |
 | PAPER | Торговля на виртуальном капитале в реальном времени. | Paper Trading |
 | ALERT_ONLY | Система только показывает сигнал, но не исполняет сделку. | Dashboard, alerts |
@@ -46,8 +55,8 @@
 | Wallet | Адрес кошелька в блокчейне. | Wallet Intelligence |
 | Token | Криптоактив/монета в сети. | Token Intelligence |
 | Swap | Обмен одного актива на другой через DEX/AMM. | `swaps` table |
-| Signature | Уникальный идентификатор транзакции в Solana. | Logs, idempotency |
-| Block slot | Порядковая позиция блока/слота в Solana. | Ordering, indexes |
+| Signature | Solana transaction identity value, используемое внутри chain-aware `TransactionId`. | Logs, idempotency |
+| Block slot | Порядковая позиция в Solana, отображаемая в `BlockPosition`; отличается от `blockHeight` и `blockhash`. | Ordering, indexes |
 | Program ID | Адрес smart contract/program в Solana. | Parsers, filters |
 | Pump.fun | Площадка/протокол запуска мемкоинов на Solana. | Ingest source |
 | PumpSwap | AMM/обменный слой, связанный с pump.fun экосистемой. | Swap parsing |
@@ -112,14 +121,14 @@
 | `signal_reasoning` | Объяснение причин сигнала. | Explainability |
 | `paper_trades` | **Historical/deferred name:** возможные виртуальные сделки paper trading; текущая схема не утверждена. | Future PAPER change |
 | `paper_fills` | **Historical/deferred name:** возможные детали виртуального исполнения; текущая схема не утверждена. | Future PAPER change |
-| `backtest_runs` | **Target draft name:** метаданные запусков backtest; текущая схема не утверждена. | Future research change |
-| `capital_events` | **Target draft name:** события capital policy; текущая схема не утверждена. | Future governance/measurement change |
+| `backtest_runs` | **Target draft name:** метаданные запусков backtest; текущая схема не утверждена. | Future evaluation change |
+| `capital_events` | **Target draft name:** события capital policy; текущая схема не утверждена. | Future execution/evaluation change |
 | `system_state` | **Target draft name:** технический прогресс процессов; ownership и схема не утверждены. | Future owning-module change |
 | `owner_clusters` | **Historical/deferred name:** возможные кластеры связанных кошельков; не MVP schema. | Future wallet research |
 | `risk_filter_decisions` | **Historical/deferred name:** прежнее имя решений risk filters. | Future risk change |
-| `strategy_experiments` | Версионированные research-гипотезы. | Research module |
-| `execution_simulations` | **Historical/deferred name:** прежняя модель расчётных издержек исполнения. | Future measurement change |
-| `venue_policy_decisions` | **Historical/deferred name:** прежнее имя решений legal/venue gate. | Future governance change |
+| `strategy_experiments` | **Historical/deferred name:** прежнее имя версионированных гипотез; новая схема и имя будут утверждены change для `signal`/`evaluation`. | Future signal/evaluation change |
+| `execution_simulations` | **Historical/deferred name:** прежняя модель расчётных издержек исполнения. | Future evaluation change |
+| `venue_policy_decisions` | **Historical/deferred name:** прежнее имя решений legal/venue gate. | Future execution change |
 | Idempotency | Повторный запуск не должен создавать дубликаты или ломать состояние. | Ingest, backfill |
 | `ON CONFLICT DO NOTHING` | SQL-паттерн для безопасной вставки без дублей. | Persistence |
 ---
@@ -220,16 +229,16 @@
 | --- | --- | --- |
 | Strategy | Правило/алгоритм, который генерирует сигнал. | Strategy Framework |
 | Strategy Framework | Единый механизм подключения и запуска стратегий. | Phase 6 |
-| Entry strategy | Стратегия входа в позицию. | Strategy API |
+| Entry strategy | Исследовательское правило формирования entry-сигнала; не execution strategy. | Signal API |
 | Exit strategy | Стратегия выхода из позиции. | Exit Engine |
-| Strategy plugin | Target concept: отдельная реализация стратегии внутри модуля `strategy`; отдельного Maven-модуля нет. | `strategy` |
+| Signal rule | Target concept: versioned detection/scoring rule внутри модуля `signal`; отдельного Maven-модуля нет. | `signal` |
 | Strategy version | Версия стратегии, чтобы сравнивать результаты корректно. | Research |
-| StrategyConfig | Конфигурация стратегии. | Strategy API |
+| SignalDefinitionConfig | Версионированная конфигурация signal rule. | Signal API |
 | StrategyConfigSnapshot | Снимок настроек на момент backtest/paper. | Reproducibility |
-| StrategyExperiment | Исследовательская гипотеза с версией, конфигом и статусом. | Research module |
+| Signal experiment | Исследовательская гипотеза с версией, конфигом и статусом; точный контракт пока не утверждён. | Signal/evaluation boundary |
 | Hypothesis | Описание предположения, которое проверяет стратегия. | Research |
 | SmartWalletRadarV1 | Первая стратегия: сигнал от сильных кошельков после фильтров. | MVP strategy |
-| StrategyContext | Контекст для entry strategy. | Strategy API |
+| Signal context | Point-in-time контекст для signal rule. | Signal API |
 | ExitContext | Контекст для exit strategy. | Exit API |
 | StrategySignal | Сигнал от стратегии с причиной и confidence. | Domain |
 | SignalCandidate | Кандидат в сигнал до risk/capital filters. | Strategy pipeline |
@@ -358,7 +367,7 @@
 | Spring Boot 4.1.1 | Текущая стабильная версия Spring Boot, совместимая с Java 25. | Current baseline |
 | Spring MVC | Синхронный REST/API и control-plane поверх virtual threads; WebFlux не используется. | Application framework |
 | Vert.x / WebFlux / Reactor | Не используются в проекте. Прикладная модель синхронная и императивная; транспортный WebSocket callback изолирован внутри adapter. | Explicitly excluded |
-| Maven single-module | Один Maven-модуль, один deployable JAR и восемь логических Spring Modulith application modules. | Current build structure |
+| Maven single-module | Один Maven-модуль, один deployable JAR и шесть логических Spring Modulith application modules: `kernel`, `marketdata`, `risk`, `wallet`, `signal`, `evaluation`. | Current build structure |
 | Module-local `domain` package | Чистый домен внутри owning vertical module, без Spring/JPA/provider dependencies. | Architecture |
 | Module-owned persistence | Каждый вертикальный модуль владеет своими repositories, SQL, Flyway migrations и RowMapper; общего persistence-модуля нет. | Data access |
 | Module-owned provider adapters | Выбранные будущими changes adapters принадлежат owning-модулям; наружу выставляются только domain-neutral contracts. | DIP |
@@ -421,10 +430,10 @@
 | Hyperliquid | On-chain/perp venue; технически доступно, но юридически требует осторожности. | Possible future strategy |
 | Polymarket | Prediction market; обсуждался как рискованный research-направление. | Alternative strategy |
 | Prop firm | Компания, дающая капитал трейдерам после challenge/evaluation. | Alternative discussion |
-| Legal risk | Риск нарушения правил/закона/регуляторных требований. | Future execution governance |
+| Legal risk | Риск нарушения правил/закона/регуляторных требований. | Future execution policy |
 | Banking risk | Риск вопросов от банка при вводе/выводе средств. | Legal discussion |
 | Source of funds | Происхождение средств, которое могут попросить объяснить. | AML/KYC |
-| Compliance score | Условная будущая оценка юридической чистоты стратегии/venue. | Deferred governance idea |
+| Compliance score | Условная будущая оценка юридической чистоты стратегии/venue. | Deferred execution-policy idea |
 ---
 ## 18. Альтернативные стратегии из обсуждения
 | Термин | Простое объяснение | Где используется |

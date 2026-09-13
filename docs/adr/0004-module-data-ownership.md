@@ -11,7 +11,7 @@ Package boundaries do not prevent a module from querying another module's tables
 
 Every table, SQL statement, repository, row mapper and migration has exactly one owning module. Another module cannot access that table directly through SQL, joins, repositories or persistence entities.
 
-Each module that owns durable business data uses a same-named PostgreSQL schema. `kernel` never owns a schema. `governance` receives one only when real governance state is introduced. Flyway owns all schema changes through one database-wide ordered history; migrations are grouped under `db/migration/<module>/` and introduce a module schema together with its first real object.
+Each module that owns durable business data uses a same-named PostgreSQL schema. `kernel` never owns a schema. Under the current topology, `marketdata`, `risk`, `wallet`, `signal` and `evaluation` receive schemas only with their first real durable object. Flyway owns all schema changes through one database-wide ordered history; migrations are grouped under `db/migration/<module>/` and introduce a module schema together with its first real object.
 
 Modules exchange data through named public APIs, immutable projections or defined events. An analytical cross-module read model requires a separate ADR naming its owner, refresh semantics and permitted source access.
 
