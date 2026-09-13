@@ -1,0 +1,44 @@
+{
+  "description": "Record project subagent lifecycle events without prompt or response content.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "pwsh -NoProfile -File \"$(git rev-parse --show-toplevel)/.codex/hooks/log-subagent.ps1\"",
+            "commandWindows": "pwsh -NoProfile -File \"C:/git/crypto-research/crypto-research-core/.codex/hooks/log-subagent.ps1\"",
+            "timeout": 5,
+            "statusMessage": "Checking subagent logging"
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "pwsh -NoProfile -File \"$(git rev-parse --show-toplevel)/.codex/hooks/log-subagent.ps1\"",
+            "commandWindows": "pwsh -NoProfile -File \"C:/git/crypto-research/crypto-research-core/.codex/hooks/log-subagent.ps1\"",
+            "timeout": 5,
+            "statusMessage": "Logging subagent start"
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "pwsh -NoProfile -File \"$(git rev-parse --show-toplevel)/.codex/hooks/log-subagent.ps1\"",
+            "commandWindows": "pwsh -NoProfile -File \"C:/git/crypto-research/crypto-research-core/.codex/hooks/log-subagent.ps1\"",
+            "timeout": 5,
+            "statusMessage": "Logging subagent stop"
+          }
+        ]
+      }
+    ]
+  }
+}

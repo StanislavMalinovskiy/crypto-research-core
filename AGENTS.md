@@ -34,6 +34,16 @@ Read `docs/REPRODUCIBILITY.md` before introducing time-dependent logic, financia
 
 Also read the nearest module-level `AGENTS.md` before changing that module, if one exists. A nearer file may add module-specific rules but may not relax this root contract.
 
+## Optional Codex subagents
+
+The primary agent acts as Architect and is the only role that talks to the user, spawns subagents, routes verdicts and owns the final result. Project-scoped Developer, Tester, Reviewer and Researcher roles are described in `docs/AGENT_WORKFLOW.md`. Subagents never spawn other subagents; `.codex/config.toml` enforces `max_depth = 1`.
+
+Before every implementation task, the Architect must assess test impact. When compilation requires a new public contract, Developer first returns a behavior-free `SKELETON_READY`; Tester then owns new or changed behavioral test evidence and normally establishes a failing test from the active OpenSpec change before Developer implements production behavior. Developer never changes or bypasses tests, fixtures, expected results, test configuration or discovery, and never adds production behavior that exists only for a test artifact. Reviewer is read-only and always checks invariants, specification alignment and test adequacy.
+
+Use Tester for observable behavior, bug fixes, public APIs, schemas or migrations, persistence or idempotency, parsers or normalization, financial and point-in-time logic, and provider contracts. Architect may record `TEST_NOT_NEEDED` for documentation, comments, formatting, mechanical configuration, pure renames, or internal refactoring already covered by unchanged tests.
+
+Prefer one writer per file set. Give each subagent a concise task capsule with goal, scope, phase, repair round, relevant sources, constraints, acceptance criteria, checks and expected output. Reuse the same agent for corrections. Architect owns one limit of at most three repair routings; subagents must not create nested retry loops. `TEST_SUSPECT` goes to Reviewer for `TEST_WRONG`, `CODE_WRONG` or `SPEC_AMBIGUOUS`; it is not itself a repair round. Tester owns the full Maven quality gate for implementation tasks; Architect runs it when Tester is legitimately omitted. Architect owns required OpenSpec and documentation updates after the code gate and before completion. Lifecycle events are recorded locally in `.codex-logs/subagents.jsonl` by project hooks.
+
 ## Architecture rules
 
 - Package root: `io.cryptoresearch`.

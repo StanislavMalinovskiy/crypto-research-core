@@ -19,7 +19,7 @@
 | Файл | Назначение |
 |---|---|
 | [docs/DELIVERY_PLAN.md](docs/DELIVERY_PLAN.md) | Текущий этап, следующий change и укрупнённый путь до Evidence Report |
-| [docs/AGENT_WORKFLOW.md](docs/AGENT_WORKFLOW.md) | Возможный пятиролевой процесс работы с Codex-агентами |
+| [docs/AGENT_WORKFLOW.md](docs/AGENT_WORKFLOW.md) | Адаптивный пятиролевой процесс работы с Codex-агентами и схема ответственности за тесты |
 | [docs/ROADMAP.md](docs/ROADMAP.md) | Продуктовые гипотезы, долгосрочные возможности и приоритеты |
 | [docs/PROJECT_SUMMARY.md](docs/PROJECT_SUMMARY.md) | Краткий контекст проекта для новой сессии |
 | [docs/TECH_STACK.md](docs/TECH_STACK.md) | Разрешённые технологии и версии |
@@ -30,6 +30,7 @@
 | [docs/GLOSSARY.md](docs/GLOSSARY.md) | Развёрнутый глоссарий проекта |
 | [docs/modules/README.md](docs/modules/README.md) | Карта документации логических модулей |
 | [docs/adr/README.md](docs/adr/README.md) | Журнал архитектурных решений |
+| [docs/notes/AGENT_ORCHESTRATION_RESEARCH.md](docs/notes/AGENT_ORCHESTRATION_RESEARCH.md) | Непринятые идеи и вопросы по развитию агентного конвейера |
 | [docs/archive/API_SERVICES_ARCHIVE.md](docs/archive/API_SERVICES_ARCHIVE.md) | Архив обзора API и сервисов; не источник истины |
 | [docs/archive/PAID_API_ARCHIVE.md](docs/archive/PAID_API_ARCHIVE.md) | Архив платных API; не источник истины |
 | [docs/archive/LEGACY_V5_ARCHITECTURE_MAPPING.md](docs/archive/LEGACY_V5_ARCHITECTURE_MAPPING.md) | Историческая v5 multi-module mapping; не источник истины |
