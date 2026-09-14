@@ -34,6 +34,9 @@ jobs:
         with:
           node-version: '22'
 
+      - name: Verify test integrity
+        run: pwsh -NoProfile -File .codex/scripts/verify-test-integrity.ps1
+
       - name: Verify Maven build
         run: ./mvnw clean verify
 

@@ -1,16 +1,32 @@
 ## 1. Agent Routing Contract
 
-- [ ] 1.1 Reconcile `AGENTS.md`, `docs/AGENT_WORKFLOW.md` and the Architect, Developer, Tester and Reviewer TOML files so skeleton, targeted-test, full-verification and single repair-counter ownership match the spec; verify only Reviewer can emit `CODE_WRONG`, `TEST_WRONG` or `SPEC_AMBIGUOUS` and Tester emits `TEST_SUSPECT` instead.
-- [ ] 1.2 Verify Developer guidance explicitly forbids test/fixture/configuration edits, test disabling or narrowing, test-specific production branches and full `mvnw clean verify`, while retaining targeted Surefire/Failsafe execution and the `TEST_SUSPECT` exit.
+- [x] 1.1 Reconcile `AGENTS.md` and `docs/AGENT_WORKFLOW.md` around Architect-owned red, phase-integrity and full Maven gates; verify the workflow contains the canonical role/mode status table, binding Reviewer rule, `SPEC_INCOMPLETE` routing and logged shared repair counter.
+- [x] 1.2 Update Developer, Tester, Reviewer and Researcher TOML files to match the closed status protocol; verify Tester no longer owns green verification, Reviewer has distinct modes plus a read-only sandbox, Tester uses high reasoning and every project subagent forbids nested delegation.
+- [x] 1.3 Add repository-convention coverage for the committed role configuration; verify forbidden `ultra`, missing Reviewer read-only mode, drifted role status sets and obsolete Tester self-attestation are rejected.
+- [x] 1.4 Add focused executable tests for repair-routing log validation, JSONL fields and concurrent append behavior; run them against the behavior-free skeleton and confirm an expected red result.
+- [x] 1.5 Implement the repair-routing log command and record the current repair with loop, source status, owner and shared round number.
+- [x] 1.6 Add the parent-confirmed `EVIDENCE_CANDIDATE` path for missing-test audit repairs and verify it cannot substitute for initial red or implementation green gates.
+- [x] 1.7 Make `tests-evidence` a distinct parent-selected phase and remove every instruction that routes a green evidence repair through `tests-red`.
 
-## 2. Mechanical Test-Integrity Gate
+## 2. Phase Integrity Tool
 
-- [ ] 2.1 Add focused convention-test coverage for allowed Java test source and for disabled, ignored and unconditional-false-assumption examples; verify the new focused tests fail for every forbidden example and pass for the allowed example.
-- [ ] 2.2 Extend repository Java test-source inspection with the proven narrow checks and verify `mvnw.cmd test -Dtest=RepositoryConventionsTest` passes on the repository.
-- [ ] 2.3 Add XML-scoped checks for test-skip and test-selection configuration in Surefire, Failsafe, Maven properties and profiles; verify representative forbidden configurations are rejected while Maven Enforcer dependency exclusions remain allowed.
-- [ ] 2.4 Strengthen quality-gate inspection against committed Maven skip, selection and narrowing flags or environment settings; verify the current exact `./mvnw clean verify` workflow passes.
+- [x] 2.1 Add focused executable tests for the phase manifest covering unchanged, allowed, modified, added, deleted, already-dirty and nested `target` files while excluding only the repository Maven output directory; run the tests before implementation and confirm an expected behavioral red result.
+- [x] 2.2 Implement the phase-manifest tool with path plus SHA-256 snapshots, precise generated-output exclusions and positive allowlist verification; rerun its focused tests and confirm they pass.
+- [x] 2.3 Document the exact snapshot, verification and repair-routing log commands in the workflow and verify snapshot output remains outside the repository.
+- [x] 2.4 Make root generated-output exclusions platform-case-correct and verify differently cased root paths remain protected on case-sensitive filesystems.
 
-## 3. Verification
+## 3. Mechanical Test-Integrity Gate
 
-- [ ] 3.1 Run `mvnw.cmd clean verify` from the repository root and record a successful complete unit, integration and repository-convention result.
-- [ ] 3.2 Run `openspec validate --all --strict --no-interactive` and `openspec doctor`, then confirm the implementation diff contains no production, dependency, module, schema, migration or unrelated changes.
+- [x] 3.1 Add focused convention-test cases for allowed Java test source and disabled, ignored and parenthesized unconditional-false-assumption examples; verify every forbidden example is rejected and the allowed example passes.
+- [x] 3.2 Extend Java test-source inspection with the proven narrow checks and verify `mvnw.cmd test -Dtest=RepositoryConventionsTest` passes on the repository.
+- [x] 3.3 Add XML-scoped checks for root and execution-level Surefire/Failsafe configuration, project test properties and `.mvn/maven.config`; verify skip and selection settings including `it.test` are rejected while unrelated plugin properties and Maven Enforcer dependency exclusions remain allowed.
+- [x] 3.4 Strengthen quality-gate inspection against committed Maven skip, selection and narrowing flags or environment settings, including folded YAML values; verify the current exact `./mvnw clean verify` workflow passes.
+- [x] 3.5 Add a behavior-free independent pre-Maven integrity-check skeleton and focused executable tests proving skip, selection, self-exclusion, quoted YAML and `--define` variants fail before Maven.
+- [x] 3.6 Implement the independent preflight, run its red/green harness, and place the preflight before `clean verify` in Architect guidance and the existing CI quality-gate job.
+- [x] 3.7 Reject conditional or continue-on-error preflight steps and verify a detected bypass cannot proceed to Maven in the stable quality-gate job.
+
+## 4. Verification
+
+- [x] 4.1 Run the independent preflight followed by `mvnw.cmd clean verify` from the repository root and record successful complete unit, integration and repository-convention results.
+- [x] 4.2 Run `openspec validate --all --strict --no-interactive` and `openspec doctor`, then confirm the implementation diff contains no production, dependency, module, schema, migration or unrelated changes.
+- [x] 4.3 Obtain a read-only Reviewer `AUDIT` verdict for the stable diff and verify `APPROVE` is present before marking the change implementation complete.
