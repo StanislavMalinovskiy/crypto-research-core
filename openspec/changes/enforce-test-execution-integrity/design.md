@@ -12,6 +12,7 @@ This is repository tooling only. It owns no application module, database transac
 - Make every role response mechanically routable and every Reviewer verdict binding within a parent-selected mode.
 - Fail the Maven lifecycle for a small explicit set of committed test-bypass mechanisms.
 - Reuse current Maven, Git, PowerShell and CI infrastructure without a production dependency or new workflow job.
+- Reduce inherited prompt cost with isolated role context, find known bypass classes before implementation, and expose task cost by role and phase.
 
 **Non-Goals:**
 
@@ -42,6 +43,7 @@ Architect supplies a positive allowlist from the task capsule. This is stronger 
 - Developer: `SKELETON_READY`, `IMPL_DONE`, `TEST_SUSPECT`, `BLOCKED`.
 - Tester: `RED_CANDIDATE`, `EVIDENCE_CANDIDATE`, `SPEC_INCOMPLETE`, `TEST_SUSPECT`, `BLOCKED`.
 - Researcher: `RESEARCH_DONE`, `INCONCLUSIVE`, `BLOCKED`.
+- Reviewer `THREAT_CHECK`: `THREAT_CHECK_PASSED`, `THREATS_FOUND`.
 - Reviewer `ADJUDICATE`: `CODE_WRONG`, `TEST_WRONG`, `SPEC_AMBIGUOUS`.
 - Reviewer `AUDIT`: `AUDIT_FAILED`, `APPROVE`.
 
@@ -49,7 +51,7 @@ Every response starts with `STATUS: <value>`. Unknown, missing or mode-incompati
 
 ### Separate Reviewer modes and make valid verdicts binding
 
-Architect names exactly one Reviewer mode in the task capsule. `ADJUDICATE` answers only the cited specification/test/code conflict and cannot be preempted by an unrelated invariant audit. `AUDIT` inspects the stable diff after mechanical gates pass.
+Architect names exactly one Reviewer mode in the task capsule. `THREAT_CHECK` is a short pre-implementation review used only for CI, security/integrity or agent-workflow changes. It inspects the proposed design and planned tests for guard self-bypass, additions/deletions and path-case gaps, CI control flow, quoted or folded configuration, tests that are green before implementation, and phase/status conflicts. It returns only `THREAT_CHECK_PASSED` or `THREATS_FOUND`. `ADJUDICATE` answers only the cited specification/test/code conflict and cannot be preempted by an unrelated invariant audit. `AUDIT` inspects the stable diff after mechanical gates pass.
 
 A protocol-valid Reviewer verdict is binding: Architect may route it or escalate disagreement to the user, but may not substitute another substantive verdict. An `APPROVE` result cannot override an independently failed mechanical gate or incomplete Definition of Done. Reviewer uses `sandbox_mode = "read-only"` so its no-write rule is not prose-only.
 
@@ -62,6 +64,14 @@ A small PowerShell command appends those fields plus a UTC timestamp to `.codex-
 ### Keep project-agent execution deterministic
 
 All project roles explicitly use `gpt-5.6-sol`; Tester, Reviewer and Researcher use high reasoning and Developer uses medium. Root and roles must not use `ultra`, because automatic delegation conflicts with the supervised role graph. `max_depth = 1` remains the structural nested-subagent limit, and every role instruction retains the no-spawn rule.
+
+Every newly spawned project role uses `fork_turns: "none"`. Architect supplies a self-contained 200-400 word capsule with exactly the information needed for one pass: goal, phase, writable paths, frozen paths, requirement/scenario identifiers, files to read, acceptance checks and expected status. The capsule does not include the user-conversation history or other roles' reports. Corrections reuse the existing agent and receive only the delta needed for the next bounded pass.
+
+### Record assignment telemetry and a readable activity history
+
+The hook-owned `.codex-logs/subagents.jsonl` remains the low-level machine event stream. Architect records each logical assignment around the spawn or follow-up call with a stable assignment id, role, phase, short command summary, returned status and short result summary. The return record includes start/end timestamps and exact elapsed duration. Token fields are recorded only when the runtime supplies actual values; absent values are stored and displayed as `unavailable`, never estimated.
+
+A separate `.codex-logs/subagents-readable.log` contains one completed assignment per line in local time using `dd-MM-yy HH:mm`. Each line says what Architect sent, what the role returned, the phase, duration and token fields. Legacy hook events without a recorded logical dispatch remain exportable, but missing historical duration or task text is explicitly marked `unavailable`. Both files remain local and excluded from Git; no full prompt, response or transcript content is copied.
 
 ### Extend the existing repository convention test
 
@@ -93,5 +103,6 @@ The preflight recognizes the same narrow mechanisms as the repository convention
 4. Add and prove the independent test-integrity preflight, then place it before Maven in local guidance and the existing CI job.
 5. Update required OpenSpec and documentation artifacts before the final stable-diff audit.
 6. Run the complete preflight, Maven and OpenSpec gates and obtain Reviewer `APPROVE`; after approval, change only the audit-result task marker.
+7. Isolate new role context, insert the early threat check for high-risk workflow changes, and add assignment/token telemetry plus the readable activity export.
 
 Rollback removes the new repository tooling and restores the previous guidance together; there is no production or data migration.

@@ -30,3 +30,19 @@
 - [x] 4.1 Run the independent preflight followed by `mvnw.cmd clean verify` from the repository root and record successful complete unit, integration and repository-convention results.
 - [x] 4.2 Run `openspec validate --all --strict --no-interactive` and `openspec doctor`, then confirm the implementation diff contains no production, dependency, module, schema, migration or unrelated changes.
 - [x] 4.3 Obtain a read-only Reviewer `AUDIT` verdict for the stable diff and verify `APPROVE` is present before marking the change implementation complete.
+
+## 5. Context Isolation and Early Review
+
+- [x] 5.1 Require `fork_turns: "none"` and a self-contained 200-400 word capsule for every new project role; add convention coverage for the required fields and forbidden inherited history.
+- [x] 5.2 Add Reviewer `THREAT_CHECK` with its closed statuses and narrow bypass checklist; place it before Tester red and Developer implementation for CI, security/integrity and agent-workflow changes.
+
+## 6. Assignment Telemetry
+
+- [x] 6.1 Add focused PowerShell tests for logical dispatch/return correlation, local timestamp formatting, duration, role/phase token fields, unavailable-token handling and legacy readable export.
+- [x] 6.2 Implement logical assignment logging into `.codex-logs/subagents.jsonl` and one-line completed records in `.codex-logs/subagents-readable.log` without copying prompts, responses or transcript paths.
+- [x] 6.3 Export the existing lifecycle history to the readable file, preserving exact paired durations and explicitly marking unavailable legacy data.
+
+## 7. Re-verification
+
+- [x] 7.1 Run the assignment-logger harness and targeted repository-convention tests.
+- [x] 7.2 Run the independent preflight, complete Maven verify, strict OpenSpec validation and OpenSpec doctor; confirm no production or unrelated user changes were introduced.

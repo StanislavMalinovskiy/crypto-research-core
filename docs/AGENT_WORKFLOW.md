@@ -15,6 +15,7 @@ Architect работает в основной сессии. Он единств
 | Developer | `SKELETON_READY`, `IMPL_DONE`, `TEST_SUSPECT`, `BLOCKED` |
 | Tester | `RED_CANDIDATE`, `EVIDENCE_CANDIDATE`, `SPEC_INCOMPLETE`, `TEST_SUSPECT`, `BLOCKED` |
 | Researcher | `RESEARCH_DONE`, `INCONCLUSIVE`, `BLOCKED` |
+| Reviewer `THREAT_CHECK` | `THREAT_CHECK_PASSED`, `THREATS_FOUND` |
 | Reviewer `ADJUDICATE` | `CODE_WRONG`, `TEST_WRONG`, `SPEC_AMBIGUOUS` |
 | Reviewer `AUDIT` | `AUDIT_FAILED`, `APPROVE` |
 
@@ -24,7 +25,9 @@ Architect работает в основной сессии. Он единств
 
 - определяет scope и источник контракта;
 - решает, нужны ли Researcher и Tester;
+- создаёт каждую новую проектную роль только с `fork_turns: "none"` и изолированным task capsule;
 - назначает роли, режим Reviewer, writable-path allowlist и один ограниченный pass;
+- для CI, security/integrity и agent-workflow changes проводит `THREAT_CHECK` до test-writing и implementation;
 - независимо запускает targeted red, phase-manifest verification, targeted green и полный `mvnw.cmd clean verify`;
 - ведёт один общий лимит из трёх repair routings;
 - после code gate обновляет обязательные OpenSpec/status/docs до финального `AUDIT`;
@@ -53,8 +56,9 @@ Architect работает в основной сессии. Он единств
 
 ### Reviewer
 
-- получает от Architect ровно один режим: `ADJUDICATE` или `AUDIT`;
+- получает от Architect ровно один режим: `THREAT_CHECK`, `ADJUDICATE` или `AUDIT`;
 - работает с `sandbox_mode = "read-only"` и не предлагает ready-to-apply patch;
+- в `THREAT_CHECK` до реализации проверяет только self-bypass guard-а, additions/deletions/path case, CI control flow, quoted/folded config, initially-green tests и конфликты фаз/статусов;
 - в `ADJUDICATE` отвечает только на переданное code/test/spec противоречие;
 - в `AUDIT` проверяет стабильный diff, инварианты, specification alignment и test adequacy;
 - возвращает один статус из набора назначенного режима.
@@ -107,6 +111,10 @@ Exit `0` означает, что изменены только разрешён
 ```text
 Architect -> Researcher? -> contract
                             |
+             high-risk workflow change?
+                            |
+             Reviewer(THREAT_CHECK) -> plan/tests repair?
+                            |
                     Developer -> skeleton?
                             |
                     Tester -> RED_CANDIDATE
@@ -132,6 +140,8 @@ Architect -> Researcher? -> contract
 
 | Статус | Действие Architect |
 |---|---|
+| `THREAT_CHECK_PASSED` | продолжить к skeleton/Tester red/implementation согласно test-impact assessment |
+| `THREATS_FOUND` | исправить OpenSpec design или planned tests до writer-фазы, раунд +1 |
 | `RED_CANDIDATE` | независимо выполнить targeted red; при успехе открыть implementation-фазу |
 | `EVIDENCE_CANDIDATE` | только в post-`AUDIT_FAILED` test-evidence repair независимо подтвердить targeted green и неизменность implementation paths |
 | `SPEC_INCOMPLETE` | уточнить только из accepted sources, раунд +1, либо сразу спросить пользователя |
@@ -153,21 +163,25 @@ pwsh -NoProfile -File .codex/scripts/log-repair-routing.ps1 -Loop AUDIT -SourceS
 
 ## Task capsule
 
+Каждый новый проектный агент создаётся с `fork_turns: "none"`. Capsule содержит 200-400 слов, самодостаточен для одного pass и не включает историю пользовательского обсуждения или отчёты других ролей. Для correction используется тот же агент; ему передаётся только новый bounded delta.
+
 ```text
 Goal:
+Phase: research | threat-check | skeleton | tests-red | tests-evidence | implementation | adjudicate | audit
+Writable paths:
+Frozen paths:
+Requirement/scenario IDs:
+Files to read:
+Acceptance checks:
+Expected status:
+
+Optional bounded metadata:
 Scope:
-Phase: skeleton | tests-red | tests-evidence | implementation | adjudicate | audit
-Reviewer mode: none | ADJUDICATE | AUDIT
+Reviewer mode: none | THREAT_CHECK | ADJUDICATE | AUDIT
 Repair round: 0 | 1 | 2 | 3
 Active OpenSpec change:
-Requirement/scenario:
-Relevant sources and files:
-Writable path allowlist:
-Frozen paths:
 Constraints:
-Acceptance criteria:
 Checks to run:
-Expected status set:
 ```
 
 Один агент владеет одним набором изменяемых файлов. Параллельно выполняются только независимые read-heavy задачи; writer-фазы идут последовательно, если не используются отдельно утверждённые worktrees.
@@ -187,6 +201,31 @@ openspec doctor
 
 ## Журнал подагентов
 
-Проектные хуки `SubagentStart` и `SubagentStop` добавляют JSONL-записи в `.codex-logs/subagents.jsonl`. Запись содержит время, событие, session/turn/agent identifiers, роль, модель и permission mode. Промпты, ответы и transcript paths не записываются.
+Проектные хуки `SubagentStart` и `SubagentStop` добавляют низкоуровневые lifecycle-записи в `.codex-logs/subagents.jsonl`. Для каждой логической команды Architect использует отдельный assignment id и фиксирует dispatch до вызова роли:
+
+```powershell
+$assignmentId = [guid]::NewGuid().ToString('N')
+pwsh -NoProfile -File .codex/scripts/log-agent-activity.ps1 -Action Dispatch -AssignmentId $assignmentId -Role tester -Phase tests-red -Summary 'Write requirement-derived red tests'
+```
+
+После ответа роли Architect записывает её канонический статус, короткий результат и фактические token counters, если runtime их предоставил:
+
+```powershell
+pwsh -NoProfile -File .codex/scripts/log-agent-activity.ps1 -Action Return -AssignmentId $assignmentId -Status RED_CANDIDATE -Summary 'Named test fails at the expected assertion' -InputTokens 1200 -OutputTokens 240 -TotalTokens 1440
+```
+
+Если token counters недоступны, параметры не передаются и логгер пишет `unavailable`, не оценку. JSONL получает `AssignmentDispatch`/`AssignmentReturn` с ролью, фазой, UTC start/end и `duration_ms`. Отдельный `.codex-logs/subagents-readable.log` получает одну завершённую строку вида:
+
+```text
+15-09-26 23:23 | Architect -> Tester: Write requirement-derived red tests | Tester -> Architect: STATUS: RED_CANDIDATE; Named test fails at the expected assertion | phase=tests-red | duration=00:08:41 | tokens: input=1200, cached_input=unavailable, output=240, reasoning=unavailable, total=1440
+```
+
+Для экспорта уже существующего JSONL используется:
+
+```powershell
+pwsh -NoProfile -File .codex/scripts/export-subagent-log.ps1
+```
+
+Старые lifecycle-пары получают точную длительность. Старые follow-up stop без записанного dispatch честно получают `duration=unavailable`. Полные prompts, responses и transcript paths не копируются; сохраняются только однострочные summary длиной до 400 символов.
 
 Architect отдельно фиксирует repair routing с полями `loop`, `source_status`, `repair_owner` и `round`. Лог локальный и исключён из Git. Hooks загружаются при старте сессии и не применяются задним числом; после изменения hook-файлов новая сессия проверяет и доверяет точное определение через `/hooks`.

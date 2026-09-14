@@ -7,8 +7,11 @@ The independent-test workflow still lets the same role author and certify its ow
 - Make Architect mechanically execute the expected red command and the complete Maven green gate instead of accepting Tester self-attestation.
 - Freeze the repository state at phase boundaries with a path-and-content manifest that detects additions, changes and deletions outside the writer's explicit allowlist.
 - Require every new behavioral test to identify its OpenSpec requirement and scenario and the expected red assertion.
-- Split Reviewer into parent-selected `ADJUDICATE` and `AUDIT` modes with closed status sets and binding verdicts that Architect cannot replace.
+- Split Reviewer into parent-selected `THREAT_CHECK`, `ADJUDICATE` and `AUDIT` modes with closed status sets and binding verdicts that Architect cannot replace.
+- Start every new project role with isolated context (`fork_turns: "none"`) and a 200-400 word task capsule instead of inheriting the parent conversation.
+- Add a bounded pre-implementation Reviewer `THREAT_CHECK` for CI, security/integrity and agent-workflow changes so bypass classes are found before tests and production edits.
 - Close the status vocabulary for all roles, route `SPEC_INCOMPLETE`, retain one logged three-round repair budget and prohibit `ultra` for deterministic project-agent runs.
+- Record assignment duration and available token usage by role and phase in machine-readable telemetry, and maintain a separate human-readable subagent activity log.
 - Make Reviewer mechanically read-only and use high reasoning for Tester because this role is reserved for behavioral, persistence, financial and point-in-time work.
 - Make Maven verification reject explicit disabled/ignored Java tests, unconditional false assumptions, and committed Maven or CI settings that skip, select, exclude or retag required tests.
 - Run that integrity inspection as an independent pre-Maven gate so the Maven configuration under inspection cannot suppress the guard itself.
@@ -35,4 +38,4 @@ None.
 
 ## Impact
 
-Root agent guidance, project-scoped Codex role configuration, agent workflow documentation, small phase-manifest, repair-routing log and test-integrity preflight tools, test-side repository convention checks, and one preflight step in the existing GitHub `quality-gate`. The workflow still runs `./mvnw clean verify`; no new CI service, workflow job or production dependency is introduced.
+Root agent guidance, project-scoped Codex role configuration, agent workflow documentation, small phase-manifest, repair-routing, assignment-telemetry and readable-log tools, test-side repository convention checks, and one preflight step in the existing GitHub `quality-gate`. The workflow still runs `./mvnw clean verify`; no new CI service, workflow job or production dependency is introduced.

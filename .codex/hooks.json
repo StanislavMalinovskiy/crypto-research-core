@@ -1,5 +1,5 @@
 {
-  "description": "Record project subagent lifecycle events without prompt or response content.",
+  "description": "Record low-level subagent lifecycle events; logical assignment summaries, duration and token telemetry are added by log-agent-activity.ps1.",
   "hooks": {
     "SessionStart": [
       {

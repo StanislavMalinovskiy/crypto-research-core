@@ -52,7 +52,8 @@ class RepositoryConventionsTest {
 			"(?m)^\\s*model_reasoning_effort\\s*=\\s*\"([^\"]+)\"\\s*$");
 	private static final Pattern STATUS_TOKEN = Pattern.compile(
 			"\\b(?:SKELETON_READY|IMPL_DONE|TEST_SUSPECT|BLOCKED|RED_CANDIDATE|EVIDENCE_CANDIDATE|SPEC_INCOMPLETE|"
-					+ "RESEARCH_DONE|INCONCLUSIVE|CODE_WRONG|TEST_WRONG|SPEC_AMBIGUOUS|AUDIT_FAILED|APPROVE|"
+					+ "RESEARCH_DONE|INCONCLUSIVE|THREAT_CHECK_PASSED|THREATS_FOUND|CODE_WRONG|TEST_WRONG|"
+					+ "SPEC_AMBIGUOUS|AUDIT_FAILED|APPROVE|"
 					+ "TESTS_RED_CONFIRMED|TESTS_GREEN_CONFIRMED)\\b");
 	private static final Set<String> LEGACY_TESTER_STATUSES = Set.of(
 			"TESTS_RED_CONFIRMED", "TESTS_GREEN_CONFIRMED");
@@ -62,6 +63,8 @@ class RepositoryConventionsTest {
 			"researcher", Set.of("RESEARCH_DONE", "INCONCLUSIVE", "BLOCKED"));
 	private static final Set<String> REVIEWER_ADJUDICATE_STATUSES =
 			Set.of("CODE_WRONG", "TEST_WRONG", "SPEC_AMBIGUOUS");
+	private static final Set<String> REVIEWER_THREAT_CHECK_STATUSES =
+			Set.of("THREAT_CHECK_PASSED", "THREATS_FOUND");
 	private static final Set<String> REVIEWER_AUDIT_STATUSES = Set.of("AUDIT_FAILED", "APPROVE");
 	private static final Set<String> MAVEN_SELECTOR_ELEMENTS = Set.of(
 			"includes", "include", "excludes", "exclude", "groups", "excludedGroups",
@@ -192,6 +195,18 @@ class RepositoryConventionsTest {
 						"workflow must document log-repair-routing.ps1");
 		assertThat(workflowLifecycleViolations(
 				Files.readString(repositoryRoot.resolve("docs/AGENT_WORKFLOW.md")))).isEmpty();
+	}
+
+	@Test
+	void projectAgentGuidanceRequiresIsolatedContextEarlyThreatCheckAndTelemetry() throws IOException {
+		var violations = contextEfficiencyViolations(
+				Files.readString(repositoryRoot.resolve("AGENTS.md")),
+				Files.readString(repositoryRoot.resolve("docs/AGENT_WORKFLOW.md")));
+
+		assertThat(violations).isEmpty();
+		assertThat(Files.isRegularFile(repositoryRoot.resolve(".codex/scripts/log-agent-activity.ps1"))).isTrue();
+		assertThat(Files.isRegularFile(repositoryRoot.resolve(".codex/scripts/export-subagent-log.ps1"))).isTrue();
+		assertThat(Files.isRegularFile(repositoryRoot.resolve(".codex/scripts/log-agent-activity.tests.ps1"))).isTrue();
 	}
 
 	@Test
@@ -572,6 +587,42 @@ class RepositoryConventionsTest {
 		return violations;
 	}
 
+	private List<String> contextEfficiencyViolations(String rootGuide, String workflow) {
+		var violations = new ArrayList<String>();
+		for (var entry : Map.of("root guidance", rootGuide, "workflow", workflow).entrySet()) {
+			if (!entry.getValue().contains("fork_turns: \"none\"")) {
+				violations.add(entry.getKey() + " must require isolated fork_turns context");
+			}
+		}
+
+		for (var field : List.of(
+				"Goal:", "Phase:", "Writable paths:", "Frozen paths:", "Requirement/scenario IDs:",
+				"Files to read:", "Acceptance checks:", "Expected status:")) {
+			if (!workflow.contains(field)) {
+				violations.add("task capsule is missing required field: " + field);
+			}
+		}
+		if (!workflow.contains("200-400") || !workflow.contains("не включает историю")) {
+			violations.add("workflow must bound the capsule and prohibit inherited conversation history");
+		}
+
+		var threatCheck = workflow.indexOf("Reviewer(THREAT_CHECK)");
+		var testerRed = workflow.indexOf("Tester -> RED_CANDIDATE");
+		if (threatCheck < 0 || testerRed < 0 || threatCheck > testerRed) {
+			violations.add("workflow must place Reviewer(THREAT_CHECK) before Tester red");
+		}
+		if (!workflow.contains("guard-а") || !workflow.contains("path case")
+				|| !workflow.contains("quoted/folded") || !workflow.contains("initially-green")) {
+			violations.add("workflow must name the bounded adversarial bypass classes");
+		}
+		if (!rootGuide.contains("log-agent-activity.ps1") || !workflow.contains("log-agent-activity.ps1")
+				|| !rootGuide.contains("subagents-readable.log") || !workflow.contains("subagents-readable.log")
+				|| !workflow.contains("duration=") || !workflow.contains("tokens:")) {
+			violations.add("root and workflow must document role/phase duration and token telemetry");
+		}
+		return violations;
+	}
+
 	private List<String> agentConfigurationViolations(
 			String rootConfig,
 			Map<String, String> roleConfigurations,
@@ -611,6 +662,10 @@ class RepositoryConventionsTest {
 			violations.addAll(statusSetViolations(entry.getKey(), actual, entry.getValue()));
 		}
 		violations.addAll(statusSetViolations(
+				"reviewer THREAT_CHECK",
+				declaredStatuses(reviewer, "THREAT_CHECK"),
+				REVIEWER_THREAT_CHECK_STATUSES));
+		violations.addAll(statusSetViolations(
 				"reviewer ADJUDICATE",
 				declaredStatuses(reviewer, "ADJUDICATE"),
 				REVIEWER_ADJUDICATE_STATUSES));
@@ -639,6 +694,7 @@ class RepositoryConventionsTest {
 		}
 		violations.addAll(evidenceCandidateGuidanceViolations("root guidance", rootGuide));
 		violations.addAll(evidenceCandidateGuidanceViolations("workflow guidance", workflow));
+		violations.addAll(contextEfficiencyViolations(rootGuide, workflow));
 
 		return violations;
 	}
