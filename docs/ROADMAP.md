@@ -137,7 +137,7 @@ Measurement before money.
 - **Framework:** Spring Boot 4.1.1 + Spring MVC, synchronous imperative model
 - **Modularity:** Spring Modulith 2.1.1
 - **Concurrency:** stable virtual threads for suitable blocking I/O; all future fan-out must be bounded
-- **БД:** PostgreSQL 18, verified against 18.6; bootstrap creates no business schema or partitioned table
+- **БД:** PostgreSQL 18, verified against 18.6; Flyway owns the implemented `marketdata`, `signal` and `evaluation` schemas, while `risk` has no schema and no table is partitioned
 - **Persistence:** Spring Data JDBC / JdbcClient, not JPA or R2DBC
 - **Build:** Maven Wrapper; Maven 3.9.x baseline, one Maven module
 - **Migrations:** Flyway version managed by Spring Boot dependency management
@@ -147,7 +147,7 @@ Measurement before money.
 
 ### Target MVP
 
-- Chain-aware kernel identities, idempotent module-owned persistence and the first Solana `marketdata` vertical slice are delivered through separate changes.
+- Chain-aware kernel identities, idempotent module-owned persistence and the deterministic recorded `LIQUIDITY_SPIKE` path from raw evidence through a `1h` outcome and reproducible report are delivered. Live providers, wallet analytics and broader research remain target work.
 - Candidate Solana providers include Helius, Bitquery, DexScreener and GoPlus. Each provider requires coverage/limit/terms validation, an OpenSpec design and approval of any new production dependency. An ADR is needed only if the provider boundary or general architecture changes.
 - A concrete high-volume table may be partitioned by its owning migration only after volume, retention and query-pattern evidence is documented. Changing the general persistence strategy requires an ADR.
 - Structured logging, correlation metadata and operational metrics are later increments, not bootstrap completion criteria.
@@ -451,13 +451,13 @@ Primary product horizon: 10–12 weeks. Conservative expectation with chain-read
 ---
 ## 25. Phase 1 — Architecture and data foundation
 
-**Current baseline completed:** Maven Wrapper single-module; Spring Boot 4.1.1; Spring Modulith 2.1.1; six application modules with explicit allowed dependencies; synchronous Spring MVC/Spring Data JDBC baseline; stable Java 25 configuration; PostgreSQL/Flyway/Testcontainers foundation; Actuator health; Maven Enforcer; Modulith verification tests. The first market-data storage slice adds only `marketdata.raw_chain_events` with immutable idempotency semantics; provider ingestion, normalization, swaps, signals and execution remain absent.
+**Current baseline completed:** Maven Wrapper single-module; Spring Boot 4.1.1; Spring Modulith 2.1.1; six application modules with explicit allowed dependencies; synchronous Spring MVC/Spring Data JDBC baseline; stable Java 25 configuration; PostgreSQL/Flyway/Testcontainers foundation; Actuator health; Maven Enforcer; Modulith verification tests. The implemented recorded-input slice persists raw and normalized swaps, immutable dataset snapshots, candidate-first risk-gated `LIQUIDITY_SPIKE` evidence, exact `1h` outcomes and reproducible reports. Live provider ingestion, wallet analytics, broader signal research and execution remain absent.
 
 The operational change sequence and Current/Next position are owned by the [Delivery Plan](DELIVERY_PLAN.md). Detailed scope and task progress remain in each OpenSpec change.
 
 Any change that introduces or mutates persisted data must include idempotency in its own acceptance criteria. Idempotency is not deferred to a later repair change.
 
-Chain identities, provider contracts, business DDL, indexes, partitioning, Docker Compose, structured logging and future execution gates are target capabilities requiring their own approved changes. No signing, order submission or PAPER/LIVE execution belongs to the MVP topology.
+Provider contracts, additional business DDL or indexes, partitioning, managed deployment, structured logging and future execution gates remain target capabilities requiring their own approved changes. No signing, order submission or PAPER/LIVE execution belongs to the MVP topology.
 
 Phase 1 DoD is cumulative across the relevant approved changes; it is not the DoD of `bootstrap-modular-foundation`.
 ---
