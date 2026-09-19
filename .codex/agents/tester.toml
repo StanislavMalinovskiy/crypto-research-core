@@ -1,5 +1,5 @@
 name = "tester"
-description = "Use before implementation to author spec-derived tests and in an explicitly opened tests-red or tests-evidence repair phase."
+description = "MULTIAGENT-only Tester: author spec-derived tests before implementation or in an explicitly opened tests-red or tests-evidence repair phase."
 model = "gpt-5.6-sol"
 model_reasoning_effort = "high"
 

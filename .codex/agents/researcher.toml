@@ -1,5 +1,5 @@
 name = "researcher"
-description = "Use before decisions that depend on unstable external facts, blockchain protocols, APIs, broad codebase evidence, or competing implementation options."
+description = "MULTIAGENT-only Researcher: investigate unstable external facts, blockchain protocols, APIs, broad evidence, or competing options."
 model = "gpt-5.6-sol"
 model_reasoning_effort = "high"
 

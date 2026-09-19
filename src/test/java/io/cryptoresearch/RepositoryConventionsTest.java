@@ -185,25 +185,79 @@ class RepositoryConventionsTest {
 	}
 
 	@Test
-	void workflowInspectionRequiresDocumentationBeforeAuditAndRepairLogger() throws IOException {
+	void multiagentWorkflowRequiresDocumentationBeforeAuditAndRepairLogger() throws IOException {
 		var valid = "Architect -> OpenSpec/docs\nArchitect -> Reviewer(AUDIT)\nlog-repair-routing.ps1";
 		var auditFirst = "Architect -> Reviewer(AUDIT)\nArchitect -> OpenSpec/docs";
+		var multiagentWorkflow = repositoryRoot.resolve("docs/AGENT_WORKFLOW_MULTIAGENT.md");
 
 		assertThat(workflowLifecycleViolations(valid)).isEmpty();
 		assertThat(workflowLifecycleViolations(auditFirst))
 				.contains("workflow must update OpenSpec/docs before final Reviewer(AUDIT)",
 						"workflow must document log-repair-routing.ps1");
 		assertThat(workflowLifecycleViolations(
-				Files.readString(repositoryRoot.resolve("docs/AGENT_WORKFLOW.md")))).isEmpty();
+				Files.exists(multiagentWorkflow) ? Files.readString(multiagentWorkflow) : "")).isEmpty();
 	}
 
 	@Test
-	void projectAgentGuidanceRequiresIsolatedContextEarlyThreatCheckAndTelemetry() throws IOException {
-		var violations = contextEfficiencyViolations(
+	void workflowModeSelectionFailsClosedUnlessAgentsEnabledIsExactBooleanTrue() {
+		assertThat(selectedAgentWorkflowMode("[agents]\nenabled = true\n"))
+				.isEqualTo(AgentWorkflowMode.MULTIAGENT);
+		assertThat(selectedAgentWorkflowMode("[agents]\nenabled = false\n"))
+				.isEqualTo(AgentWorkflowMode.DEFAULT);
+		assertThat(selectedAgentWorkflowMode("[agents]\nenabled = \"true\"\n"))
+				.isEqualTo(AgentWorkflowMode.DEFAULT);
+		assertThat(selectedAgentWorkflowMode("[agents]\nenabled = yes\n"))
+				.isEqualTo(AgentWorkflowMode.DEFAULT);
+		assertThat(selectedAgentWorkflowMode("[model]\nenabled = true\n"))
+				.isEqualTo(AgentWorkflowMode.DEFAULT);
+		assertThat(selectedAgentWorkflowMode(""))
+				.isEqualTo(AgentWorkflowMode.DEFAULT);
+	}
+
+	@Test
+	void workflowGuidanceInspectionRequiresConditionalLoadingAndMinimalDefaultSafeguards() {
+		var rootGuide = """
+				DEFAULT is selected unless `.codex/config.toml` contains exact `[agents].enabled = true`.
+				When `[agents].enabled = true`, use MULTIAGENT and load [guide](docs/AGENT_WORKFLOW_MULTIAGENT.md).
+				Otherwise load [DEFAULT workflow](docs/AGENT_WORKFLOW.md).
+				""";
+		var defaultWorkflow = """
+				Control owns the active contract and final review. Developer owns tests and implementation.
+				Changed behavior requires a targeted behavioral red before implementation. Compilation, discovery,
+				configuration or infrastructure failure is not red. After red, do not weaken, disable, skip or narrow
+				the test and do not add production behavior for a test artifact. Run relevant targeted green checks.
+				Run verify-test-integrity.ps1 before clean verify, then OpenSpec validation and doctor.
+				The handoff names changed files, red and green evidence, verification results and remaining risks.
+				Control uses one consolidated repair by default; a further repair requires the user's explicit decision.
+				""";
+		var multiagentWorkflow = "Specialized supervised protocol";
+
+		assertThat(agentWorkflowGuidanceViolations(
+				"[agents]\nenabled = false", rootGuide, defaultWorkflow, multiagentWorkflow)).isEmpty();
+		assertThat(agentWorkflowGuidanceViolations(
+				"[agents]\nenabled = true", rootGuide, defaultWorkflow, multiagentWorkflow)).isEmpty();
+		assertThat(agentWorkflowGuidanceViolations(
+				"[agents]\nenabled = false", rootGuide.replace("enabled = true", "enabled = false"),
+				defaultWorkflow, multiagentWorkflow))
+				.contains("root guidance must load the MULTIAGENT guide only for exact enabled = true");
+		assertThat(agentWorkflowGuidanceViolations(
+				"[agents]\nenabled = false", rootGuide,
+				defaultWorkflow + "\nReviewer(THREAT_CHECK) phase-manifest.ps1 task capsule", multiagentWorkflow))
+				.contains("DEFAULT guidance must not require specialized MULTIAGENT protocol details");
+	}
+
+	@Test
+	void committedAgentGuidanceMatchesSelectedWorkflowMode() throws IOException {
+		var multiagentWorkflow = repositoryRoot.resolve("docs/AGENT_WORKFLOW_MULTIAGENT.md");
+		var violations = agentWorkflowGuidanceViolations(
+				Files.readString(repositoryRoot.resolve(".codex/config.toml")),
 				Files.readString(repositoryRoot.resolve("AGENTS.md")),
-				Files.readString(repositoryRoot.resolve("docs/AGENT_WORKFLOW.md")));
+				Files.readString(repositoryRoot.resolve("docs/AGENT_WORKFLOW.md")),
+				Files.exists(multiagentWorkflow) ? Files.readString(multiagentWorkflow) : "");
 
 		assertThat(violations).isEmpty();
+		assertThat(selectedAgentWorkflowMode(Files.readString(repositoryRoot.resolve(".codex/config.toml"))))
+				.isEqualTo(AgentWorkflowMode.DEFAULT);
 		assertThat(Files.isRegularFile(repositoryRoot.resolve(".codex/scripts/log-agent-activity.ps1"))).isTrue();
 		assertThat(Files.isRegularFile(repositoryRoot.resolve(".codex/scripts/export-subagent-log.ps1"))).isTrue();
 		assertThat(Files.isRegularFile(repositoryRoot.resolve(".codex/scripts/log-agent-activity.tests.ps1"))).isTrue();
@@ -219,8 +273,10 @@ class RepositoryConventionsTest {
 		var violations = agentConfigurationViolations(
 				Files.readString(repositoryRoot.resolve(".codex/config.toml")),
 				roleConfigurations,
-				Files.readString(repositoryRoot.resolve("AGENTS.md")),
-				Files.readString(repositoryRoot.resolve("docs/AGENT_WORKFLOW.md")));
+				Files.exists(repositoryRoot.resolve("docs/AGENT_WORKFLOW_MULTIAGENT.md"))
+						? Files.readString(repositoryRoot.resolve("docs/AGENT_WORKFLOW_MULTIAGENT.md")) : "",
+				Files.exists(repositoryRoot.resolve("docs/AGENT_WORKFLOW_MULTIAGENT.md"))
+						? Files.readString(repositoryRoot.resolve("docs/AGENT_WORKFLOW_MULTIAGENT.md")) : "");
 
 		assertThat(violations).isEmpty();
 	}
@@ -574,6 +630,83 @@ class RepositoryConventionsTest {
 		return List.of();
 	}
 
+	private AgentWorkflowMode selectedAgentWorkflowMode(String rootConfig) {
+		var inAgents = false;
+		var enabledSeen = false;
+		var multiagent = false;
+		for (var rawLine : rootConfig.lines().toList()) {
+			var comment = rawLine.indexOf('#');
+			var line = (comment >= 0 ? rawLine.substring(0, comment) : rawLine).trim();
+			if (line.matches("\\[[^]]+]")) {
+				inAgents = line.equals("[agents]");
+				continue;
+			}
+			if (!inAgents || !line.matches("enabled\\s*=.*")) {
+				continue;
+			}
+			if (enabledSeen) {
+				return AgentWorkflowMode.DEFAULT;
+			}
+			enabledSeen = true;
+			multiagent = line.matches("enabled\\s*=\\s*true");
+		}
+		return enabledSeen && multiagent ? AgentWorkflowMode.MULTIAGENT : AgentWorkflowMode.DEFAULT;
+	}
+
+	private List<String> agentWorkflowGuidanceViolations(
+			String rootConfig,
+			String rootGuide,
+			String defaultWorkflow,
+			String multiagentWorkflow) {
+		var violations = new ArrayList<String>();
+		var conditionalMultiagentGuide = rootGuide.lines()
+				.anyMatch(line -> line.contains("enabled = true")
+						&& line.contains("AGENT_WORKFLOW_MULTIAGENT.md"));
+		if (!conditionalMultiagentGuide) {
+			violations.add("root guidance must load the MULTIAGENT guide only for exact enabled = true");
+		}
+		if (!rootGuide.contains("AGENT_WORKFLOW.md") || !rootGuide.contains("DEFAULT")) {
+			violations.add("root guidance must identify the DEFAULT workflow guide");
+		}
+		if (multiagentWorkflow.isBlank()) {
+			violations.add("the separate MULTIAGENT workflow guide must exist");
+		}
+
+		if (selectedAgentWorkflowMode(rootConfig) == AgentWorkflowMode.DEFAULT) {
+			var lower = defaultWorkflow.toLowerCase();
+			if (!containsAll(lower, "control", "developer", "tests", "implementation")) {
+				violations.add("DEFAULT guidance must split Control and Developer responsibilities");
+			}
+			if (!containsAll(lower, "behavioral red", "compilation", "discovery", "configuration", "infrastructure")) {
+				violations.add("DEFAULT guidance must distinguish behavioral red from non-behavioral failure");
+			}
+			if (!containsAll(lower, "weaken", "disable", "skip", "narrow", "test artifact")) {
+				violations.add("DEFAULT guidance must prohibit test weakening and test-specific production behavior");
+			}
+			if (!hasOrderedPreflight(defaultWorkflow)
+					|| !containsAll(lower, "openspec", "doctor", "targeted green")) {
+				violations.add("DEFAULT guidance must require targeted green and the complete local gate");
+			}
+			if (!containsAll(lower, "changed files", "red", "green", "verification results", "remaining risks")) {
+				violations.add("DEFAULT guidance must require a concise evidence handoff");
+			}
+			if (!containsAll(lower, "one consolidated repair", "further repair", "user")) {
+				violations.add("DEFAULT guidance must bound repair to one consolidated handoff by default");
+			}
+			if (Stream.of(
+					"RED_CANDIDATE", "EVIDENCE_CANDIDATE", "THREAT_CHECK", "phase-manifest.ps1",
+					"task capsule", "log-agent-activity.ps1", "log-repair-routing.ps1", "subagents-readable.log")
+					.anyMatch(defaultWorkflow::contains)) {
+				violations.add("DEFAULT guidance must not require specialized MULTIAGENT protocol details");
+			}
+		}
+		return violations;
+	}
+
+	private boolean containsAll(String content, String... fragments) {
+		return Stream.of(fragments).allMatch(content::contains);
+	}
+
 	private List<String> workflowLifecycleViolations(String workflow) {
 		var violations = new ArrayList<String>();
 		var documentation = workflow.indexOf("OpenSpec/docs");
@@ -638,6 +771,9 @@ class RepositoryConventionsTest {
 			var role = entry.getKey();
 			var content = entry.getValue();
 			checkReasoningEffort(role, content, violations);
+			if (!content.contains("MULTIAGENT-only")) {
+				violations.add(role + " description must identify a MULTIAGENT-only role");
+			}
 			if (!content.contains("model = \"gpt-5.6-sol\"")) {
 				violations.add(role + " must use gpt-5.6-sol");
 			}
@@ -1106,5 +1242,10 @@ class RepositoryConventionsTest {
 		STRING,
 		CHARACTER,
 		TEXT_BLOCK
+	}
+
+	private enum AgentWorkflowMode {
+		DEFAULT,
+		MULTIAGENT
 	}
 }

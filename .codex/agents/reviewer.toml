@@ -1,5 +1,5 @@
 name = "reviewer"
-description = "Use for a bounded pre-implementation threat check, exact conflict adjudication, or independent review of a stable diff."
+description = "MULTIAGENT-only Reviewer: perform a bounded threat check, exact conflict adjudication, or independent stable-diff audit."
 model = "gpt-5.6-sol"
 model_reasoning_effort = "high"
 sandbox_mode = "read-only"

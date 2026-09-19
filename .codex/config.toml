@@ -1,6 +1,8 @@
 model = "gpt-5.6-sol"
 model_reasoning_effort = "high"
 
+# Exact boolean true manually selects MULTIAGENT for a new task.
+# False, missing or invalid selects fail-closed DEFAULT; agents never edit this switch.
 [agents]
 enabled = false
 max_concurrent_threads_per_session = 4

@@ -19,7 +19,8 @@
 | Файл | Назначение |
 |---|---|
 | [docs/DELIVERY_PLAN.md](docs/DELIVERY_PLAN.md) | Текущий этап, следующий change и укрупнённый путь до Evidence Report |
-| [docs/AGENT_WORKFLOW.md](docs/AGENT_WORKFLOW.md) | Адаптивный пятиролевой процесс работы с Codex-агентами и схема ответственности за тесты |
+| [docs/AGENT_WORKFLOW.md](docs/AGENT_WORKFLOW.md) | Обычный fail-closed DEFAULT workflow: Control + Developer, test-first evidence и полный local gate |
+| [docs/AGENT_WORKFLOW_MULTIAGENT.md](docs/AGENT_WORKFLOW_MULTIAGENT.md) | Опциональный supervised MULTIAGENT protocol, загружаемый только после ручного `[agents].enabled = true` |
 | [docs/ROADMAP.md](docs/ROADMAP.md) | Продуктовые гипотезы, долгосрочные возможности и приоритеты |
 | [docs/PROJECT_SUMMARY.md](docs/PROJECT_SUMMARY.md) | Краткий контекст проекта для новой сессии |
 | [docs/TECH_STACK.md](docs/TECH_STACK.md) | Разрешённые технологии и версии |
@@ -72,6 +73,7 @@ Preview-функция может быть включена только отд�
 Локальный обязательный gate:
 
 ```bash
+pwsh -NoProfile -File .codex/scripts/verify-test-integrity.ps1
 mvnw.cmd clean verify
 openspec validate --all --strict --no-interactive
 openspec doctor

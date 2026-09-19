@@ -1,5 +1,5 @@
 name = "developer"
-description = "Use in a separate pre-test phase for a behavior-free API skeleton, then after the red gate for production implementation."
+description = "MULTIAGENT-only Developer: create a behavior-free API skeleton before Tester, then implement production behavior after the accepted red gate."
 model = "gpt-5.6-sol"
 model_reasoning_effort = "medium"
 

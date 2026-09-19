@@ -42,6 +42,14 @@ Do not make pure domain tests start Spring or Docker. Do not replace PostgreSQL-
 
 Every change adds tests with its behavior. A test checkbox is complete only after the relevant command has actually passed; an unavailable Docker engine must be reported rather than hidden.
 
+## Agent-assisted development
+
+The selected workflow mode does not change test levels or the complete Maven lifecycle. Fail-closed `DEFAULT` uses top-level Control and Developer sessions; manually enabled `MULTIAGENT` uses the separate supervised role protocol.
+
+When observable behavior changes in DEFAULT, Developer derives a meaningful test from the active requirement and runs it before implementation. Red is valid only when the named test executes and fails at the expected behavioral assertion; compilation, discovery, configuration, startup, Docker or another infrastructure failure is not red. After valid red, the establishing test must not be weakened, disabled, skipped or narrowed, and production code must not recognize a fixture, profile, known test value or other test artifact.
+
+Documentation, comments, formatting, mechanical configuration, a pure rename or internally covered refactoring may require no new behavioral test, but applicable targeted checks and the complete gate still run. The independent integrity preflight remains before Maven in both modes, and explicit targeted developer commands never substitute for `mvnw.cmd clean verify` at completion.
+
 ## Reproducibility tests
 
 - Time-dependent rules use fixed or controlled clocks/reference instants; tests never depend on the current machine time.
