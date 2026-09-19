@@ -1,0 +1,11 @@
+spring:
+  config:
+    import: ${CRYPTO_RESEARCH_MANAGED_SECRETS_LOCATION:file:./config/application-managed-secrets.properties}
+  datasource:
+    url: ${CRYPTO_RESEARCH_MANAGED_DB_URL}
+    username: ${CRYPTO_RESEARCH_MANAGED_DB_USERNAME}
+    password: ${CRYPTO_RESEARCH_MANAGED_DB_PASSWORD}
+  flyway:
+    url: ${CRYPTO_RESEARCH_MANAGED_FLYWAY_URL}
+    user: ${CRYPTO_RESEARCH_MANAGED_FLYWAY_USERNAME}
+    password: ${CRYPTO_RESEARCH_MANAGED_FLYWAY_PASSWORD}

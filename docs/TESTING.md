@@ -26,6 +26,8 @@ Do not make pure domain tests start Spring or Docker. Do not replace PostgreSQL-
 ## Database and health isolation
 
 - Each destructive database-availability scenario owns an isolated container and application context.
+- `ManagedPostgresConfigurationTest` uses synthetic `.invalid` endpoints and a temporary secrets file to verify profile selection, separate runtime/Flyway identities, fail-closed missing settings and unchanged local defaults without opening a database connection.
+- Maven and CI do not activate the `managed` profile and never read or connect through `config/application-managed-secrets.properties`; all PostgreSQL behavior remains isolated in Testcontainers.
 - Negative readiness checks restore paused infrastructure in a `finally` block and use bounded polling rather than an unbounded wait.
 - The healthy startup smoke test remains independent from failure-path tests.
 - PostgreSQL integration tests assert the exact supported server version and Flyway state when version-specific behavior matters.

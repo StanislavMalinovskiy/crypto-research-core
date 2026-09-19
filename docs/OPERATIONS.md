@@ -14,13 +14,24 @@ This document owns repository-wide runtime and operational rules. Product sequen
 
 ## Configuration and secrets
 
-- Secrets enter through environment injection or a deployment secret store. They never receive committed production defaults.
+- Deployment secrets enter through environment injection or a deployment secret store. A workstation may use the explicitly selected `managed` profile and its ignored external properties file; secrets never receive committed defaults.
 - Provider keys, database credentials and tokens must not appear in Git, logs, health details or exception messages.
 - Local defaults are allowed only for non-secret development configuration. The existing local database credentials are development conveniences, not production values.
 - `.env.example` contains development-only Compose defaults. Developer-local `.env` variants remain untracked; when their port or credentials differ, the matching `CRYPTO_RESEARCH_DB_URL`, `CRYPTO_RESEARCH_DB_USERNAME` and `CRYPTO_RESEARCH_DB_PASSWORD` values must be supplied to the host application.
 - PostgreSQL image initialization variables affect only an empty volume. Changing a local environment file does not rewrite credentials in an existing cluster; alter the database explicitly or use the documented destructive reset.
 - New provider or production-only settings use typed configuration and fail fast when mandatory values are absent.
 - Bean Validation or another validation dependency is added only with the real configuration or input contract that uses it; empty configuration classes are forbidden.
+
+### Managed PostgreSQL workstation profile
+
+- `managed` is an explicit profile. Without it, the application keeps the local Compose defaults and does not read the external secrets file.
+- With `managed`, `config/application-managed-secrets.properties` is a required external import. Missing or blank mandatory settings fail startup without falling back to local development credentials.
+- `config/application-managed-secrets.example.properties` is the only tracked template and contains placeholders only. The populated counterpart is explicitly ignored, remains outside the JAR and is recreated separately on each workstation.
+- The application datasource uses a lower-privilege runtime identity. Flyway receives a distinct migration identity with schema ownership and DDL rights. Both identities target the same PostgreSQL 18 database; server-side role creation and grants are operator responsibilities.
+- Both JDBC URLs declare TLS explicitly. `sslmode=verify-full` with a trusted CA is preferred. `sslmode=require` is transitional because it encrypts traffic without authenticating the server.
+- A credential disclosed in chat, logs, an issue or another external channel is rotated before use. Secret values are never pasted into agent prompts, commands intended for evidence capture, documentation or test reports.
+- Start the profile with `SPRING_PROFILES_ACTIVE=managed`. Successful startup confirms Flyway validation/application; `/actuator/health/readiness` must then report `UP` before useful work begins.
+- Profile wiring does not prove external PostgreSQL version, firewall restrictions, backup retention or restore viability. Those checks remain required Stage 3.0 operational evidence before production-like ingestion.
 
 ## Health semantics
 
@@ -46,7 +57,7 @@ Only the Actuator health endpoint family is exposed by default. Production respo
 
 The implemented replay, signal and evaluation APIs are synchronous in-process boundaries. Recorded replay commits each raw observation before a separate normalization transaction; no provider I/O occurs in either transaction. Signal candidate recording and completion are separate short `signal` transactions around an out-of-transaction risk assessment. Evaluation reads signal and market projections before atomically writing its own run, outcome and report.
 
-This slice has no HTTP/CLI/scheduled trigger, live provider connection or production data bootstrap. Its repository fixture is test data only. Running the Maven integration suite creates an isolated Testcontainers PostgreSQL instance and does not read, mutate or require the Compose-managed developer volume.
+This slice has no HTTP/CLI/scheduled trigger, live provider connection or production data bootstrap. Its repository fixture is test data only. Running the Maven integration suite creates an isolated Testcontainers PostgreSQL instance and does not read, mutate or require the Compose-managed developer volume or the ignored managed-profile secrets file.
 
 ## Logging and telemetry
 

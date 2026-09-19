@@ -116,6 +116,40 @@ docker compose down --volumes
 
 После reset следующий `docker compose up -d --wait postgres` создаст пустую базу, а приложение повторно применит Flyway migrations. Volume принадлежит Docker на конкретной рабочей станции и не синхронизируется с другими компьютерами.
 
+## Постоянная внешняя PostgreSQL
+
+Для явного подключения к общей PostgreSQL используется профиль `managed`. Он не активируется автоматически и не использует локальные Compose credentials как fallback. На каждой рабочей станции создайте игнорируемый файл из безопасного шаблона:
+
+```powershell
+Copy-Item config/application-managed-secrets.example.properties config/application-managed-secrets.properties
+notepad config/application-managed-secrets.properties
+```
+
+Заполните в нём все шесть параметров. Datasource использует отдельного runtime-пользователя с минимальными DML-правами, а Flyway — migration-пользователя, владеющего схемами и выполняющего DDL. Оба JDBC URL должны указывать на одну базу PostgreSQL 18 и явно задавать TLS `sslmode`; предпочтителен `verify-full` с доверенным CA. `require` допустим только как временный режим, поскольку он шифрует соединение, но не проверяет личность сервера.
+
+Пароль, ранее отправленный в чат или другой внешний канал, перед использованием необходимо сменить. Значения из локального файла нельзя добавлять в Git, вставлять в issue, commit message, логи или запросы агентам. Файл хранится открытым текстом, поэтому доступ к нему должен быть ограничен средствами рабочей станции.
+
+Запуск из Maven:
+
+```powershell
+$env:SPRING_PROFILES_ACTIVE = "managed"
+.\mvnw.cmd spring-boot:run
+```
+
+Запуск собранного JAR:
+
+```powershell
+java -jar target/crypto-research-core-0.0.1-SNAPSHOT.jar --spring.profiles.active=managed
+```
+
+Если файл отсутствует или любой обязательный параметр пуст, startup завершается ошибкой без перехода на локальную базу. Успешный startup означает, что Flyway применил или проверил migrations. После запуска проверьте readiness:
+
+```powershell
+Invoke-RestMethod http://localhost:8080/actuator/health/readiness
+```
+
+Ответ должен иметь `status` = `UP`. До загрузки реальных данных отдельно подтвердите PostgreSQL 18, корректные server-side grants, firewall, автоматические backups и тестовое восстановление. Сам профиль `managed` эти внешние гарантии не создаёт.
+
 ## Проверка изменений
 
 Локальный обязательный gate:

@@ -39,3 +39,6 @@ build/
 .env
 .env.local
 .env.*.local
+
+### Managed PostgreSQL workstation secrets ###
+/config/application-managed-secrets.properties
