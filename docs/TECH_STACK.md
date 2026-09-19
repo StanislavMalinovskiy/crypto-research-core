@@ -13,7 +13,7 @@ This document records allowed technologies and their decision state. Product seq
 - **Spring Modulith:** 2.1.1.
 - **Web framework:** Spring MVC with a synchronous imperative model.
 - **Persistence:** Spring Data JDBC and `JdbcClient`.
-- **Database:** PostgreSQL 18; one database instance. The current durable baseline has the module-owned `marketdata` schema and its append-only `raw_chain_events` table keyed by exact CAIP-2 network identity, transaction value, canonical event locator and provider.
+- **Database:** PostgreSQL 18; one database instance. The durable baseline has module-owned `marketdata` raw/normalized/snapshot tables, `signal` candidate/accepted-snapshot tables and `evaluation` run/outcome/report tables. `risk`, `wallet` and `kernel` own no schema.
 - **Local database lifecycle:** Docker Compose with exact `postgres:18.6-alpine`, loopback-only publication and a workstation-local named volume is approved for local development only. It runs no application container and creates no application schema.
 - **Migrations:** Flyway managed by Spring Boot dependency management.
 - **Build:** Maven Wrapper with checksum-verified Maven 3.9.16, one Maven module and one deployable JAR.
@@ -53,7 +53,7 @@ The application is one modular monolith with `kernel`, `marketdata`, `risk`, `wa
 The following are planned directions, not installed bootstrap components:
 
 - chain-aware kernel identities;
-- provider-backed market-data ingestion on top of the implemented idempotent raw-observation storage;
+- provider-backed market-data ingestion on top of the implemented idempotent raw/normalized replay and immutable dataset snapshots;
 - Solana provider adapters, normalization and replay;
 - table-specific partitioning where the owning change demonstrates volume, retention and query-pattern need;
 - structured logging, correlation metadata and workload-specific operational metrics;

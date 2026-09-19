@@ -58,3 +58,9 @@ Documentation, comments, formatting, mechanical configuration, a pure rename or 
 - Randomized research tests inject and record a seed, then reproduce the same result with it.
 - Dataset lineage tests prove identical canonical inputs reproduce a fingerprint and changed input or transformation versions do not.
 - Evaluation replay tests assert the complete result and provenance contract from [Research reproducibility](REPRODUCIBILITY.md).
+
+## First recorded signal slice
+
+`FirstSignalEvaluationIT` uses an isolated `postgres:18.6-alpine` Testcontainers database and the repository fixture at `src/test/resources/fixtures/first-signal-evaluation.json`. It applies V1-V4 and exercises the public APIs from raw-first replay through dataset finalization, risk gating, immutable `LIQUIDITY_SPIKE`, exact `1h` valuation and deterministic report publication. The contract covers equal retry, immutable conflict, parse failure, cutoff isolation, input permutation, priced and unpriced outcomes, complete provenance, exact rows/scales/indexes and the absence of a risk schema. It never connects to the persistent developer Compose volume.
+
+Pure tests own the risk matrix, signal threshold boundaries, strict post-decision/pre-horizon entry, horizon selection and all three friction tiers. PostgreSQL regressions also prove that sub-microsecond source, decision and evaluation cutoffs normalize consistently before retry comparison, durable identity and published provenance. Fixture validation rejects missing, extra, reordered-semantic or inexact numeric content before the integration scenario is constructed. This fixture proves architecture and determinism only; it is not provider fallback data or evidence of statistical edge.

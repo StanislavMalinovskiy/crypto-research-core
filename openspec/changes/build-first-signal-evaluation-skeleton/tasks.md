@@ -1,0 +1,35 @@
+## 1. Establish the executable contract and behavioral red
+
+- [x] 1.1 Record `git status --short` and the staged `add-portable-local-postgres` baseline, keep the Git index untouched, then add only the inert immutable API records/interfaces required for specification-derived tests to compile across `marketdata::api`, `risk::api`, `signal::api` and `evaluation::api`; verify `ApplicationModules.verify()` and the documented dependency map still pass before adding any implementing bean, SQL or behavior.
+- [x] 1.2 Add one repository-tracked recorded Solana scenario fixture with the four documented swap observations, validated decision-time risk facts and complete run provenance; add fixture validation that rejects missing, extra, reordered-semantic or inexact numeric fields without any production branch recognizing the fixture name or values.
+- [x] 1.3 Add all specification-derived pure, module and Testcontainers tests for replay/parse failure, normalization identity/conflict, cutoff queries, fingerprint permutation, risk boundaries, candidate-first gating, immutable scoring, entry/horizon selection, friction tiers, unpriced outcomes, provenance, idempotency and report determinism; run `.\mvnw.cmd -Dit.test=FirstSignalEvaluationIT verify` before functional implementation and record a valid red at the expected missing-behavior assertion, not compilation, discovery, Spring startup or Docker infrastructure.
+
+## 2. Implement recorded market replay
+
+- [x] 2.1 Add the next globally ordered `marketdata` Flyway migration for normalized swaps, immutable dataset snapshots and snapshot membership, including exact numeric/time constraints, normalized natural identity and only the documented chain/asset/observation-time query index; verify physical ownership, columns, scales, constraints, index purpose and Flyway state against PostgreSQL 18.6.
+- [x] 2.2 Implement the versioned recorded-swap parser, exact value validation and normalized persistence so raw evidence commits first, equal replay is idempotent, conflicting normalized evidence fails without overwrite and parse failure retains raw evidence without a partial normalized row; run the targeted market-data unit and Testcontainers tests to green.
+- [x] 2.3 Implement bounded point-in-time market queries plus versioned length-prefixed canonicalization and immutable dataset finalization; verify future observations are excluded at the decision cutoff, total ordering is stable, input permutation preserves the fingerprint and changed payload/transformation/canonicalization evidence changes it.
+
+## 3. Implement risk gating and the immutable signal
+
+- [x] 3.1 Implement the pure synchronous `risk::api` assessment for the validated first-slice facts with explicit cutoff and exact liquidity handling, introducing no risk schema; verify `ALLOW` for zero flags plus `DISCOVERY` plus USD 80,000 and verify non-allowed boundary cases without machine-clock access.
+- [x] 3.2 Add the next globally ordered `signal` Flyway migration for module-owned candidates and accepted immutable signals, with explicit deduplication, status, versions, fingerprints, exact score/confidence fields and versioned typed evidence; verify schema ownership and constraints against PostgreSQL 18.6 without cross-module SQL.
+- [x] 3.3 Implement candidate recording as a committed idempotent signal transition before risk assessment, then implement the separate accept/reject transition; verify a non-`ALLOW` result preserves the candidate and creates no accepted signal or outcome, while conflicting immutable retries fail without mutation.
+- [x] 3.4 Implement the cutoff-safe `LIQUIDITY_SPIKE` detector and versioned scorer over `marketdata::api`, preserving complete decision-time lineage and risk evidence in the public immutable snapshot; verify exact threshold boundaries, later-data exclusion, score `70`, grade `B`, confidence `1.0000`, factor reasoning and repeated-detection idempotency.
+
+## 4. Implement the 1h outcome and report
+
+- [x] 4.1 Implement pure point-in-time price selection and exact ENTRY valuation for the 1h horizon, including strict post-decision entry, deterministic horizon selection, the three documented Solana liquidity tiers and `HALF_EVEN` scale normalization; verify USD 1.00 to USD 1.20 at USD 80,000 yields gross `0.20000000`, friction `0.04000000` and net `0.16000000`, with no `double`/`float` authority.
+- [x] 4.2 Add the next globally ordered `evaluation` Flyway migration for run manifests, run-scoped ENTRY outcomes and report evidence/fingerprints; verify mandatory provenance, exact scales, immutable identities and module ownership against PostgreSQL 18.6 without reading `marketdata` or `signal` tables directly.
+- [x] 4.3 Implement evaluation orchestration through `marketdata::api` and `signal::api`, persist run/outcome/report atomically inside the owning evaluation transaction and expose the deterministic report through `evaluation::api`; verify missing prices create an explicit counted unpriced outcome, incomplete provenance fails before publication and equal/conflicting retries have the specified behavior.
+- [x] 4.4 Run the complete recorded scenario twice and with permuted raw submission order using `.\mvnw.cmd -Dit.test=FirstSignalEvaluationIT verify`; verify exact row counts, no future-data leakage, one accepted `LIQUIDITY_SPIKE`, one priced 1h outcome, exact average net return `0.16000000`, identical ordered report content/fingerprint and no access to the persistent developer Compose volume.
+
+## 5. Reconcile documentation and architecture evidence
+
+- [x] 5.1 Update `docs/ARCHITECTURE.md`, `docs/REPRODUCIBILITY.md`, `docs/modules/marketdata.md`, `docs/modules/risk.md`, `docs/modules/signal.md`, `docs/modules/evaluation.md`, `docs/PROJECT_SUMMARY.md` and affected testing/operations text to describe only the implemented APIs, tables, transaction ownership, canonicalization, numeric contracts and first-slice limitations; verify relative links and ensure no text claims provider connectivity, wallet support, statistical edge or paper/live execution.
+- [x] 5.2 Keep `docs/DELIVERY_PLAN.md` on this current change until Control accepts the review, update task checkboxes only from observed evidence, and produce a handoff naming changed files, the exact valid red, targeted greens, migration/schema evidence, full-gate results, staged baseline separation and remaining limitations.
+
+## 6. Complete the local quality gate
+
+- [x] 6.1 Run `pwsh -NoProfile -File .codex/scripts/verify-test-integrity.ps1`, then `.\mvnw.cmd clean verify` with Java 25 and Docker available; verify Surefire/Failsafe report zero failures, errors and skips and `ApplicationModules.verify()` remains green.
+- [x] 6.2 Run `openspec validate --all --strict --no-interactive`, `openspec doctor`, `git diff --check` and `git diff --cached --check`; verify every command passes, no production dependency or module-DAG change exists, prior staged files remain unmodified in the index, and only then mark the final implementation tasks complete for Reviewer handoff.

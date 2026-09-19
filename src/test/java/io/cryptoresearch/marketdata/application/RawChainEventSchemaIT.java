@@ -50,8 +50,9 @@ class RawChainEventSchemaIT {
 	@Test
 	void migrationOwnsTheExactTableShapeAndOnlyIdentityIndex() {
 		assertThat(jdbcClient.sql("SHOW server_version").query(String.class).single()).isEqualTo("18.6");
-		assertThat(flyway.info().applied()).singleElement().satisfies(migration ->
-				assertThat(migration.getVersion().getVersion()).isEqualTo("1"));
+		assertThat(flyway.info().applied())
+				.extracting(migration -> migration.getVersion().getVersion())
+				.contains("1");
 		assertThat(flyway.info().pending()).isEmpty();
 
 		var columns = jdbcClient.sql("""

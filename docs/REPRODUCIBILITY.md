@@ -18,6 +18,7 @@ Given those inputs, ordered domain results must be identical. Worker count, virt
 ## UTC and time sources
 
 - Authoritative event, observation, processing, decision, cutoff and evaluation timestamps use `Instant` semantics in UTC.
+- Public authoritative instants that participate in persistence, identity, equality or point-in-time queries are truncated to PostgreSQL microsecond precision before validation and computation, matching `TIMESTAMPTZ(6)`.
 - Source event time, system observation time and processing time are distinct facts when more than one exists.
 - Domain and application calculations receive `Clock` or an explicit reference `Instant`; they do not read the machine clock implicitly.
 - The application composition root may provide `Clock.systemUTC()`. Tests use a fixed or controlled clock.
@@ -58,7 +59,7 @@ Missing mandatory provenance marks the run incomplete. It must not be silently g
 
 - A dataset fingerprint identifies content, not merely a query string or mutable table range.
 - Fingerprints are algorithm-qualified and include a canonicalization/version identifier.
-- The first owning persistence change selects the canonical byte encoding and digest algorithm and records both as versioned data contracts.
+- Dataset, deterministic ID and report fingerprints use SHA-256 formatted as `sha256:<lowercase-hex>`. Canonical fields are versioned, ordered UTF-8 names and byte-length-prefixed values; exact decimals use declared-scale plain strings and instants use canonical UTC text.
 - Re-normalizing identical raw inputs with the same transformation version and canonical order must reproduce the fingerprint.
 - Any changed raw input, transformation version, canonicalization version or digest algorithm produces distinguishable lineage.
 - Normalized observations retain provider/source identity, raw-input identity and normalization/transformation version.
@@ -88,8 +89,8 @@ Missing mandatory provenance marks the run incomplete. It must not be silently g
 
 ## Persistence and transaction boundaries
 
-- A future dataset snapshot transaction belongs to a `marketdata` application use case.
-- A future run-manifest/result transaction belongs to an `evaluation` application use case.
+- Dataset finalization belongs to a short `marketdata` application transaction after replay and member selection.
+- Run manifest, outcome and report publication belong to one short atomic `evaluation` application transaction after signal and market-data API reads.
 - Neither module writes the other's tables; references use stable identities and fingerprints.
 - Provider I/O does not occur inside these database transactions.
 - Exact atomicity, DDL, constraints and idempotency are specified by the feature change that first introduces the persisted object.
@@ -105,4 +106,4 @@ Missing mandatory provenance marks the run incomplete. It must not be silently g
 
 ## Deferred implementation choices
 
-This architecture stage intentionally does not choose Java domain type names, table layouts, column precision/scale, canonical serialization, digest algorithm, report format or seed-generation policy. Each owning OpenSpec change must make the relevant choice explicit and preserve the requirements above.
+The first recorded slice selects immutable Java API records; module-owned V2-V4 tables; scale 18 price, scale 8 liquidity/returns and scale 4 confidence; length-prefixed SHA-256 canonicalization; and a one-family ordered report. Provider formats, broader report formats, randomized algorithms and seed-generation policy remain deferred to their owning changes.

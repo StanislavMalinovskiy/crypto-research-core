@@ -1,0 +1,117 @@
+{
+  "fixtureVersion": "first-signal-evaluation-v1",
+  "canonicalizationVersion": "length-prefixed-v1",
+  "decisionCutoff": "2026-09-01T01:00:00Z",
+  "evaluationCutoff": "2026-09-01T02:00:00Z",
+  "riskFacts": {
+    "manipulationFlags": 0,
+    "lifecycle": "DISCOVERY",
+    "liquidityUsd": "80000.00000000",
+    "evidenceVersion": "first-slice-risk-v1"
+  },
+  "provenance": {
+    "buildIdentity": "crypto-research-core:fixture-build-1",
+    "sourceRevision": "fixture-revision-1",
+    "sourceDirty": false,
+    "algorithmVersion": "entry-1h-v1",
+    "configurationFingerprint": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+  },
+  "observations": [
+    {
+      "role": "BASELINE",
+      "chainId": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+      "transactionValue": "fixture-baseline-tx",
+      "eventLocator": "instruction:1",
+      "provider": "recorded-fixture",
+      "blockPosition": 1000,
+      "blockHash": "fixture-block-1000",
+      "sourceEventTime": "2026-09-01T00:00:00Z",
+      "observedAt": "2026-09-01T00:00:00Z",
+      "transformationVersion": "recorded-swap-v1",
+      "payload": {
+        "schemaVersion": "recorded-swap-v1",
+        "asset": "FixtureAsset1111111111111111111111111111111",
+        "wallet": "FixtureWallet111111111111111111111111111111",
+        "side": "BUY",
+        "tokenQuantity": "1000000",
+        "nativeQuantity": "900000",
+        "priceUsd": "0.900000000000000000",
+        "liquidityUsd": "50000.00000000",
+        "confidence": "1.0000",
+        "venue": "fixture-dex"
+      }
+    },
+    {
+      "role": "DECISION",
+      "chainId": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+      "transactionValue": "fixture-decision-tx",
+      "eventLocator": "instruction:1",
+      "provider": "recorded-fixture",
+      "blockPosition": 1001,
+      "blockHash": "fixture-block-1001",
+      "sourceEventTime": "2026-09-01T01:00:00Z",
+      "observedAt": "2026-09-01T01:00:00Z",
+      "transformationVersion": "recorded-swap-v1",
+      "payload": {
+        "schemaVersion": "recorded-swap-v1",
+        "asset": "FixtureAsset1111111111111111111111111111111",
+        "wallet": "FixtureWallet111111111111111111111111111111",
+        "side": "BUY",
+        "tokenQuantity": "1000000",
+        "nativeQuantity": "1000000",
+        "priceUsd": "1.000000000000000000",
+        "liquidityUsd": "80000.00000000",
+        "confidence": "1.0000",
+        "venue": "fixture-dex"
+      }
+    },
+    {
+      "role": "ENTRY",
+      "chainId": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+      "transactionValue": "fixture-entry-tx",
+      "eventLocator": "instruction:1",
+      "provider": "recorded-fixture",
+      "blockPosition": 1002,
+      "blockHash": "fixture-block-1002",
+      "sourceEventTime": "2026-09-01T01:00:01Z",
+      "observedAt": "2026-09-01T01:00:01Z",
+      "transformationVersion": "recorded-swap-v1",
+      "payload": {
+        "schemaVersion": "recorded-swap-v1",
+        "asset": "FixtureAsset1111111111111111111111111111111",
+        "wallet": "FixtureWallet111111111111111111111111111111",
+        "side": "BUY",
+        "tokenQuantity": "1000000",
+        "nativeQuantity": "1000000",
+        "priceUsd": "1.000000000000000000",
+        "liquidityUsd": "80000.00000000",
+        "confidence": "1.0000",
+        "venue": "fixture-dex"
+      }
+    },
+    {
+      "role": "HORIZON",
+      "chainId": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+      "transactionValue": "fixture-horizon-tx",
+      "eventLocator": "instruction:1",
+      "provider": "recorded-fixture",
+      "blockPosition": 1003,
+      "blockHash": "fixture-block-1003",
+      "sourceEventTime": "2026-09-01T02:00:00Z",
+      "observedAt": "2026-09-01T02:00:00Z",
+      "transformationVersion": "recorded-swap-v1",
+      "payload": {
+        "schemaVersion": "recorded-swap-v1",
+        "asset": "FixtureAsset1111111111111111111111111111111",
+        "wallet": "FixtureWallet111111111111111111111111111111",
+        "side": "BUY",
+        "tokenQuantity": "1000000",
+        "nativeQuantity": "1200000",
+        "priceUsd": "1.200000000000000000",
+        "liquidityUsd": "85000.00000000",
+        "confidence": "1.0000",
+        "venue": "fixture-dex"
+      }
+    }
+  ]
+}

@@ -42,6 +42,12 @@ Only the Actuator health endpoint family is exposed by default. Production respo
 - Exact pool sizes, connection/statement/transaction timeouts, batch sizes, retry counts and rate limits remain deferred until the first measured workload provides evidence.
 - CPU-bound work uses bounded platform-thread executors.
 
+## Recorded first-slice runtime boundary
+
+The implemented replay, signal and evaluation APIs are synchronous in-process boundaries. Recorded replay commits each raw observation before a separate normalization transaction; no provider I/O occurs in either transaction. Signal candidate recording and completion are separate short `signal` transactions around an out-of-transaction risk assessment. Evaluation reads signal and market projections before atomically writing its own run, outcome and report.
+
+This slice has no HTTP/CLI/scheduled trigger, live provider connection or production data bootstrap. Its repository fixture is test data only. Running the Maven integration suite creates an isolated Testcontainers PostgreSQL instance and does not read, mutate or require the Compose-managed developer volume.
+
 ## Logging and telemetry
 
 - Use the Spring Boot and SLF4J baseline; no exporter is currently selected.
