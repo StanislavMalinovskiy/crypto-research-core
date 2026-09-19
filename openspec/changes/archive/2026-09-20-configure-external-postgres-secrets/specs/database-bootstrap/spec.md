@@ -1,12 +1,12 @@
 ## ADDED Requirements
 
 ### Requirement: Explicit external PostgreSQL profile
-The repository SHALL provide an explicitly selected external-PostgreSQL runtime profile that obtains the JDBC endpoint, runtime credentials and separate Flyway credentials from a required workstation-local secrets file, while preserving the existing local Compose defaults when that profile is not selected.
+The repository SHALL provide an explicitly selected external-PostgreSQL runtime profile that obtains one JDBC endpoint, username and password from a required workstation-local secrets file and uses that connection identity for both the application datasource and Flyway, while preserving the existing local Compose defaults when that profile is not selected.
 
 #### Scenario: Start against configured external PostgreSQL
 - **WHEN** the external-PostgreSQL profile is selected with a complete ignored secrets file
-- **THEN** the application datasource SHALL use the configured runtime JDBC endpoint and runtime credentials
-- **AND** Flyway SHALL use the separately configured migration endpoint and migration credentials
+- **THEN** the application datasource SHALL use the configured JDBC endpoint and credentials
+- **AND** Flyway SHALL use the same datasource connection identity without requiring separate migration settings
 - **AND** no source-code change SHALL be required between workstations.
 
 #### Scenario: External profile is incomplete
@@ -31,4 +31,3 @@ The repository SHALL provide a tracked placeholder-only example for external Pos
 - **WHEN** the Maven verification lifecycle runs
 - **THEN** database integration tests SHALL continue to use isolated PostgreSQL Testcontainers
 - **AND** they SHALL NOT read, require or connect to the workstation-local external database configuration.
-

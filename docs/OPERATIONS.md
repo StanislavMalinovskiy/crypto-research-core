@@ -27,11 +27,24 @@ This document owns repository-wide runtime and operational rules. Product sequen
 - `managed` is an explicit profile. Without it, the application keeps the local Compose defaults and does not read the external secrets file.
 - With `managed`, `config/application-managed-secrets.properties` is a required external import. Missing or blank mandatory settings fail startup without falling back to local development credentials.
 - `config/application-managed-secrets.example.properties` is the only tracked template and contains placeholders only. The populated counterpart is explicitly ignored, remains outside the JAR and is recreated separately on each workstation.
-- The application datasource uses a lower-privilege runtime identity. Flyway receives a distinct migration identity with schema ownership and DDL rights. Both identities target the same PostgreSQL 18 database; server-side role creation and grants are operator responsibilities.
-- Both JDBC URLs declare TLS explicitly. `sslmode=verify-full` with a trusted CA is preferred. `sslmode=require` is transitional because it encrypts traffic without authenticating the server.
+- The ignored file defines exactly `CRYPTO_RESEARCH_MANAGED_DB_URL`, `CRYPTO_RESEARCH_MANAGED_DB_USERNAME` and `CRYPTO_RESEARCH_MANAGED_DB_PASSWORD`. The application datasource uses that identity and Flyway inherits the same datasource without separate managed settings.
+- The shared identity requires both the application's runtime privileges and the schema/DDL privileges needed by Flyway. Server-side role creation and grants are operator responsibilities and should be revisited before broader or unattended deployment.
+- The JDBC URL declares TLS explicitly. `sslmode=verify-full` with a trusted CA is preferred. `sslmode=require` is transitional because it encrypts traffic without authenticating the server.
 - A credential disclosed in chat, logs, an issue or another external channel is rotated before use. Secret values are never pasted into agent prompts, commands intended for evidence capture, documentation or test reports.
+- Rotate the shared credential on the server and update each workstation's ignored file before its next application start; obsolete Flyway-specific entries are not used and should be removed locally by the operator.
 - Start the profile with `SPRING_PROFILES_ACTIVE=managed`. Successful startup confirms Flyway validation/application; `/actuator/health/readiness` must then report `UP` before useful work begins.
 - Profile wiring does not prove external PostgreSQL version, firewall restrictions, backup retention or restore viability. Those checks remain required Stage 3.0 operational evidence before production-like ingestion.
+
+Prepare and start a workstation without putting values in command history or agent prompts:
+
+```powershell
+Copy-Item config/application-managed-secrets.example.properties config/application-managed-secrets.properties
+notepad config/application-managed-secrets.properties
+$env:SPRING_PROFILES_ACTIVE = "managed"
+.\mvnw.cmd spring-boot:run
+```
+
+Fill only the three named managed database values in the copied file. Do not export them as evidence, print them in diagnostics or pass them to automated tests. The fixed import is required when `managed` is active; no managed profile means the unchanged local Compose path.
 
 ## Health semantics
 
