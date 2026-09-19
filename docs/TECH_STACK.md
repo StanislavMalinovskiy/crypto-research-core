@@ -1,6 +1,6 @@
 # Tech stack and decision status
 
-**Обновлено:** 13 сентября 2026
+**Обновлено:** 20 сентября 2026
 
 This document records allowed technologies and their decision state. Product sequencing belongs to [Roadmap](ROADMAP.md), current architecture to [Architecture](ARCHITECTURE.md), and accepted architectural rationale to [ADRs](adr/README.md).
 
@@ -14,10 +14,12 @@ This document records allowed technologies and their decision state. Product seq
 - **Web framework:** Spring MVC with a synchronous imperative model.
 - **Persistence:** Spring Data JDBC and `JdbcClient`.
 - **Database:** PostgreSQL 18; one database instance. The current durable baseline has the module-owned `marketdata` schema and its append-only `raw_chain_events` table keyed by exact CAIP-2 network identity, transaction value, canonical event locator and provider.
+- **Local database lifecycle:** Docker Compose with exact `postgres:18.6-alpine`, loopback-only publication and a workstation-local named volume is approved for local development only. It runs no application container and creates no application schema.
 - **Migrations:** Flyway managed by Spring Boot dependency management.
 - **Build:** Maven Wrapper with checksum-verified Maven 3.9.16, one Maven module and one deployable JAR.
 - **Health:** Spring Boot Actuator health endpoint.
 - **Tests:** JUnit, Spring Modulith Test and PostgreSQL Testcontainers managed by the existing BOMs.
+- **Database test isolation:** Testcontainers remains the isolated PostgreSQL mechanism for Maven verification and never uses the persistent developer Compose volume.
 - **Specification workflow:** OpenSpec 1.13.0 in CI; generated skills remain owned by the installed CLI.
 
 ### Java 25 model
@@ -80,7 +82,7 @@ A cache, broker, additional database, deployable, external observability platfor
 - Spring Modulith 2.1.1 remains an explicitly imported BOM compatible with the Boot baseline. Boot and Modulith upgrades require a reviewed change and must be verified together.
 - PostgreSQL major 18 is the supported runtime family. Integration tests use the exact `postgres:18.6-alpine` image; patch/tag updates require PostgreSQL startup, Flyway and full Maven verification.
 - OpenSpec CI uses 1.13.0. CLI and generated-skill upgrades are reviewed together and require strict validation of all specs.
-- Container images use reviewed exact minor tags. Digest pinning is deferred until platform selection and image-update automation are defined.
+- Local Compose and integration tests use the same exact `postgres:18.6-alpine` image. Container images use reviewed exact minor tags; digest pinning is deferred until platform selection and image-update automation are defined.
 
 Every platform, framework, build-tool or test-container update must run `mvnw.cmd clean verify`, strict OpenSpec validation and OpenSpec doctor before acceptance. A successful dependency cache never substitutes for these checks.
 

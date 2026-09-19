@@ -34,3 +34,8 @@ build/
 
 ### Codex runtime ###
 .codex-logs/
+
+### Local development environment ###
+.env
+.env.local
+.env.*.local

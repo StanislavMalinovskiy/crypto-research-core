@@ -5,15 +5,20 @@ This document owns repository-wide runtime and operational rules. Product sequen
 ## Runtime topology
 
 - The current deployable is one application JAR connected to one external PostgreSQL 18 database instance.
-- Docker is required for Testcontainers in local verification and CI. It is not a production-database requirement.
+- The root `compose.yaml` provides a development-only Docker Compose lifecycle for the external PostgreSQL 18.6 process; it does not run or package the application.
+- Each workstation owns an independent Compose-managed named volume. That volume persists across ordinary container recreation, does not synchronize between workstations and is deleted only by an explicitly destructive reset.
+- Docker is required for the local Compose lifecycle and for Testcontainers in local verification and CI. Testcontainers remains isolated from the persistent developer volume and is not a production-database requirement.
 - A production database should be a separately operated managed or dedicated PostgreSQL service. Application and database lifecycle, storage and backups must not be coupled accidentally.
-- Docker Compose, Kubernetes, application container images, backup/restore procedures and multi-region deployment remain deferred until a deployment change defines them.
+- Selection and operation of shared managed PostgreSQL belongs to a separate Stage 3 decision; local Compose neither synchronizes research data nor substitutes for that service.
+- Production Docker Compose, Kubernetes, application container images, backup/restore procedures and multi-region deployment remain deferred until a deployment change defines them.
 
 ## Configuration and secrets
 
 - Secrets enter through environment injection or a deployment secret store. They never receive committed production defaults.
 - Provider keys, database credentials and tokens must not appear in Git, logs, health details or exception messages.
 - Local defaults are allowed only for non-secret development configuration. The existing local database credentials are development conveniences, not production values.
+- `.env.example` contains development-only Compose defaults. Developer-local `.env` variants remain untracked; when their port or credentials differ, the matching `CRYPTO_RESEARCH_DB_URL`, `CRYPTO_RESEARCH_DB_USERNAME` and `CRYPTO_RESEARCH_DB_PASSWORD` values must be supplied to the host application.
+- PostgreSQL image initialization variables affect only an empty volume. Changing a local environment file does not rewrite credentials in an existing cluster; alter the database explicitly or use the documented destructive reset.
 - New provider or production-only settings use typed configuration and fail fast when mandatory values are absent.
 - Bean Validation or another validation dependency is added only with the real configuration or input contract that uses it; empty configuration classes are forbidden.
 

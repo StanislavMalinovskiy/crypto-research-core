@@ -68,6 +68,54 @@ java -jar target/crypto-research-core-0.0.1-SNAPSHOT.jar
 
 Preview-функция может быть включена только отдельным OpenSpec change и superseding ADR с указанием точного JEP, причины, runtime-флага и JDK upgrade verification.
 
+## Локальная PostgreSQL для разработки
+
+Корневой `compose.yaml` запускает только PostgreSQL 18.6 для локальной разработки. Приложение остаётся host-процессом и использует Flyway при старте; Compose не создаёт application schema и не запускает JAR.
+
+Необязательно создайте собственный игнорируемый `.env` из безопасного примера и измените только локальные значения:
+
+```powershell
+Copy-Item .env.example .env
+```
+
+Запуск базы и проверка её статуса:
+
+```powershell
+docker compose up -d --wait postgres
+docker compose ps postgres
+```
+
+С настройками по умолчанию приложение подключается без дополнительных переменных:
+
+```powershell
+.\mvnw.cmd spring-boot:run
+```
+
+Если в `.env` изменены порт, имя базы или credentials, перед стартом приложения задайте соответствующие host-side настройки. Например:
+
+```powershell
+$env:CRYPTO_RESEARCH_DB_URL = "jdbc:postgresql://localhost:55432/crypto_research"
+$env:CRYPTO_RESEARCH_DB_USERNAME = "crypto_research"
+$env:CRYPTO_RESEARCH_DB_PASSWORD = "crypto_research"
+.\mvnw.cmd spring-boot:run
+```
+
+Значение `POSTGRES_HOST_PORT` должно совпадать с портом в `CRYPTO_RESEARCH_DB_URL`; `POSTGRES_DB`, `POSTGRES_USER` и `POSTGRES_PASSWORD` соответствуют имени базы, `CRYPTO_RESEARCH_DB_USERNAME` и `CRYPTO_RESEARCH_DB_PASSWORD`. Инициализационные переменные образа PostgreSQL применяются только к пустому volume. Изменение credentials для существующего volume требует явного изменения роли/пароля внутри PostgreSQL либо разрушительного локального reset.
+
+Обычная остановка удаляет контейнер и сеть, но сохраняет named volume и данные:
+
+```powershell
+docker compose down
+```
+
+**Разрушительный локальный reset — удаляет named volume и все данные этой локальной базы:**
+
+```powershell
+docker compose down --volumes
+```
+
+После reset следующий `docker compose up -d --wait postgres` создаст пустую базу, а приложение повторно применит Flyway migrations. Volume принадлежит Docker на конкретной рабочей станции и не синхронизируется с другими компьютерами.
+
 ## Проверка изменений
 
 Локальный обязательный gate:
