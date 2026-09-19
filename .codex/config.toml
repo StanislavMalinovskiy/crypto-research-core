@@ -4,6 +4,9 @@ model_reasoning_effort = "high"
 # Exact boolean true manually selects MULTIAGENT for a new task.
 # False, missing or invalid selects fail-closed DEFAULT; agents never edit this switch.
 [agents]
-enabled = false
-max_concurrent_threads_per_session = 4
-max_depth = 1
+  enabled = false
+  max_concurrent_threads_per_session = 4
+  max_depth = 1
+
+  [mcp_servers.idea]
+    url = "http://127.0.0.1:64342/stream"
