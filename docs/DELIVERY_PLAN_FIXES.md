@@ -1,6 +1,6 @@
 # План исправлений по результатам внешних аудитов
 
-**Обновлено:** 20 сентября 2026 года  
+**Обновлено:** 20 сентября 2026 года
 **Статус:** рабочий companion plan к [основному Delivery Plan](DELIVERY_PLAN.md)
 
 ## Назначение
@@ -97,9 +97,19 @@ Roadmap, Delivery Plan, Architecture, Tech Stack, Operations, Project Summary, G
 - finality;
 - source/quality/provenance;
 - rate limits, retention, terms и стоимость;
+- единицу тарификации, период сброса квоты, hard/soft limits, overage/throttling behavior и способ получить текущее потребление;
 - failure, retry и fallback semantics.
 
-Проверить Helius, Bitquery, DexScreener, GoPlus и другие необходимые кандидаты по одной матрице. Ни наличие API в документации, ни бесплатный ключ сами по себе не доказывают пригодность.
+Матрица должна как минимум явно сравнить:
+
+- Helius JSON-RPC/WebSocket и доступные платные LaserStream-возможности;
+- Alchemy Yellowstone gRPC и его ограниченное historical replay;
+- Triton Dragon's Mouth/Fumarole, включая persistent cursor и replay window;
+- Chainstack Yellowstone gRPC;
+- SQD как кандидата для исторических данных — только после проверки фактического Solana dataset, полей, глубины, полноты и условий использования;
+- Bitquery, DexScreener и GoPlus как специализированные источники enrichment/risk/market facts, а не предполагаемую замену полного Solana transport.
+
+Helius Free разрешено использовать только для проверки реально доступных ему JSON-RPC/standard WebSocket/API-свойств. По состоянию на 2026-09-20 этот тариф не предоставляет mainnet LaserStream gRPC и `transactionSubscribe`, поэтому он не доказывает production reconnect/replay transport. Возможности, тарифы и replay windows перепроверяются по официальной документации на дату решения. Ни наличие API в документации, ни бесплатный ключ сами по себе не доказывают пригодность.
 
 ### F1.2 Finality и reorg policy
 
@@ -162,15 +172,25 @@ Roadmap, Delivery Plan, Architecture, Tech Stack, Operations, Project Summary, G
 
 ### F1.9 Capacity envelope
 
-Оценить events/day, payload bytes/day, retention, backfill size, snapshot frequency, dataset membership, indexes и query patterns. Решения о partitioning и storage shape принимаются по этим данным, а не по предположениям.
+Оценить events/day, payload bytes/day, retention, backfill size, snapshot frequency, dataset membership, indexes и query patterns. Отдельно спрогнозировать размер backup, длительность backup/restore, WAL growth и допустимые RPO/RTO. Решения о partitioning, storage shape и backup strategy принимаются по этим данным, а не по предположениям.
+
+Разделить данные по восстановимости:
+
+- provider-reloadable raw evidence считается восстановимым только при доказанных retention, replay, cost, terms и неизменности нужного payload; одного предположения «это есть в блокчейне» недостаточно;
+- normalized/derived facts можно пересчитать только при сохранённых exact raw evidence, parser/algorithm versions и configuration;
+- dataset snapshots и membership, fingerprints, run manifests/configuration, risk/signal/wallet history, outcomes, reports и operator metadata считать невосполнимыми и защищать независимо от raw retention.
+
+Ежедневный полный `pg_dump` допустим как текущая маломасштабная baseline, но F1 обязан определить измеримые пороги перехода к иной схеме: время/размер backup, restore time, объём базы и RPO/RTO. Для выросшего объёма выбрать подходящую комбинацию selective logical backup, physical backup, WAL/PITR, snapshots и off-host/object retention; не продолжать full dump по инерции.
 
 ### F1.10 Provider spike и selection
 
-На одинаковом bounded sample проверить кандидатов по матрице, включая missing fields, ordering, finality, duplicates, reconnect behavior, terms и free/paid limits. Выбрать:
+На одинаковом bounded sample проверить общие возможности кандидатов, а transport/history-specific свойства — отдельными capability-specific spikes. Проверить missing fields, ordering, finality, duplicates, reconnect, replay window, длительный disconnect, rate limiting, quota exhaustion, terms и free/paid limits. Бесплатный или ограниченный тариф не может подтвердить capability, которой на нём нет. Выбрать:
 
-- primary provider;
+- primary live provider/transport;
+- historical/backfill source;
 - дополнительные источники только для непокрытых фактов;
 - допустимое поведение при недоступности;
+- наблюдаемый способ обнаружить приближение и фактическое исчерпание квоты;
 - запрет на подмену отсутствующих данных вымышленными значениями.
 
 ### Условие завершения
@@ -213,7 +233,9 @@ Roadmap, Delivery Plan, Architecture, Tech Stack, Operations, Project Summary, G
 - Хранить last stable position и provider cursor/state.
 - На reconnect обнаруживать missed ranges.
 - Идемпотентно восстанавливать диапазон.
-- Сохранять unresolved gap windows, а не скрывать их.
+- Сохранять gap windows со status и reason, а не скрывать их; минимальные причины включают reconnect, provider outage, local failure, rate limit и `PROVIDER_QUOTA_EXHAUSTED`.
+- Остановка или отбрасывание данных из-за квоты всегда открывает явный gap; успешный reconnect сам по себе его не закрывает.
+- Закрывать gap только после доказанного replay/backfill полного диапазона. При восстановлении из другого provider сохранять source/provenance и проверять эквивалентность identity/coverage.
 - Помечать datasets/outcomes, пересекающие unresolved gaps.
 
 ### F3.3 Historical backfill
@@ -229,6 +251,8 @@ Roadmap, Delivery Plan, Architecture, Tech Stack, Operations, Project Summary, G
 
 - last successful ingest и lag/freshness;
 - queue saturation и provider failures;
+- использованную/оставшуюся provider quota, время её сброса, текущий burn rate, прогноз расхода до конца billing period и ожидаемую дату исчерпания;
+- warning/critical notifications до исчерпания и отдельный actionable alert при hard stop; если provider не отдаёт usage telemetry, вести консервативный локальный счётчик и явно маркировать его точность;
 - parse/normalization failure counts;
 - coverage и unresolved gaps;
 - bounded-cardinality structured logs;
@@ -241,11 +265,14 @@ Roadmap, Delivery Plan, Architecture, Tech Stack, Operations, Project Summary, G
 - Не публиковать health/readiness наружу по умолчанию.
 - Сохранить одну datasource/Flyway identity как текущее осознанное упрощение; вернуться к разделению ролей перед broader unattended deployment.
 - Предпочитать TLS `verify-full`; `require` считать переходным вариантом.
-- Продолжать backup/restore drills; при росте ценности данных принять off-host retention policy.
+- Связать backup policy с классами восстановимости и capacity thresholds из F1.9, а не применять один режим ко всей базе.
+- Невосполнимые research artifacts защищать off-host с первого момента их появления; для reloadable raw отдельно определить retention/cold archive или осознанно принятый повторный backfill.
+- Зафиксировать RPO/RTO для каждого класса и продолжать restore drills, проверяющие не только открытие базы, но и critical manifests, snapshots, histories, outcomes и reports.
+- До превышения установленного порога оставить ежедневный полный `pg_dump` как baseline; после порога перейти на выбранную volume-appropriate схему и доказать восстановление на близком к прогнозному объёме.
 
 ### F3.6 Data-quality gate
 
-Провести длительный прогон и доказать freshness, bounded resource use, replay, reconnect recovery, parse quality, visible gaps и отсутствие повторных domain effects.
+Провести длительный прогон и доказать freshness, bounded resource use, replay, reconnect recovery, parse quality, visible gaps и отсутствие повторных domain effects. Отдельно принудительно или детерминированно симулировать предупреждение и остановку по квоте: monitoring должен заранее показать depletion forecast, ingestion — открыть причинный gap, а recovery — заполнить и закрыть его только после полного replay/backfill.
 
 ### Условие завершения
 
@@ -457,7 +484,7 @@ F9 не входит в remediation текущего MVP. Он активиру�
 ## Ближайшие три задачи
 
 1. Выполнить F0: синхронизировать Roadmap/Delivery Plan/Glossary/Operations без изменения поведения.
-2. Оформить F1 как design-first OpenSpec change и построить provider-consumer matrix, включая Helius free-tier spike.
+2. Оформить F1 как design-first OpenSpec change и построить capability-driven provider-consumer matrix. Включить Helius, Alchemy Yellowstone, Triton Fumarole, Chainstack Yellowstone, SQD и специализированные источники; Helius Free проверяет только доступные ему capability, а не mainnet gRPC/replay.
 3. После выбора контракта выполнить F2 до написания live provider adapter.
 
 ## Traceability первого аудита
@@ -506,6 +533,14 @@ F9 не входит в remediation текущего MVP. Он активиру�
 | Documentation defects | F0 |
 | `strategy_experiment_id` drift | F0, F5 |
 | 4h/24h migration | F0, F6.7 |
+
+## Traceability дополнительных находок владельца
+
+| Finding | Важность | Покрытие |
+|---|---|---|
+| Исчерпание provider quota создаёт скрытый data gap | Высокая | F1.1, F1.10, F3.2, F3.4, F3.6 |
+| Ежедневный full `pg_dump` не масштабируется вместе с raw volume | Высокая | F1.9, F3.5, F3.6 |
+| Provider shortlist и spikes не отражают transport/replay/history capabilities | Высокая до выбора provider | F1.1, F1.10, ближайшая задача 2 |
 
 ## Когда этот план считается выполненным
 
