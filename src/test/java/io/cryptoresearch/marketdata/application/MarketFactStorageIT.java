@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -121,7 +122,9 @@ class MarketFactStorageIT {
 
 	@Test
 	void usdConversionRetryIsIdempotentAndConflictRejectedAgainstPopulatedTable() {
-		useCase.storeUsdConversion(usd(2, 2, "2.500000000000000000"));
+		useCase.storePrice(price(1, T1, "1.500000000000000000"));
+		useCase.storePrice(price(2, T1, "2.000000000000000000"));
+		useCase.storeUsdConversion(usd(2, 1, "2.500000000000000000"));
 		var fact = usd(1, 1, "1.800000000000000000");
 		assertThat(useCase.storeUsdConversion(fact)).isEqualTo(fact);
 		assertThat(useCase.storeUsdConversion(fact)).isEqualTo(fact);
@@ -130,6 +133,26 @@ class MarketFactStorageIT {
 		assertThatThrownBy(() -> useCase.storeUsdConversion(usd(1, 1, "9.900000000000000000")))
 				.isInstanceOf(MarketFactConflictException.class);
 		assertThat(usdCount()).isEqualTo(2);
+	}
+
+	@Test
+	void usdConversionRejectsMissingConvertedPriceObservation() {
+		useCase.storePrice(price(2, T1, "2.000000000000000000"));
+
+		assertThatThrownBy(() -> useCase.storeUsdConversion(usd(1, 2, "1.800000000000000000")))
+				.isInstanceOf(DataIntegrityViolationException.class);
+		assertThat(usdCount()).isZero();
+		assertThat(priceCount()).isEqualTo(1);
+	}
+
+	@Test
+	void usdConversionRejectsMissingUsdQuotePriceObservation() {
+		useCase.storePrice(price(1, T1, "1.500000000000000000"));
+
+		assertThatThrownBy(() -> useCase.storeUsdConversion(usd(1, 2, "1.800000000000000000")))
+				.isInstanceOf(DataIntegrityViolationException.class);
+		assertThat(usdCount()).isZero();
+		assertThat(priceCount()).isEqualTo(1);
 	}
 
 	private PriceObservation price(int index, Instant observedAt, String price) {

@@ -111,7 +111,7 @@ public class JdbcRawTransactionStore implements RawTransactionStore {
 					.param("transactionValue" + index, transaction.transactionId().value())
 					.param("provider" + index, transaction.provider());
 		}
-		var byIdentity = new HashMap<String, StoredRawTransaction>();
+		var byIdentity = new HashMap<RawTransactionIdentity, StoredRawTransaction>();
 		statement.query(this::map).list().forEach(stored -> byIdentity.put(key(stored), stored));
 
 		var verified = new ArrayList<StoredRawTransaction>(chunk.size());
@@ -193,6 +193,7 @@ public class JdbcRawTransactionStore implements RawTransactionStore {
 		return first.chain().equals(second.chain())
 				&& first.transactionId().equals(second.transactionId())
 				&& first.provider().equals(second.provider())
+				&& first.payload().equals(second.payload())
 				&& first.payloadHash().equals(second.payloadHash())
 				&& first.blockPosition().equals(second.blockPosition())
 				&& first.blockHash().equals(second.blockHash())
@@ -202,12 +203,16 @@ public class JdbcRawTransactionStore implements RawTransactionStore {
 				&& first.parserVersion().equals(second.parserVersion());
 	}
 
-	private String key(StoredRawTransaction transaction) {
-		return transaction.chain().value() + "/" + transaction.transactionId().value() + "/"
-				+ transaction.provider();
+	private RawTransactionIdentity key(StoredRawTransaction transaction) {
+		return new RawTransactionIdentity(
+				transaction.chain(), transaction.transactionId(), transaction.provider());
 	}
 
 	private OffsetDateTime timestamp(java.time.Instant instant) {
 		return OffsetDateTime.ofInstant(instant, ZoneOffset.UTC);
+	}
+
+	private record RawTransactionIdentity(
+			ChainId chain, TransactionId transactionId, String provider) {
 	}
 }

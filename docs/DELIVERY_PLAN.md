@@ -23,9 +23,9 @@
 ## Текущая позиция
 
 - **Текущий этап:** Этап 3 — Реальные данные Solana (исполняется через remediation-пакеты [DELIVERY_PLAN_FIXES](DELIVERY_PLAN_FIXES.md)).
-- **Текущая работа:** F0 — синхронизация документов; затем F1 — Solana data contract и provider-consumer matrix с capability-specific spikes.
-- **Следующая операционная работа:** F2 — schema/storage readiness до первой массовой real-data записи.
-- **Следующее бизнес-изменение:** F3 — bounded ingestion выбранного transport с явными timeout, rate, concurrency, finite retry policies, gap recovery и минимальной operational visibility.
+- **Текущая работа:** завершить F1 — провести owner-run capability-specific provider spikes 3.1–3.6 и выбрать primary live transport, historical source и необходимые specialized sources; design-контракт готов, но change остаётся активным на 4/10 задач.
+- **Завершённая подготовка:** F0 синхронизировал документы; F2 core storage принят и архивирован — Flyway V5–V9, immutable raw/price/liquidity/USD/universe storage, lineage constraints и bounded batch paths реализованы.
+- **Следующая операционная работа:** F3 — bounded ingestion выбранного transport с явными timeout, rate, concurrency, finite retry policies, gap recovery и минимальной operational visibility. До допуска live data F3 также добавляет forward migrations для token decimals, provider-visible/modeled availability и явного quality provenance.
 - **Условие перехода к этапу 4:** реальные текущие и исторические Solana observations воспроизводятся с raw lineage, trusted observation time, parser identity и видимыми gaps без повторных доменных эффектов (F3.6).
 
 ## Сводка этапов
@@ -81,7 +81,7 @@
 |---|---|---|
 | 3.0 | Done | Настроить постоянную managed PostgreSQL для работы из нескольких мест и подтвердить профиль, секреты, Flyway, PostgreSQL 18.6, TLS и восстановление свежего backup; сетевая политика остаётся ответственностью оператора. |
 | 3.1 | Current | Через F1: построить provider-consumer matrix, зафиксировать Solana data contract (finality, locator, time, universe, derivation, quality, ranges, capacity) и выбрать primary transport/history sources по результатам capability-specific spikes. |
-| 3.2 | Next | Реализовать bounded real-time ingestion с явными timeout, rate, concurrency и finite retry policies. |
+| 3.2 | Next | После F1 selection реализовать F3 bounded real-time ingestion с явными timeout, rate, concurrency и finite retry policies; V5–V9 core storage уже готов, недостающие live facts добавляются только forward migrations. |
 | 3.3 | Planned | Добавить provider-specific normalization, parser versioning и replay сохранённых raw payloads. |
 | 3.4 | Planned | Обнаруживать reconnect gaps, восстанавливать пропущенные диапазоны и явно отмечать unresolved windows. |
 | 3.5 | Planned | Сохранять observed price snapshots, source/quality facts и необходимые token discovery observations. |

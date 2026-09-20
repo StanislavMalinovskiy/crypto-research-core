@@ -58,7 +58,7 @@
 - Completed bootstrap: [2026-09-13-bootstrap-modular-foundation](openspec/changes/archive/2026-09-13-bootstrap-modular-foundation/).
 - Accepted behavior: see [openspec/specs](openspec/specs/); active change names are intentionally not pinned here because completed changes move to `archive/`.
 
-Текущий storage boundary сохраняет stable-inclusion raw provider evidence с точным CAIP-2 network identity и payload в `marketdata.raw_chain_events`, принимает равный retry без изменения первой записи и отклоняет конфликтующие immutable evidence. Сам storage не проверяет finality; provisional ingestion требует отдельного finality/reorg change. Следующий walking skeleton использует записанный provider fixture: raw input → normalized swap → signal snapshot → outcome → reproducible report. Реальный provider adapter следует отдельным change. PAPER/LIVE execution отсутствует в MVP; любые execution gates потребуют отдельного одобренного change и ADR.
+Текущий storage boundary сохраняет stable-inclusion raw provider evidence с точным CAIP-2 identity, отдельные transaction payloads, normalized swaps, price/liquidity observations, USD-conversion lineage и immutable dataset/universe snapshots. Равный retry не изменяет первую запись, а конфликтующие immutable evidence отклоняются. Сам storage не проверяет finality; F1 provider spikes и selection ещё не завершены, а реальный provider adapter и недостающие live facts принадлежат следующему F3 change. Записанный walking skeleton уже проходит путь raw input → normalized swap → signal snapshot → outcome → reproducible report. PAPER/LIVE execution отсутствует в MVP; любые execution gates потребуют отдельного одобренного change и ADR.
 
 ## Java baseline
 

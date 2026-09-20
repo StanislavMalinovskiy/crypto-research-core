@@ -21,4 +21,6 @@
 20. Итог MVP — Evidence Report: какие signal families стоит углублять, какие отбросить, и есть ли смысл идти к paper/live trading.
 21. Исследовательский результат считается воспроизводимым только при зафиксированных dataset fingerprint/cutoff, build/commit, algorithm/config version, deterministic ordering и seed; время хранится как UTC `Instant`, финансовая арифметика является точной.
 22. Реализованный первый срез намеренно узок: записанный Solana fixture доказывает deterministic `LIQUIDITY_SPIKE` → risk gate → `1h` ENTRY outcome → one-family report. Он не подключает провайдера, не реализует wallet analytics или execution и не доказывает статистический edge.
-23. Порядок работ до реальных данных и decision support определён remediation-картой [DELIVERY_PLAN_FIXES](DELIVERY_PLAN_FIXES.md) по итогам двух внешних аудитов 2026-09-20.
+23. F2 core storage принят: Flyway V5–V9 добавляют отдельные raw transaction payloads, price/liquidity observations, USD conversion lineage и point-in-time token universes с immutable retry, bounded batches и PostgreSQL volume/boundary evidence. Это ещё не live ingestion.
+24. Текущая работа — незавершённый F1 provider selection (4/10): owner-run spikes и выбор live/history sources. После него F3 добавляет adapter, gaps/monitoring и недостающие live facts до первой массовой записи.
+25. Порядок работ до реальных данных и decision support определён remediation-картой [DELIVERY_PLAN_FIXES](DELIVERY_PLAN_FIXES.md) по итогам двух внешних аудитов 2026-09-20.

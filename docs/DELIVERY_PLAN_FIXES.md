@@ -53,8 +53,8 @@
 | ID | Приоритет | Пакет | Когда нужен | Статус |
 |---|---|---|---|---|
 | F0 | Immediate | Синхронизировать документы и устранить противоречия | До следующего implementation change | Done (2026-09-20) |
-| F1 | Blocking | Определить Solana data contract и provider requirements | До завершения Stage 3.1 | Design done (2026-09-20); spikes и выбор провайдера — owner-action |
-| F2 | Blocking | Подготовить schema/storage к реальным данным | До первой массовой real-data записи | Done (2026-09-20) |
+| F1 | Blocking | Определить Solana data contract и provider requirements | До завершения Stage 3.1 | Design done (4/10); spikes и выбор провайдера — owner-action |
+| F2 | Blocking | Подготовить schema/storage к реальным данным | До первой массовой real-data записи | Core implemented; live-readiness pending F3 forward migrations |
 | F3 | Blocking | Реализовать bounded ingestion, backfill, gaps и monitoring | Для выхода из Stage 3 | Not started |
 | F4 | Required | Реализовать point-in-time risk и wallet evidence | До production signal families | Not started |
 | F5 | Required | Пререгистрировать research protocol | До просмотра и настройки performance outcomes | Not started |
@@ -203,7 +203,7 @@ Helius Free разрешено использовать только для пр
 
 ## F2 — Schema и storage readiness
 
-**Статус:** Done (2026-09-20). Реализовано через OpenSpec change `add-marketdata-live-storage`: forward-миграции V5–V8 (raw_transactions, price/liquidity observations, usd_conversion_facts, universe snapshots+members), идемпотентные JDBC-stores, батч-пути (включая фикс N+1 из B7), point-in-time индексы, volume-тест на 10k строк; полный gate зелёный. Partitioning отложено с задокументированным обоснованием до измеренного объёма.
+**Статус:** Core storage implemented; live-readiness pending F3 forward migrations (2026-09-20). OpenSpec change `add-marketdata-live-storage` реализует V5–V9 (`raw_transactions`, price/liquidity observations, USD conversions с двумя обязательными FK lineage, universe snapshots+members), immutable JDBC-stores, батч-пути (включая фикс N+1 из B7), point-in-time индексы, 10k raw volume test и 1001-member boundary/rollback tests. Это не закрывает весь активный F1 contract: `define-solana-data-provider-contract` остаётся design-complete на 4/10 задач, owner spikes 3.1–3.6 не выполнены. До live ingestion F3 обязан отдельными forward-only migrations добавить token-decimal facts, provider-visible time, versioned modeled-availability facts и явные quality status/policy/reason/source provenance; missing inputs не заменяются fabricated values. Partitioning остаётся отложенным до измеренного объёма.
 
 **Цель:** подготовить модель хранения до массового live stream/backfill.
 
@@ -489,9 +489,9 @@ F9 не входит в remediation текущего MVP. Он активиру�
 
 ## Ближайшие три задачи
 
-1. Выполнить F0: синхронизировать Roadmap/Delivery Plan/Glossary/Operations без изменения поведения.
-2. Оформить F1 как design-first OpenSpec change и построить capability-driven provider-consumer matrix. Включить Helius, Alchemy Yellowstone, Triton Fumarole, Chainstack Yellowstone, SQD и специализированные источники; Helius Free проверяет только доступные ему capability, а не mainnet gRPC/replay.
-3. После выбора контракта выполнить F2 до написания live provider adapter.
+1. Завершить F1 owner actions: выполнить capability-specific spikes S1–S5/задачи 3.1–3.6, заполнить evidence matrix и выбрать primary live transport, historical source и только необходимые specialized sources. Helius Free проверяет лишь доступные ему capability, а не mainnet gRPC/replay.
+2. Оформить F3 bounded-ingestion OpenSpec change для выбранного источника: raw-first adapter, finality/admission, bounded concurrency/rate/retry, reconnect/gap semantics и forward-only storage для token decimals, provider-visible/modeled availability и explicit quality provenance.
+3. Реализовать bounded live ingestion и затем backfill/gap/operational evidence, не начиная signal tuning до preregistered F5 protocol.
 
 ## Traceability первого аудита
 

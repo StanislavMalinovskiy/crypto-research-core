@@ -355,7 +355,7 @@ class FirstSignalEvaluationIT {
 	private void assertDatabaseContract() {
 		assertThat(jdbcClient.sql("SHOW server_version").query(String.class).single()).isEqualTo("18.6");
 		assertThat(jdbcClient.sql("SELECT version FROM flyway_schema_history WHERE success ORDER BY installed_rank")
-				.query(String.class).list()).containsExactly("1", "2", "3", "4", "5", "6", "7", "8");
+				.query(String.class).list()).containsExactly("1", "2", "3", "4", "5", "6", "7", "8", "9");
 		assertThat(jdbcClient.sql("SELECT schema_name FROM information_schema.schemata WHERE schema_name IN ('marketdata','signal','evaluation','risk') ORDER BY schema_name")
 				.query(String.class).list()).containsExactly("evaluation", "marketdata", "signal");
 		assertThat(jdbcClient.sql("SELECT table_schema || '.' || table_name FROM information_schema.tables WHERE table_schema IN ('marketdata','signal','evaluation') ORDER BY table_schema, table_name")

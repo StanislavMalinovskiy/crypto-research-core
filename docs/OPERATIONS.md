@@ -59,6 +59,8 @@ The managed PostgreSQL baseline was accepted on 20 September 2026 from sanitized
 
 This is dated stage-exit evidence, not continuous monitoring. Backup success and restore viability remain recurring operator responsibilities, and the operator retains responsibility for the chosen network-access policy.
 
+The repository migration sequence now extends through V9 after the accepted F2 core-storage change. The dated managed-database evidence above intentionally remains V1–V4 because that is what was verified at the time; it must not be rewritten as later evidence. Before any F3 live-data admission, an operator-run managed startup must apply or validate V5–V9 and confirm readiness, while F3 supplies the additional forward migrations required for complete live facts.
+
 ## Health semantics
 
 | Endpoint | Meaning | Members |

@@ -2,6 +2,7 @@ package io.cryptoresearch.marketdata.application;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.groups.Tuple.tuple;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -41,12 +42,18 @@ class RawTransactionStorageIT {
 	private static final Instant LATER = Instant.parse("2026-09-20T11:00:00Z");
 
 	private final StoreRawTransactionUseCase useCase;
+	private final RawTransactionStore store;
 	private final JdbcClient jdbcClient;
 	private final MutableUtcClock clock;
 
 	@Autowired
-	RawTransactionStorageIT(StoreRawTransactionUseCase useCase, JdbcClient jdbcClient, MutableUtcClock clock) {
+	RawTransactionStorageIT(
+			StoreRawTransactionUseCase useCase,
+			RawTransactionStore store,
+			JdbcClient jdbcClient,
+			MutableUtcClock clock) {
 		this.useCase = useCase;
+		this.store = store;
 		this.jdbcClient = jdbcClient;
 		this.clock = clock;
 	}
@@ -101,6 +108,34 @@ class RawTransactionStorageIT {
 	}
 
 	@Test
+	void batchIdentityKeepsOpaqueSlashValuesDistinctAndPreservesInputOrder() {
+		var first = payload("a/b", "c", 1);
+		var second = payload("a", "b/c", 2);
+
+		var stored = useCase.storeBatch(List.of(first, second));
+
+		assertThat(stored)
+				.extracting(value -> value.transactionId().value(), StoredRawTransaction::provider)
+				.containsExactly(tuple("a/b", "c"), tuple("a", "b/c"));
+		assertThat(rowCount()).isEqualTo(2);
+	}
+
+	@Test
+	void exactPayloadMismatchIsRejectedEvenWhenPayloadHashMatches() {
+		var original = useCase.store(payload(1));
+		var conflicting = new StoredRawTransaction(
+				original.chain(), original.transactionId(), original.provider(), original.blockPosition(),
+				original.blockHash(), original.sourceEventTime(), original.receivedAt(), original.admittedAt(),
+				"{\"different\":true}", original.payloadHash(), original.parserVersion(), original.ingestedAt());
+
+		assertThatThrownBy(() -> store.store(conflicting))
+				.isInstanceOf(RawTransactionConflictException.class);
+		assertThat(jdbcClient.sql(
+				"SELECT payload FROM marketdata.raw_transactions WHERE transaction_value = 'fixture-tx-1'")
+				.query(String.class).single()).isEqualTo("{\"i\":1}");
+	}
+
+	@Test
 	void volumeBatchStoresEveryDistinctIdentity() {
 		var batch = new ArrayList<RawTransactionPayload>();
 		for (var index = 0; index < 10_000; index++) {
@@ -125,8 +160,12 @@ class RawTransactionStorageIT {
 	}
 
 	private RawTransactionPayload payload(int index) {
+		return payload("fixture-tx-" + index, "provider-a", index);
+	}
+
+	private RawTransactionPayload payload(String transactionValue, String provider, int index) {
 		return new RawTransactionPayload(
-				CHAIN, transaction(index), "provider-a", new BlockPosition(CHAIN, 100 + index),
+				CHAIN, new TransactionId(CHAIN, transactionValue), provider, new BlockPosition(CHAIN, 100 + index),
 				java.util.Optional.of("hash-" + index), java.util.Optional.of(RECEIVED),
 				RECEIVED, ADMITTED, "{\"i\":" + index + "}", java.util.Optional.of("parser-v1"));
 	}

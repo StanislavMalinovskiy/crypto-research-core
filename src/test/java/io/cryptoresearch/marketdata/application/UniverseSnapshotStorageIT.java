@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
@@ -111,6 +112,72 @@ class UniverseSnapshotStorageIT {
 		assertThatThrownBy(() -> useCase.finalizeSnapshot(new UniverseSnapshotRequest(
 				"universe-v1", T3, List.of(member(ASSET_A, T1, null, null), member(ASSET_A, T1, null, null)))))
 				.isInstanceOf(IllegalArgumentException.class);
+	}
+
+	@Test
+	void chunkedMemberPersistenceIsCompleteIdempotentAndAtomicBeyondBoundary() {
+		var members = members(1_001);
+		var request = new UniverseSnapshotRequest("universe-v1", T3, members);
+		var first = useCase.finalizeSnapshot(request);
+
+		assertThat(first.members()).hasSize(1_001);
+		assertThat(first.members()).extracting(member -> member.asset().value())
+				.containsExactlyElementsOf(members.stream().map(member -> member.asset().value()).sorted().toList());
+		assertThat(useCase.finalizeSnapshot(request)).isEqualTo(first);
+		assertThat(jdbcClient.sql("SELECT count(*) FROM marketdata.universe_snapshots")
+				.query(Integer.class).single()).isEqualTo(1);
+		assertThat(jdbcClient.sql("SELECT count(*) FROM marketdata.universe_members")
+				.query(Integer.class).single()).isEqualTo(1_001);
+		assertThat(jdbcClient.sql("""
+				SELECT count(*) FROM (
+				    SELECT snapshot_id, chain_id, asset_address, count(*)
+				    FROM marketdata.universe_members
+				    GROUP BY snapshot_id, chain_id, asset_address
+				    HAVING count(*) > 1
+				) duplicates
+				""").query(Integer.class).single()).isZero();
+
+		installSecondChunkFailure("marketdata.universe_members", "member_ordinal");
+		try {
+			assertThatThrownBy(() -> useCase.finalizeSnapshot(
+					new UniverseSnapshotRequest("universe-v2", T3, members)))
+					.isInstanceOf(RuntimeException.class)
+					.hasMessageContaining("forced second chunk failure");
+		}
+		finally {
+			removeSecondChunkFailure("marketdata.universe_members");
+		}
+		assertThat(jdbcClient.sql("SELECT count(*) FROM marketdata.universe_snapshots")
+				.query(Integer.class).single()).isEqualTo(1);
+		assertThat(jdbcClient.sql("SELECT count(*) FROM marketdata.universe_members")
+				.query(Integer.class).single()).isEqualTo(1_001);
+	}
+
+	private List<UniverseMember> members(int count) {
+		var members = new ArrayList<UniverseMember>(count);
+		for (var index = 0; index < count; index++) {
+			members.add(member(new AssetId(CHAIN, "Asset%04d".formatted(index)), T1, null, null));
+		}
+		return members;
+	}
+
+	private void installSecondChunkFailure(String table, String ordinalColumn) {
+		jdbcClient.sql("""
+				CREATE OR REPLACE FUNCTION marketdata.fail_second_batch_chunk() RETURNS trigger
+				LANGUAGE plpgsql AS $$
+				BEGIN
+				    RAISE EXCEPTION 'forced second chunk failure';
+				END;
+				$$
+				""").update();
+		jdbcClient.sql("CREATE TRIGGER fail_second_batch_chunk BEFORE INSERT ON " + table
+				+ " FOR EACH ROW WHEN (NEW." + ordinalColumn + " = 1000) "
+				+ "EXECUTE FUNCTION marketdata.fail_second_batch_chunk()").update();
+	}
+
+	private void removeSecondChunkFailure(String table) {
+		jdbcClient.sql("DROP TRIGGER IF EXISTS fail_second_batch_chunk ON " + table).update();
+		jdbcClient.sql("DROP FUNCTION IF EXISTS marketdata.fail_second_batch_chunk()").update();
 	}
 
 	private UniverseMember member(AssetId asset, Instant inclusion, Instant exclusion, String reason) {
