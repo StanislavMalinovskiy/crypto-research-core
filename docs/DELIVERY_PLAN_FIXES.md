@@ -53,7 +53,7 @@
 | ID | Приоритет | Пакет | Когда нужен | Статус |
 |---|---|---|---|---|
 | F0 | Immediate | Синхронизировать документы и устранить противоречия | До следующего implementation change | Done (2026-09-20) |
-| F1 | Blocking | Определить Solana data contract и provider requirements | До завершения Stage 3.1 | Next |
+| F1 | Blocking | Определить Solana data contract и provider requirements | До завершения Stage 3.1 | Design done (2026-09-20); spikes и выбор провайдера — owner-action |
 | F2 | Blocking | Подготовить schema/storage к реальным данным | До первой массовой real-data записи | Not started |
 | F3 | Blocking | Реализовать bounded ingestion, backfill, gaps и monitoring | Для выхода из Stage 3 | Not started |
 | F4 | Required | Реализовать point-in-time risk и wallet evidence | До production signal families | Not started |
@@ -85,6 +85,8 @@
 Roadmap, Delivery Plan, Architecture, Tech Stack, Operations, Project Summary, Glossary и main specs не дают взаимоисключающих указаний о текущем состоянии, provider selection, `WATCH_ONLY`, observability, horizons или execution.
 
 ## F1 — Solana data contract и выбор провайдера
+
+**Статус:** Design complete (2026-09-20). Контракт оформлен как OpenSpec change `define-solana-data-provider-contract` (proposal, `solana-data-contract` spec, design с матрицей F1.1–F1.10, tasks) и прошёл строгую валидацию. Live spikes S1–S5, решение по провайдеру и получение ключей — owner-action; без них выбор провайдера не производится.
 
 **Цель:** сначала определить нужные системе данные и только потом выбирать provider.
 
