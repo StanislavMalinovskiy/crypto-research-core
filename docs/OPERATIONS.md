@@ -33,7 +33,7 @@ This document owns repository-wide runtime and operational rules. Product sequen
 - A credential disclosed in chat, logs, an issue or another external channel is rotated before use. Secret values are never pasted into agent prompts, commands intended for evidence capture, documentation or test reports.
 - Rotate the shared credential on the server and update each workstation's ignored file before its next application start; obsolete Flyway-specific entries are not used and should be removed locally by the operator.
 - Start the profile with `SPRING_PROFILES_ACTIVE=managed`. Successful startup confirms Flyway validation/application; `/actuator/health/readiness` must then report `UP` before useful work begins.
-- Profile wiring does not prove external PostgreSQL version, firewall restrictions, backup retention or restore viability. Those checks remain required Stage 3.0 operational evidence before production-like ingestion.
+- Profile wiring alone does not prove the external PostgreSQL version or backup/restore viability. Network-access policy is operator-owned and is not a repository acceptance criterion.
 
 Prepare and start a workstation without putting values in command history or agent prompts:
 
@@ -45,6 +45,19 @@ $env:SPRING_PROFILES_ACTIVE = "managed"
 ```
 
 Fill only the three named managed database values in the copied file. Do not export them as evidence, print them in diagnostics or pass them to automated tests. The fixed import is required when `managed` is active; no managed profile means the unchanged local Compose path.
+
+### Stage 3.0 acceptance record
+
+The managed PostgreSQL baseline was accepted on 20 September 2026 from sanitized application and operator evidence:
+
+- At `2026-09-20T07:12:14Z`, the packaged JAR started with the explicit `managed` profile, Flyway validated the accepted V1-V4 sequence, readiness returned HTTP 200 with `UP`, and the temporary application process was stopped.
+- At `2026-09-20T07:40:53Z`, the operator confirmed PostgreSQL 18.6, TLS 1.3 and the shared identity's required application plus Flyway DDL/DML ownership without changing privileges.
+- Automated backups use `pg_dump` custom format with Zstandard compression, run daily at 03:15 `Asia/Tashkent` (22:15 UTC on the previous calendar day) through a systemd timer and retain the five most recent successful copies.
+- A fresh backup created at `2026-09-20T07:51:06Z` restored without error into a disposable database. The restored database contained Flyway V1-V4, four `marketdata` tables, two `signal` tables and three `evaluation` tables; only the disposable database was then removed, and the live database remained available.
+- At `2026-09-20T07:55:06Z`, the operator confirmed that the server OS and PostgreSQL presentation time zone were aligned to `Asia/Tashkent`, NTP was active and the change required no PostgreSQL restart. This local zone is for operator-facing display and scheduling only; authoritative application timestamps remain UTC `Instant` values persisted as `TIMESTAMPTZ(6)`.
+- The populated workstation secret file remained ignored and outside automated tests and captured evidence. No endpoint, host, username, password or certificate path is recorded here.
+
+This is dated stage-exit evidence, not continuous monitoring. Backup success and restore viability remain recurring operator responsibilities, and the operator retains responsibility for the chosen network-access policy.
 
 ## Health semantics
 

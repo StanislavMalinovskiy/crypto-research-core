@@ -22,9 +22,9 @@
 ## Текущая позиция
 
 - **Текущий этап:** Этап 3 — Реальные данные Solana.
-- **Текущая работа:** оформить отдельный OpenSpec change для постоянной managed PostgreSQL, доступной из нескольких рабочих мест, с явным разделением окружений, секретов, миграций и восстановления.
-- **Следующая операционная работа:** создать и проверить план managed PostgreSQL без изменения правила «одна PostgreSQL база» и без подключения production-like данных до утверждения контракта.
-- **Следующее бизнес-изменение:** проверить coverage, limits, terms и failure semantics кандидатов и утвердить первого Solana provider отдельным change.
+- **Текущая работа:** проверить coverage, limits, terms и failure semantics кандидатов и утвердить первого Solana provider отдельным OpenSpec change.
+- **Следующая операционная работа:** сравнить кандидатов по единому набору критериев и зафиксировать один основной provider вместе с допустимым fallback/отказом без подмены реальных данных.
+- **Следующее бизнес-изменение:** реализовать bounded real-time ingestion выбранного Solana provider с явными timeout, rate, concurrency и finite retry policies.
 - **Условие перехода к этапу 4:** реальные текущие и исторические Solana observations воспроизводятся с raw lineage, parser identity и видимыми gaps без повторных доменных эффектов.
 
 ## Сводка этапов
@@ -77,9 +77,9 @@
 
 | ID | Статус | Рабочий пакет |
 |---|---|---|
-| 3.0 | Current | Выбрать и настроить постоянную managed PostgreSQL для безопасной работы из нескольких мест, включая окружения, секреты, Flyway, backup/restore и сетевой доступ. |
-| 3.1 | Next | Проверить coverage, limits, terms и failure semantics кандидатов и утвердить первого Solana provider отдельным change. |
-| 3.2 | Planned | Реализовать bounded real-time ingestion с явными timeout, rate, concurrency и finite retry policies. |
+| 3.0 | Done | Настроить постоянную managed PostgreSQL для работы из нескольких мест и подтвердить профиль, секреты, Flyway, PostgreSQL 18.6, TLS и восстановление свежего backup; сетевая политика остаётся ответственностью оператора. |
+| 3.1 | Current | Проверить coverage, limits, terms и failure semantics кандидатов и утвердить первого Solana provider отдельным change. |
+| 3.2 | Next | Реализовать bounded real-time ingestion с явными timeout, rate, concurrency и finite retry policies. |
 | 3.3 | Planned | Добавить provider-specific normalization, parser versioning и replay сохранённых raw payloads. |
 | 3.4 | Planned | Обнаруживать reconnect gaps, восстанавливать пропущенные диапазоны и явно отмечать unresolved windows. |
 | 3.5 | Planned | Сохранять observed price snapshots, source/quality facts и необходимые token discovery observations. |
