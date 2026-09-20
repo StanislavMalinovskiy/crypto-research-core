@@ -19,6 +19,7 @@
 | Файл | Назначение |
 |---|---|
 | [docs/DELIVERY_PLAN.md](docs/DELIVERY_PLAN.md) | Текущий этап, следующий change и укрупнённый путь до Evidence Report |
+| [docs/DELIVERY_PLAN_FIXES.md](docs/DELIVERY_PLAN_FIXES.md) | Companion remediation-карта F0–F9 и traceability по итогам внешних аудитов |
 | [docs/AGENT_WORKFLOW.md](docs/AGENT_WORKFLOW.md) | Обычный fail-closed DEFAULT workflow: Control + Developer, test-first evidence и полный local gate |
 | [docs/AGENT_WORKFLOW_MULTIAGENT.md](docs/AGENT_WORKFLOW_MULTIAGENT.md) | Опциональный supervised MULTIAGENT protocol, загружаемый только после ручного `[agents].enabled = true` |
 | [docs/ROADMAP.md](docs/ROADMAP.md) | Продуктовые гипотезы, долгосрочные возможности и приоритеты |
@@ -34,8 +35,9 @@
 | [docs/notes/AGENT_ORCHESTRATION_RESEARCH.md](docs/notes/AGENT_ORCHESTRATION_RESEARCH.md) | Непринятые идеи и вопросы по развитию агентного конвейера |
 | [docs/archive/API_SERVICES_ARCHIVE.md](docs/archive/API_SERVICES_ARCHIVE.md) | Архив обзора API и сервисов; не источник истины |
 | [docs/archive/PAID_API_ARCHIVE.md](docs/archive/PAID_API_ARCHIVE.md) | Архив платных API; не источник истины |
-| [docs/archive/LEGACY_V5_ARCHITECTURE_MAPPING.md](docs/archive/LEGACY_V5_ARCHITECTURE_MAPPING.md) | Историческая v5 multi-module mapping; не источник истины |
 | [docs/notes/THINK.md](docs/notes/THINK.md) | Черновые идеи и вопросы |
+| [docs/notes/EXTERNAL_AUDIT_REVIEW_2026-09-20.md](docs/notes/EXTERNAL_AUDIT_REVIEW_2026-09-20.md) | Оценка Control первого внешнего аудита; non-normative |
+| [docs/notes/GLM_5_3_MAX_EXTERNAL_AUDIT_REVIEW_2026-09-20.md](docs/notes/GLM_5_3_MAX_EXTERNAL_AUDIT_REVIEW_2026-09-20.md) | Оценка Control аудита GLM 5.3 MAX; non-normative |
 
 ## Как передать контекст Codex CLI
 

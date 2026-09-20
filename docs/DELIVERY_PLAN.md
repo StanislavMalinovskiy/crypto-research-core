@@ -10,6 +10,7 @@
 
 - [Roadmap](ROADMAP.md) определяет продуктовые гипотезы, долгосрочные возможности и направление.
 - Этот Delivery Plan определяет этапы, порядок крупных рабочих пакетов и их статус.
+- [DELIVERY_PLAN_FIXES](DELIVERY_PLAN_FIXES.md) — companion remediation-карта и traceability по итогам двух внешних аудитов 2026-09-20; определяет пакеты F0–F9 до реальных данных и decision support.
 - [OpenSpec changes](../openspec/changes/) содержат требования, дизайн и подробные чекбоксы активной работы.
 - [ADRs](adr/README.md) фиксируют принятые архитектурные решения.
 - [Main specs](../openspec/specs/) описывают принятое проверяемое поведение.
@@ -21,11 +22,11 @@
 
 ## Текущая позиция
 
-- **Текущий этап:** Этап 3 — Реальные данные Solana.
-- **Текущая работа:** проверить coverage, limits, terms и failure semantics кандидатов и утвердить первого Solana provider отдельным OpenSpec change.
-- **Следующая операционная работа:** сравнить кандидатов по единому набору критериев и зафиксировать один основной provider вместе с допустимым fallback/отказом без подмены реальных данных.
-- **Следующее бизнес-изменение:** реализовать bounded real-time ingestion выбранного Solana provider с явными timeout, rate, concurrency и finite retry policies.
-- **Условие перехода к этапу 4:** реальные текущие и исторические Solana observations воспроизводятся с raw lineage, parser identity и видимыми gaps без повторных доменных эффектов.
+- **Текущий этап:** Этап 3 — Реальные данные Solana (исполняется через remediation-пакеты [DELIVERY_PLAN_FIXES](DELIVERY_PLAN_FIXES.md)).
+- **Текущая работа:** F0 — синхронизация документов; затем F1 — Solana data contract и provider-consumer matrix с capability-specific spikes.
+- **Следующая операционная работа:** F2 — schema/storage readiness до первой массовой real-data записи.
+- **Следующее бизнес-изменение:** F3 — bounded ingestion выбранного transport с явными timeout, rate, concurrency, finite retry policies, gap recovery и минимальной operational visibility.
+- **Условие перехода к этапу 4:** реальные текущие и исторические Solana observations воспроизводятся с raw lineage, trusted observation time, parser identity и видимыми gaps без повторных доменных эффектов (F3.6).
 
 ## Сводка этапов
 
@@ -37,6 +38,7 @@
 | 4. Аналитика `risk` и `wallet` | Planned | Сигналы получают point-in-time сведения о токенах и кошельках |
 | 5. Сигналы и их оценка | Planned | Семейства сигналов получают сопоставимые cost-aware outcomes без смещений |
 | 6. Исследовательское решение | Planned | Evidence Report обосновывает углубление, изменение, продление или остановку направления |
+| 6A. Decision support и forward shadow | Planned | Подтверждённые результаты превращаются в advisory feed без исполнения сделок (F8) |
 | 7. Исполнение | Deferred | Paper/live рассматриваются только после доказательств и отдельного safety design |
 
 ## Этап 1 — Архитектурный фундамент
@@ -78,7 +80,7 @@
 | ID | Статус | Рабочий пакет |
 |---|---|---|
 | 3.0 | Done | Настроить постоянную managed PostgreSQL для работы из нескольких мест и подтвердить профиль, секреты, Flyway, PostgreSQL 18.6, TLS и восстановление свежего backup; сетевая политика остаётся ответственностью оператора. |
-| 3.1 | Current | Проверить coverage, limits, terms и failure semantics кандидатов и утвердить первого Solana provider отдельным change. |
+| 3.1 | Current | Через F1: построить provider-consumer matrix, зафиксировать Solana data contract (finality, locator, time, universe, derivation, quality, ranges, capacity) и выбрать primary transport/history sources по результатам capability-specific spikes. |
 | 3.2 | Next | Реализовать bounded real-time ingestion с явными timeout, rate, concurrency и finite retry policies. |
 | 3.3 | Planned | Добавить provider-specific normalization, parser versioning и replay сохранённых raw payloads. |
 | 3.4 | Planned | Обнаруживать reconnect gaps, восстанавливать пропущенные диапазоны и явно отмечать unresolved windows. |
@@ -109,6 +111,7 @@
 
 | ID | Статус | Рабочий пакет |
 |---|---|---|
+| 5.0 | Planned | Зафиксировать preregistered research protocol (F5) до любой настройки по outcome-результатам: гипотезы, grid, диапазоны, min sample, multiplicity policy, decision gates. |
 | 5.1 | Planned | Определить versioned signal definitions, configuration identity, candidate journal и правила дедупликации. |
 | 5.2 | Planned | Реализовать entry families Smart Wallet Buy, Multi Wallet Buy, Liquidity Spike и Holder Growth. |
 | 5.3 | Planned | Реализовать Token Risk Alert как avoidance family и сохранять shadow outcomes отклонённых кандидатов. |
@@ -133,6 +136,22 @@
 | 6.6 | Planned | Создать следующий план только из подтверждённых выводов, отдельно обосновав Base/EVM или более длинный walk-forward. |
 
 **Условие завершения:** Evidence Report позволяет принять и воспроизвести явное решение без подмены отсутствующих доказательств архитектурными ожиданиями.
+
+## Этап 6A — Decision support и forward shadow
+
+**Статус:** Planned. Активируется после положительного или перспективного решения Этапа 6; соответствует пакету F8 в [DELIVERY_PLAN_FIXES](DELIVERY_PLAN_FIXES.md).
+
+**Цель:** превратить подтверждённые результаты в понятный владельцу инструмент без исполнения сделок.
+
+| ID | Статус | Рабочий пакет |
+|---|---|---|
+| 6A.1 | Planned | Runtime trigger/scheduler с PostgreSQL-backed claiming (F8.1). |
+| 6A.2 | Planned | Decision feed: advisory action, evidence status, measured expectancy, expiry/invalidation (F8.2). |
+| 6A.3 | Planned | Минимальный канал доставки с dedup, expiry, retry и delivery audit (F8.3). |
+| 6A.4 | Planned | Owner positions и position-aware `CONSIDER_EXIT` (F8.4). |
+| 6A.5 | Planned | Forward shadow период без денег и сравнение с backtest assumptions (F8.5). |
+
+**Условие завершения:** владелец понимает, что произошло и почему; forward results подтверждают или опровергают применимость backtest; signing и order submission отсутствуют.
 
 ## Этап 7 — Исполнение
 

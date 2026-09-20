@@ -10,7 +10,7 @@ This document owns repository-wide runtime and operational rules. Product sequen
 - Docker is required for the local Compose lifecycle and for Testcontainers in local verification and CI. Testcontainers remains isolated from the persistent developer volume and is not a production-database requirement.
 - A production database should be a separately operated managed or dedicated PostgreSQL service. Application and database lifecycle, storage and backups must not be coupled accidentally.
 - Selection and operation of shared managed PostgreSQL belongs to a separate Stage 3 decision; local Compose neither synchronizes research data nor substitutes for that service.
-- Production Docker Compose, Kubernetes, application container images, backup/restore procedures and multi-region deployment remain deferred until a deployment change defines them.
+- Production Docker Compose, Kubernetes, application container images, repository-owned backup/restore procedures and multi-region deployment remain deferred until a deployment change defines them. Operator-managed backups of the shared managed PostgreSQL already exist and are accepted as Stage 3.0 evidence below; evolving that backup strategy with measured capacity thresholds is owned by F1.9 of the remediation plan.
 
 ## Configuration and secrets
 

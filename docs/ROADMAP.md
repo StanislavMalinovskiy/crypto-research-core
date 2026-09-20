@@ -1,6 +1,6 @@
-# Crypto Research Core — Roadmap v7.8
+# Crypto Research Core — Roadmap v7.9
 
-**Версия:** v7.8 (six-module Spring Modulith MVP topology)<br>**Дата:** 13 сентября 2026<br>**Базис:** v7.7 + [ADR 0008](adr/0008-six-module-mvp-topology.md)<br>**Подход:** Solana-first, not Solana-only. MVP остаётся Solana-focused, но core data model, identity, partitioning strategy и provider boundaries сразу проектируются так, чтобы позже безболезненно добавить Base / Arbitrum / EVM-сети.
+**Версия:** v7.9 (six-module Spring Modulith MVP topology)<br>**Дата:** 20 сентября 2026<br>**Базис:** v7.8 + два внешних аудита 2026-09-20 + [DELIVERY_PLAN_FIXES](DELIVERY_PLAN_FIXES.md)<br>**Подход:** Solana-first, not Solana-only. MVP остаётся Solana-focused, но core data model, identity, partitioning strategy и provider boundaries сразу проектируются так, чтобы позже безболезненно добавить Base / Arbitrum / EVM-сети.
 
 ## Статусы решений в этом документе
 
@@ -29,7 +29,23 @@ Solana is first implementation, not permanent boundary.
 Add modules, don't rewrite.
 ```
 ---
-## 2. Что изменилось от v7.7
+## 2. Что изменилось
+
+### v7.9 (20 сентября 2026)
+
+Синхронизация с фактическим состоянием репозитория по результатам двух внешних аудитов; порядок remediation ведёт [DELIVERY_PLAN_FIXES](DELIVERY_PLAN_FIXES.md).
+
+| # | Область | v7.8 | v7.9 |
+| --- | --- | --- | --- |
+| 1 | Provider selection | Helius и другие перечислены как уже выбранные | Все провайдеры — кандидаты до завершения provider-consumer matrix и spikes (F1); добавлены transport-классы |
+| 2 | Observability DoD | Grafana названа конкретным инструментом DoD | DoD формулируется как capability — минимальная operational visibility; конкретная платформа — отдельный evidence-backed change |
+| 3 | Budget и timeline | Таблица расходов и недельный план апреля 2026 | Удалены как устаревшие планировочные данные; git history сохраняет их |
+| 4 | Package tree | Обязательная структура `internal/` | Приведено к фактической структуре первого среза (`api` / `application` / `infrastructure`) |
+| 5 | WATCH_ONLY | ENTRY с cap 69 как будущее поведение | Target draft до отдельного решения (F4.3); текущий first slice не создаёт accepted ENTRY |
+| 6 | strategy_experiment_id | Обязательная linkage | Открытое design-решение до Stage 5 |
+
+### v7.8 (13 сентября 2026)
+
 | # | Область | v7.7 | v7.8 |
 | --- | --- | --- | --- |
 | 1 | Module topology | eight empty vertical boundaries | six product-shaped modules: `kernel`, `marketdata`, `risk`, `wallet`, `signal`, `evaluation` |
@@ -79,7 +95,7 @@ Measurement before money.
 15. Reproducible evidence: UTC/reference time, exact arithmetic, dataset/config/build/algorithm identity, deterministic ordering and seeded randomness.
 ---
 ## 5. Solana-first, not Solana-only
-**MVP реализация:** `chainId = ChainId.SOLANA_MAINNET` (`solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp`); providers = Helius, Bitquery, DexScreener, GoPlus; normalizers = Pump.fun, PumpSwap, Raydium / selected major DEX programs; risk facts = Solana mint/freeze authority, LP lock, holders, creator/dev facts.
+**MVP реализация:** `chainId = ChainId.SOLANA_MAINNET` (`solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp`); providers — кандидаты до завершения selection через provider-consumer matrix F1 (Helius, Bitquery, DexScreener, GoPlus, а также transport-классы: Alchemy Yellowstone gRPC, Triton Fumarole, Chainstack Yellowstone, SQD для исторических данных); normalizers = Pump.fun, PumpSwap, Raydium / selected major DEX programs; risk facts = Solana mint/freeze authority, LP lock, holders, creator/dev facts.
 **Core готовность к Base/EVM:** exact customary CAIP-2 network identifiers such as Base Mainnet `eip155:8453` later; providers = Alchemy / Moralis / Chainstack / QuickNode later; normalizers = UniswapV3, Aerodrome, ERC20 Transfer events later; risk facts = EVM contract ownership, proxy, honeypot, tax, blacklist, pause later.
 В Phase 1 мы не реализуем Base, но делаем такие domain/DB решения, чтобы Base не потребовал переписывать wallet identity, token identity, swap identity, signal identity, outcome tables, strategy framework, provider layer, normalizer boundary и token risk JSONB validation approach.
 ---
@@ -102,7 +118,7 @@ Measurement before money.
 | Cohort detection | Full Louvain | cohort-light | full cohort after evidence |
 | Wallet Intelligence | decay + embeddings | basic + profit_factor | improve after evidence |
 | Position Management | 8+ triggers | 4 triggers | expand later |
-| Latency stack | LaserStream + VPS | Helius WebSocket | optimize later |
+| Latency stack | LaserStream + VPS | transport выбирается в F1, не предопределён | optimize later |
 | Providers | 8+ | 4 Solana-related | add Base/EVM later |
 | Backtest | walk-forward 9m | 90-day window | later |
 | Capital pipeline | parallel funding-bot | deferred | separate project |
@@ -158,15 +174,7 @@ Measurement before money.
 - Prometheus and Grafana infrastructure are not part of the current repository baseline.
 - Alchemy, Moralis, Chainstack, Birdeye, Arkham, Jupiter and Jito remain provider candidates, not approved integrations.
 
-> **Budget note:** provider prices and limits below are planning assumptions from April 2026. Verify current vendor terms before purchase; they are not architectural invariants.
-| Component | Cost/мес |
-| --- | --- |
-| Helius Developer | \$49 |
-| DexScreener, GoPlus, Bitquery | \$0 free tiers |
-| Cloud VPS optional | \$0–30 |
-| Backup storage | \$5–10 |
-| **Минимум** | **\$54/мес** |
-| **Recommended** | **\$84/мес** |
+Устаревшая таблица расходов апреля 2026 удалена как неплановые данные; git history сохраняет её. Актуальные лимиты и стоимость определяются только provider-consumer matrix и spike-результатами F1 ([DELIVERY_PLAN_FIXES](DELIVERY_PLAN_FIXES.md)); бюджетные предположения не являются архитектурными инвариантами.
 ---
 ## 10. Архитектура и package structure — Spring Modulith
 ### 10.1 Deployment model
@@ -188,38 +196,34 @@ Spring Modulith modules are package-based business boundaries, not separate Mave
 | `signal` | Detection, scoring, reasoning and immutable decision-time signal snapshots |
 | `evaluation` | Point-in-time price selection, valuation, friction, outcomes, deterministic evaluation replay and Evidence Report |
 ### 10.3 Package tree
+Фактическая структура первого среза; точное внутреннее деление каждой module определяет её owning change:
 ```plain text
 crypto-research-core
 ├── pom.xml
 └── src/main/java/io/cryptoresearch
     ├── CryptoResearchApplication.java
     ├── kernel
+    │   └── api
     ├── marketdata
     │   ├── api
-    │   └── internal
-    │       ├── domain
-    │       ├── application
-    │       ├── ingest
-    │       └── infrastructure
-    │           ├── persistence
-    │           └── provider
+    │   ├── application
+    │   └── infrastructure
+    │       └── persistence
     ├── risk
     │   ├── api
-    │   └── internal
+    │   └── application
     ├── wallet
-    │   ├── api
-    │   └── internal
+    │   └── api
     ├── signal
     │   ├── api
-    │   └── internal
-    │       ├── detector
-    │       ├── scoring
+    │   ├── application
+    │   └── infrastructure
     │       └── persistence
     └── evaluation
         ├── api
-        └── internal
-            ├── replay
-            └── report
+        ├── application
+        └── infrastructure
+            └── persistence
 ```
 There are no top-level `domain`, `persistence`, `provider` or `observability` modules. Each vertical module owns its domain model, repositories, database access and external adapters. Observability is implemented inside the owning module and composed at application level.
 ### 10.4 Allowed dependencies
@@ -307,7 +311,7 @@ Validation: serialize only through domain mappers; deserialize in tests/reports 
 
 Candidate provider APIs: `BlockchainStreamProvider`, `ChainRpcProvider`, `SolanaRpcProvider`, `EvmRpcProvider`, `HistoricalIngestProvider`, `MarketDataProvider`, `RiskDataProvider`, `WalletLabelProvider`, `ExecutionProvider`, `JitoTipFloorProvider`.
 Candidate MVP implementations: Helius, Bitquery and DexScreener inside `marketdata`; GoPlus inside `risk`.
-Future Base/EVM implementations stay inside the owning vertical module, for example `marketdata.internal.infrastructure.provider.alchemy` and `risk.internal.infrastructure.provider.evm.goplus`.
+Future Base/EVM implementations stay inside the owning vertical module, for example `marketdata.infrastructure.provider.alchemy` and `risk.infrastructure.provider.evm.goplus`.
 Rules: domain-neutral DTOs where possible; chain-specific fields stay in implementations; provider stale data lowers confidence or blocks signal; provider failures never produce fake data.
 ---
 ## 17. Ingest and normalizers
@@ -360,7 +364,7 @@ ENTRY families:
 AVOIDANCE families:
 1. TOKEN_RISK_ALERT — previously ALLOWED token gets new manipulation flag.
 MVP detectors operate on `chainId = ChainId.SOLANA_MAINNET`, but `signals` table and `Signal` domain remain network-aware.
-For every detection: persist `signal_candidates` before risk gating; assign `family_type`; link mandatory `strategy_experiment_id`; deduplicate by `chain + token + family + strategy_experiment_id + dedup_bucket`, where the bucket/window is explicit per family. For accepted candidates, persist `signals` and `signal_reasoning`. BLOCK candidates remain measurable through `signal_candidate_outcomes` but never create positions.
+For every detection: persist `signal_candidates` before risk gating; assign `family_type`; link experiment identity — **открытое design-решение до Stage 5: отдельная `strategy_experiment_id` entity или достаточно detector/scorer versions + configuration fingerprint (текущий first slice реализует второе)**; deduplicate by `chain + token + family + experiment identity + dedup_bucket`, where the bucket/window is explicit per family. For accepted candidates, persist `signals` and `signal_reasoning`. BLOCK candidates remain measurable through `signal_candidate_outcomes` but never create positions.
 ---
 ## 20.1 Signal Scoring Model v1
 Every ENTRY signal receives:
@@ -376,7 +380,7 @@ MVP scoring approach:
 - weight calibration is deferred until Phase 9+ after Evidence Report.
 Risk gate interaction:
 - `BLOCK`: candidate and shadow outcome are persisted, but no ENTRY signal or virtual position is created;
-- `WATCH_ONLY`: ENTRY score is capped at 69;
+- `WATCH_ONLY`: **target draft до отдельного решения (F4.3)** — рекомендуемое направление: без actionable ENTRY, но с измеримым `OBSERVE`/shadow outcome; текущий first slice не создаёт accepted ENTRY для `WATCH_ONLY`;
 - `ALLOW`: normal scoring.
 Rejected-candidate outcomes are reported separately and never mixed with tradable ENTRY outcomes.
 Grade mapping:
@@ -463,9 +467,9 @@ Phase 1 DoD is cumulative across the relevant approved changes; it is not the Do
 ---
 ## 26. Phase 2 — Data Layer
 Goal: clean reproducible Solana swap data.
-Начать с recorded provider fixture и тонкого end-to-end path: raw input → normalized swap → immutable signal snapshot → 1h outcome → reproducible report. После подтверждения архитектурного пути отдельный change добавляет реальный Helius adapter; остальные providers выбираются независимо по coverage, limits и terms.
+Начать с recorded provider fixture и тонкого end-to-end path: raw input → normalized swap → immutable signal snapshot → 1h outcome → reproducible report. После подтверждения архитектурного пути отдельный change добавляет реальный provider adapter (transport и history source — по решению F1); остальные providers выбираются независимо по coverage, limits и terms.
 Целевые возможности: append-only raw event persistence before normalization; Solana normalizers; raw idempotency keyed by `chain_id + transaction_value + event_locator + provider`; normalized idempotency keyed by `chain_id + transaction_value + event_locator`; token discovery; observed price snapshots; historical backfill; coverage and gap reporting.
-DoD: 24h stream without unresolved critical gaps; reconnect gap recovery tested; 90-day Solana backfill complete; raw payload and parser version available for replay; no duplicates; parse error \<1%; coverage/gaps visible in Grafana; data freshness \<60s; price snapshots available for outcome windows.
+DoD: 24h stream without unresolved critical gaps; reconnect gap recovery tested; historical Solana backfill complete (глубина — по решению F1.8); raw payload and parser version available for replay; no duplicates; parse error \<1%; coverage/gaps visible through минимальную operational visibility (F3.4; конкретная платформа — отдельный evidence-backed change); data freshness \<60s; price snapshots available for outcome windows.
 ---
 ## 26.1 Stream Gap Detection & Recovery
 Goal: avoid silent loss of real-time events.
@@ -475,13 +479,13 @@ Policy:
 - backfill missed slot range through RPC / historical provider;
 - deduplicate recovered normalized events by `chain_id + transaction_value + event_locator`;
 - if recovery is incomplete, mark affected window as unresolved gap and lower signal confidence;
-- run periodic gap audit and expose unresolved gaps in Grafana.
+- run periodic gap audit and expose unresolved gaps through the minimum operational visibility contract (F3.4).
 Gap recovery protects forward monitoring; 90-day backtest still relies on historical backfill as source of truth.
 ---
 ## 27. Phase 3 — Token Risk Engine
 Goal: block obvious dangerous tokens before signals.
 MVP Solana rules: liquidity \>= \$30K; lifecycle \>= DISCOVERY; not 2+ manipulation flags; mint/freeze authority checks; top holder concentration check; LP lock check where available.
-DoD: token risk decision within 1–3s; append-only decisions; common and chain-specific JSONB validated through domain sealed types; BLOCK/WATCH/ALLOW visible in Grafana.
+DoD: token risk decision within 1–3s; append-only decisions; common and chain-specific JSONB validated through domain sealed types; BLOCK/WATCH/ALLOW visible through the minimum operational visibility contract (F3.4).
 ---
 ## 28. Phase 4 — Wallet Intelligence
 Goal: generate watchlist with basic point-in-time scoring.
@@ -491,7 +495,7 @@ DoD: 50–200 STRONG wallets if data supports it; FIFO cross-venue closed-trade 
 ## 29. Phase 5 — Signal Families + Journal
 Goal: generate and record comparable signal families.
 Реализовать: SmartWalletBuy, MultiWalletBuy, LiquiditySpike, HolderGrowth, TokenRiskAlert detectors; family scorers; SignalAggregator; SignalReasoningBuilder; versioned signal definitions and configuration.
-DoD: 4 entry + 1 avoidance detectors active; every detection persists a versioned candidate and immutable decision-time snapshot; accepted signals reference the definition/configuration version; dedup windows are explicit per family; BLOCK candidates receive shadow outcomes; valid `score` 0–100 and derived `grade`; WATCH_ONLY ENTRY signals capped at 69; reasoning JSONB readable; family_type separation works.
+DoD: 4 entry + 1 avoidance detectors active; every detection persists a versioned candidate and immutable decision-time snapshot; accepted signals reference the definition/configuration version; dedup windows are explicit per family; BLOCK candidates receive shadow outcomes; valid `score` 0–100 and derived `grade`; WATCH_ONLY semantics — по решению F4.3 (текущий first slice не создаёт accepted ENTRY); reasoning JSONB readable; family_type separation works.
 ---
 ## 30. Phase 6 — Position + ExecutionSimulator
 Goal: create realistic evaluation behavior without real execution.
@@ -500,8 +504,8 @@ DoD: virtual positions created for ENTRY signals; AVOIDANCE signals do not creat
 ---
 ## 31. Phase 7 — Outcome Tracker
 Goal: measure actual forward outcomes.
-Реализовать: ENTRY Outcome Tracker, AVOIDANCE Outcome Tracker, daily reports, Grafana dashboards.
-DoD: outcomes measured for all horizons; terminal no-liquidity policy applied; pricing source/status visible; entry and avoidance not mixed; dashboards readable; TOKEN_RISK_ALERT absent from entry report.
+Реализовать: ENTRY Outcome Tracker, AVOIDANCE Outcome Tracker, daily reports, минимальную operational visibility (F3.4).
+DoD: outcomes measured for all horizons; terminal no-liquidity policy applied; pricing source/status visible; entry and avoidance not mixed; operational visibility readable; TOKEN_RISK_ALERT absent from entry report.
 ---
 ## 32. Phase 8 — Backtest + Evidence Report
 Goal: use 90-day data to decide what to deepen.
@@ -541,18 +545,8 @@ Case 4 — Nothing works: extend data, change network, or honest exit.
 The architecture remains useful because core is measurement-oriented and chain-ready.
 ---
 ## 37. Operational discipline
-| Week | Milestone |
-| --- | --- |
-| 2–2.5 | Foundation runs, gates block LIVE, chain-aware identity complete |
-| 4.5 | Solana swaps in DB, 90-day backfill complete |
-| 5.5 | Token risk decisions populated |
-| 7.5 | Wallet scoring with profit_factor |
-| 9 | Entry + avoidance signals recorded |
-| 10 | virtual_positions and simulator working |
-| 11 | first outcomes measured |
-| 12–12.5 | Evidence Report generated |
-Backup: daily pg_dump, object storage, Git from first commit, `docs/runbook.md`.
-OpEx review monthly: Helius limits, storage growth, provider failures, whether Base/EVM expansion is justified.
+
+Исторический недельный план и бюджет апреля 2026 удалены как устаревшие; git history сохраняет их. Актуальная последовательность работ ведётся в [Delivery Plan](DELIVERY_PLAN.md) и [DELIVERY_PLAN_FIXES](DELIVERY_PLAN_FIXES.md), операционные правила — в [Operations](OPERATIONS.md). Периодический OpEx review (лимиты провайдера, рост storage, отказы провайдера, обоснованность Base/EVM) остаётся полезной практикой владельца.
 ---
 ## 38. Anti-patterns
 - Не делать multi-chain реализацию в MVP.
@@ -623,7 +617,7 @@ Evaluation before money.
 ```
 ---
 ## 40. Итоговое позиционирование
-**Crypto Research Core v7.8** — synchronous six-module Spring Modulith signal evaluation system: Java 25 + Spring Boot 4.1.1 + Spring Modulith 2.1.1 + PostgreSQL, built as one Maven module and one deployable JAR.
+**Crypto Research Core v7.9** — synchronous six-module Spring Modulith signal evaluation system: Java 25 + Spring Boot 4.1.1 + Spring Modulith 2.1.1 + PostgreSQL, built as one Maven module and one deployable JAR.
 MVP реализует Solana и через 10–12 недель, с conservative buffer до 12.5 недель, должен дать Evidence Report:
 - какие entry signal families на Solana имеют real forward edge after dynamic costs;
 - какие avoidance signals дают meaningful avoided drawdown;

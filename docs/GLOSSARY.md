@@ -1,20 +1,20 @@
 # Crypto Research Core — Wiki терминов
-**Версия:** 1.2
-**Дата:** 12 сентября 2026
+**Версия:** 1.3
+**Дата:** 20 сентября 2026
 **Формат:** пояснительный глоссарий, включающий текущие и исторические термины проекта.
-> **Важно:** области ответственности нормативных источников и правила конфликтов определены в [AGENTS.md](../AGENTS.md). Историческая multi-module структура вынесена в [архив v5](archive/LEGACY_V5_ARCHITECTURE_MAPPING.md). Термины будущих возможностей не являются спецификацией реализации без локальной пометки Target или Deferred и соответствующего OpenSpec change.
+> **Важно:** области ответственности нормативных источников и правила конфликтов определены в [AGENTS.md](../AGENTS.md). Историческая multi-module структура v5 удалена из репозитория 2026-09-20 и доступна только через git history. Термины будущих возможностей не являются спецификацией реализации без локальной пометки Target или Deferred и соответствующего OpenSpec change.
 ---
 ## 1. Общие термины проекта
 | Термин | Простое объяснение | Где используется |
 | --- | --- | --- |
 | Smart Money Platform | Личная платформа для поиска, проверки и мониторинга торговых гипотез по on-chain данным. | Весь проект |
-| v7.8 | Текущая версия плана: synchronous six-module Spring Modulith modular monolith, research-first, chain-ready signal/evaluation core; execution отсутствует в MVP. | Roadmap — product sequencing |
+| v7.9 | Текущая версия плана: synchronous six-module Spring Modulith modular monolith, research-first, chain-ready signal/evaluation core; execution отсутствует в MVP. | Roadmap — product sequencing |
 | Current modules | `kernel`, `marketdata`, `risk`, `wallet`, `signal`, `evaluation`; все межмодульные вызовы идут только через named `api`. | Architecture / ADR 0008 |
 | Reproducible result | Одинаковые dataset snapshot/cutoff, build/commit, algorithm/configuration и seed дают одинаковый упорядоченный вычислительный результат. | Reproducibility contract |
 | Provenance manifest | Идентичность build/source, algorithm/configuration, dataset, cutoff и seed, необходимая для аудита результата. | Evaluation evidence |
 | Dataset fingerprint | Algorithm-qualified checksum канонического immutable dataset snapshot. | Market-data lineage |
 | Deterministic tie-break | Стабильный вторичный ключ, устраняющий неоднозначность при равных значениях. | Signal/evaluation ordering |
-| ChainId | Канонический lowercase идентификатор сети; `solana` — текущая MVP chain. | `kernel::api` |
+| ChainId | Точный case-sensitive customary CAIP-2 идентификатор сети; текущая MVP chain — `solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp`; одинаковые значения в разном регистре — разные сети. | `kernel::api` |
 | TransactionId | Сеть плюс opaque идентификатор транзакции; для Solana value является signature, для EVM — transaction hash. | `kernel::api` |
 | EventId | `TransactionId` плюс opaque locator конкретного события внутри транзакции. | `kernel::api`, marketdata identity |
 | BlockPosition | Неотрицательная упорядоченная позиция блока: Solana slot или EVM block number; это не block hash и не Solana block height. | `kernel::api`, marketdata ordering |
@@ -81,14 +81,14 @@
 | --- | --- | --- |
 | Provider | Внешний источник данных или сервис. | Provider API |
 | Provider abstraction | Интерфейс, который скрывает конкретного поставщика данных. | Архитектура |
-| Helius | Провайдер Solana API / событий. | Real-time ingest |
-| Bitquery | Источник исторических и аналитических blockchain data. | Backfill |
-| DexScreener | Источник рыночных данных по токенам и пулам. | Market data |
-| Birdeye | Источник цен, метрик токенов и кошельков на Solana. | Token/wallet intelligence |
-| GoPlus | Security/risk API для токенов. | Token Risk |
-| Arkham | Источник labels/entity attribution по кошелькам. | Enrichment |
-| Nansen | Источник smart money labels/cohorts. | Enrichment/candidates |
-| Dune | Платформа SQL-аналитики по blockchain data. | External datasets |
+| Helius | Провайдер Solana API / событий. | **Target MVP candidate** до F1 selection |
+| Bitquery | Источник исторических и аналитических blockchain data. | **Target MVP candidate** до F1 selection |
+| DexScreener | Источник рыночных данных по токенам и пулам. | **Target MVP candidate** до F1 selection |
+| Birdeye | Источник цен, метрик токенов и кошельков на Solana. | **Deferred candidate** |
+| GoPlus | Security/risk API для токенов. | **Target MVP candidate** до F1 selection |
+| Arkham | Источник labels/entity attribution по кошелькам. | **Deferred candidate** |
+| Nansen | Источник smart money labels/cohorts. | **Deferred candidate** |
+| Dune | Платформа SQL-аналитики по blockchain data. | **Deferred; не подключён** |
 | BlockchainStreamProvider | Интерфейс для real-time blockchain событий. | Provider API |
 | HistoricalIngestProvider | Интерфейс для исторической загрузки данных. | Provider API |
 | MarketDataProvider | Интерфейс для цен, ликвидности и market metrics. | Provider API |
@@ -108,17 +108,17 @@
 | Flyway | Управление миграциями БД. | Persistence |
 | Redis | **Deferred:** возможный cache/queue/state storage; сейчас не выбран. | Future infrastructure |
 | Partitioning | **Target decision:** разделение high-volume таблицы после обоснования объёма и query patterns. | Owning persistence change |
-| BRIN index | Компактный индекс для больших таблиц с упорядоченными данными. | `swaps.ts`, slot |
+| BRIN index | **Target/Historical:** компактный индекс для больших упорядоченных таблиц; в текущей схеме не используется. | Future persistence change |
 | JSONB | JSON-данные в PostgreSQL с возможностью индексации. | Reasoning, evidence |
 | Materialized view | Сохранённый результат тяжёлого SQL-запроса. | Wallet stats |
-| `wallets` | Таблица кошельков. | Persistence |
-| `tokens` | Таблица токенов. | Persistence |
-| `swaps` | Таблица обменов. | Core data |
-| `token_metrics` | Исторические метрики токенов. | Token Intelligence |
-| `wallet_scores` | Текущее качество кошельков. | Wallet Intelligence |
-| `wallet_score_history` | История скоринга кошельков для point-in-time backtest. | Backtest correctness |
-| `signals` | Созданные торговые/аналитические сигналы. | Signal Aggregation |
-| `signal_reasoning` | Объяснение причин сигнала. | Explainability |
+| `wallets` | **Target draft name:** будущая таблица кошельков; не реализована. | Future wallet change |
+| `tokens` | **Target draft name:** будущая таблица токенов; не реализована. | Future marketdata/risk change |
+| `swaps` | **Target draft name:** нормализованные свопы текущей схемы хранятся в `marketdata.normalized_swaps`. | Current schema |
+| `token_metrics` | **Target draft name:** будущие исторические метрики токенов; не реализованы. | Future marketdata change |
+| `wallet_scores` | **Target draft name:** будущая таблица текущих оценок кошельков; не реализована. | Future wallet change |
+| `wallet_score_history` | **Target draft name:** будущая append-only история скоринга для point-in-time backtest; не реализована. | Future wallet change |
+| `signals` | **Target draft name:** принятые сигналы текущей схемы — `signal.accepted_signals`. | Current schema |
+| `signal_reasoning` | **Target draft name:** reasoning хранится как JSONB в `signal.accepted_signals`. | Current schema |
 | `paper_trades` | **Historical/deferred name:** возможные виртуальные сделки paper trading; текущая схема не утверждена. | Future PAPER change |
 | `paper_fills` | **Historical/deferred name:** возможные детали виртуального исполнения; текущая схема не утверждена. | Future PAPER change |
 | `backtest_runs` | **Target draft name:** метаданные запусков backtest; текущая схема не утверждена. | Future evaluation change |
@@ -190,7 +190,7 @@
 | TokenRiskScore | Числовая оценка риска токена. | Risk pipeline |
 | TokenRiskDecision | Решение по токену: ALLOW, WATCH_ONLY, BLOCK. | Token Risk |
 | ALLOW | Токен можно пропустить дальше. | Risk decision |
-| WATCH_ONLY | Токен можно наблюдать, но не торговать. | Research / alerts |
+| WATCH_ONLY | Токен наблюдаем, но actionable ENTRY не создаётся (текущий first slice); будущая OBSERVE/shadow-семантика — открытое решение (F4.3). | Research / alerts |
 | BLOCK | Сигнал по токену блокируется. | Risk decision |
 | Risk flag | Конкретный признак риска. | Domain |
 | Low liquidity | Мало ликвидности, высокая вероятность плохого исполнения. | Risk filter |
@@ -260,7 +260,7 @@
 | Термин | Простое объяснение | Где используется |
 | --- | --- | --- |
 | Backtest | Проверка стратегии на истории. | Phase 9 |
-| Backtest Engine | Модуль исторического тестирования. | `backtest` |
+| Backtest Engine | **Target:** механизм исторического тестирования; отдельного модуля нет, deterministic replay принадлежит `evaluation`. | Future evaluation change |
 | Point-in-time backtest | Backtest, который использует только данные, доступные на тот момент. | Anti-bias |
 | Cost-aware backtest | Backtest с учётом издержек исполнения. | Execution Simulator |
 | Walk-forward | Тестирование по периодам: обучили/выбрали на прошлом, проверили на будущем. | Validation |
@@ -375,7 +375,7 @@
 | Record | Immutable data carrier в Java. | Domain objects |
 | Sealed interface | Ограниченная иерархия типов. | Domain modeling |
 | Value object | Доменный тип для значения: адрес, сумма, score и т.п. | Domain |
-| ArchUnit | Тесты архитектурных правил. | Module boundaries |
+| ArchUnit | **Historical:** библиотека архитектурных тестов, в проекте не используется; границы модулей проверяет Spring Modulith `ApplicationModules.verify()`. | Not used |
 | Constructor injection | Внедрение зависимостей через конструктор. | Spring style |
 | Spring Data JDBC | Предсказуемый доступ к БД без JPA magic. | Persistence |
 | JPA | ORM, которую проект намеренно не использует. | Anti-pattern |

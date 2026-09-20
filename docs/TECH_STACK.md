@@ -1,6 +1,6 @@
 # Tech stack and decision status
 
-**Обновлено:** 20 сентября 2026
+**Updated:** 20 September 2026
 
 This document records allowed technologies and their decision state. Product sequencing belongs to [Roadmap](ROADMAP.md), current architecture to [Architecture](ARCHITECTURE.md), and accepted architectural rationale to [ADRs](adr/README.md).
 
@@ -88,7 +88,7 @@ Every platform, framework, build-tool or test-container update must run `mvnw.cm
 
 ## Provider candidates
 
-Helius, Bitquery, DexScreener and GoPlus are Target MVP candidates, not approved integrations. Alchemy, Moralis, Chainstack, Birdeye, Arkham, Jupiter and Jito are deferred candidates. Current limits, coverage and terms must be verified before selection or purchase.
+Helius, Bitquery, DexScreener and GoPlus are Target MVP candidates, not approved integrations. The F1 provider-consumer matrix also evaluates transport-class candidates — Helius JSON-RPC/WebSocket with paid LaserStream, Alchemy Yellowstone gRPC, Triton Dragon's Mouth/Fumarole, Chainstack Yellowstone and SQD (historical datasets). Moralis, Birdeye, Arkham, Jupiter, Jito and QuickNode remain deferred candidates. Selection happens only through the F1 matrix and capability-specific spikes; see [DELIVERY_PLAN_FIXES](DELIVERY_PLAN_FIXES.md). Current limits, coverage and terms must be verified before selection or purchase.
 
 ## References
 

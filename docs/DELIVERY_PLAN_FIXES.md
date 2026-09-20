@@ -50,20 +50,22 @@
 
 ## Сводка рабочих пакетов
 
-| ID | Приоритет | Пакет | Когда нужен |
-|---|---|---|---|
-| F0 | Immediate | Синхронизировать документы и устранить противоречия | До следующего implementation change |
-| F1 | Blocking | Определить Solana data contract и provider requirements | До завершения Stage 3.1 |
-| F2 | Blocking | Подготовить schema/storage к реальным данным | До первой массовой real-data записи |
-| F3 | Blocking | Реализовать bounded ingestion, backfill, gaps и monitoring | Для выхода из Stage 3 |
-| F4 | Required | Реализовать point-in-time risk и wallet evidence | До production signal families |
-| F5 | Required | Пререгистрировать research protocol | До просмотра и настройки performance outcomes |
-| F6 | Required | Исправить production signal/evaluation semantics | До Stage 6 Evidence Report |
-| F7 | Required | Построить статистически честный Evidence Report | Для research decision |
-| F8 | Product gap | Добавить decision support и forward shadow | После положительного/перспективного research decision |
-| F9 | Deferred | PAPER/MANUAL/LIVE safety and execution | Только после F8 и отдельных gates |
+| ID | Приоритет | Пакет | Когда нужен | Статус |
+|---|---|---|---|---|
+| F0 | Immediate | Синхронизировать документы и устранить противоречия | До следующего implementation change | Done (2026-09-20) |
+| F1 | Blocking | Определить Solana data contract и provider requirements | До завершения Stage 3.1 | Next |
+| F2 | Blocking | Подготовить schema/storage к реальным данным | До первой массовой real-data записи | Not started |
+| F3 | Blocking | Реализовать bounded ingestion, backfill, gaps и monitoring | Для выхода из Stage 3 | Not started |
+| F4 | Required | Реализовать point-in-time risk и wallet evidence | До production signal families | Not started |
+| F5 | Required | Пререгистрировать research protocol | До просмотра и настройки performance outcomes | Not started |
+| F6 | Required | Исправить production signal/evaluation semantics | До Stage 6 Evidence Report | Not started |
+| F7 | Required | Построить статистически честный Evidence Report | Для research decision | Not started |
+| F8 | Product gap | Добавить decision support и forward shadow | После положительного/перспективного research decision | Not started |
+| F9 | Deferred | PAPER/MANUAL/LIVE safety and execution | Только после F8 и отдельных gates | Deferred |
 
 ## F0 — Синхронизация документов
+
+**Статус:** Done (2026-09-20). Полный gate (verify-test-integrity, `mvnw.cmd clean verify`, strict OpenSpec validation, doctor) пройден; независимый ревью F0 exit-критерия выполнен.
 
 **Цель:** убрать инструкции, которые могут направить агента или разработчика по устаревшему пути.
 
