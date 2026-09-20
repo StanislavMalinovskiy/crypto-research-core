@@ -54,7 +54,7 @@
 |---|---|---|---|---|
 | F0 | Immediate | Синхронизировать документы и устранить противоречия | До следующего implementation change | Done (2026-09-20) |
 | F1 | Blocking | Определить Solana data contract и provider requirements | До завершения Stage 3.1 | Design done (2026-09-20); spikes и выбор провайдера — owner-action |
-| F2 | Blocking | Подготовить schema/storage к реальным данным | До первой массовой real-data записи | Not started |
+| F2 | Blocking | Подготовить schema/storage к реальным данным | До первой массовой real-data записи | Done (2026-09-20) |
 | F3 | Blocking | Реализовать bounded ingestion, backfill, gaps и monitoring | Для выхода из Stage 3 | Not started |
 | F4 | Required | Реализовать point-in-time risk и wallet evidence | До production signal families | Not started |
 | F5 | Required | Пререгистрировать research protocol | До просмотра и настройки performance outcomes | Not started |
@@ -202,6 +202,8 @@ Helius Free разрешено использовать только для пр
 Для каждого обязательного факта известны источник, историческая глубина, time/finality semantics, quality и failure behavior. Provider выбран на проверяемом sample, а не по общему маркетинговому coverage.
 
 ## F2 — Schema и storage readiness
+
+**Статус:** Done (2026-09-20). Реализовано через OpenSpec change `add-marketdata-live-storage`: forward-миграции V5–V8 (raw_transactions, price/liquidity observations, usd_conversion_facts, universe snapshots+members), идемпотентные JDBC-stores, батч-пути (включая фикс N+1 из B7), point-in-time индексы, volume-тест на 10k строк; полный gate зелёный. Partitioning отложено с задокументированным обоснованием до измеренного объёма.
 
 **Цель:** подготовить модель хранения до массового live stream/backfill.
 

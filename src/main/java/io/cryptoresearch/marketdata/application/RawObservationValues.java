@@ -14,6 +14,9 @@ final class RawObservationValues {
 	static final int MAX_PROVIDER_UTF8_BYTES = 64;
 	static final int MAX_OBSERVED_BLOCK_HASH_UTF8_BYTES = 256;
 	static final int MAX_PARSER_VERSION_UTF8_BYTES = 128;
+	static final int MAX_VENUE_UTF8_BYTES = 128;
+	static final int MAX_POOL_ADDRESS_UTF8_BYTES = 256;
+	static final int MAX_EXCLUSION_REASON_UTF8_BYTES = 256;
 
 	private static final Pattern PAYLOAD_HASH = Pattern.compile("sha256:[0-9a-f]{64}");
 
@@ -50,6 +53,15 @@ final class RawObservationValues {
 
 	static Instant toMicroseconds(Instant instant, String label) {
 		return Objects.requireNonNull(instant, label + " must not be null").truncatedTo(ChronoUnit.MICROS);
+	}
+
+	static java.math.BigDecimal requireScale(java.math.BigDecimal value, String label, int maximumScale) {
+		Objects.requireNonNull(value, label + " must not be null");
+		if (value.scale() > maximumScale) {
+			throw new IllegalArgumentException(
+					label + " must not exceed scale " + maximumScale);
+		}
+		return value;
 	}
 
 	private static boolean containsControlCharacter(String value) {

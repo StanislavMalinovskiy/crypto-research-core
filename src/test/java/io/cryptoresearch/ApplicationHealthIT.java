@@ -53,7 +53,7 @@ class ApplicationHealthIT {
 		assertThat(jdbcClient.sql("SHOW server_version").query(String.class).single()).isEqualTo("18.6");
 		assertThat(flyway.info().applied())
 				.extracting(migration -> migration.getVersion().getVersion())
-				.containsExactly("1", "2", "3", "4");
+				.containsExactly("1", "2", "3", "4", "5", "6", "7", "8");
 		assertThat(flyway.info().pending()).isEmpty();
 		assertThat(jdbcClient.sql("SELECT to_regclass('marketdata.raw_chain_events') IS NOT NULL")
 				.query(Boolean.class)

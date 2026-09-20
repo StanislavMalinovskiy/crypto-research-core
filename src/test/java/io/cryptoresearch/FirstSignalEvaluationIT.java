@@ -355,14 +355,17 @@ class FirstSignalEvaluationIT {
 	private void assertDatabaseContract() {
 		assertThat(jdbcClient.sql("SHOW server_version").query(String.class).single()).isEqualTo("18.6");
 		assertThat(jdbcClient.sql("SELECT version FROM flyway_schema_history WHERE success ORDER BY installed_rank")
-				.query(String.class).list()).containsExactly("1", "2", "3", "4");
+				.query(String.class).list()).containsExactly("1", "2", "3", "4", "5", "6", "7", "8");
 		assertThat(jdbcClient.sql("SELECT schema_name FROM information_schema.schemata WHERE schema_name IN ('marketdata','signal','evaluation','risk') ORDER BY schema_name")
 				.query(String.class).list()).containsExactly("evaluation", "marketdata", "signal");
 		assertThat(jdbcClient.sql("SELECT table_schema || '.' || table_name FROM information_schema.tables WHERE table_schema IN ('marketdata','signal','evaluation') ORDER BY table_schema, table_name")
 				.query(String.class).list()).containsExactly(
 						"evaluation.entry_outcomes", "evaluation.evaluation_reports", "evaluation.evaluation_runs",
 						"marketdata.dataset_snapshot_members", "marketdata.dataset_snapshots",
-						"marketdata.normalized_swaps", "marketdata.raw_chain_events",
+						"marketdata.liquidity_observations", "marketdata.normalized_swaps",
+						"marketdata.price_observations", "marketdata.raw_chain_events",
+						"marketdata.raw_transactions", "marketdata.universe_members",
+						"marketdata.universe_snapshots", "marketdata.usd_conversion_facts",
 						"signal.accepted_signals", "signal.signal_candidates");
 		assertThat(jdbcClient.sql("SELECT indexname FROM pg_indexes WHERE schemaname='marketdata' AND tablename='normalized_swaps' ORDER BY indexname")
 				.query(String.class).list()).containsExactly("normalized_swaps_pk", "normalized_swaps_point_in_time_idx");

@@ -14,6 +14,8 @@ public interface NormalizedMarketDataStore {
 
 	Optional<MarketObservation> find(NormalizedSwapIdentity identity);
 
+	List<MarketObservation> findAll(List<NormalizedSwapIdentity> identities);
+
 	List<MarketObservation> observations(PointInTimeQuery query);
 
 	DatasetSnapshot storeSnapshot(DatasetSnapshot snapshot);

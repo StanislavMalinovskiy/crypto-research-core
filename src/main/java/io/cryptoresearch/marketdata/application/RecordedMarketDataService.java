@@ -65,9 +65,15 @@ public class RecordedMarketDataService implements MarketDataApi {
 			throw new IllegalArgumentException("canonicalizationVersion must not be blank");
 		}
 		var cutoff = microseconds(request.cutoff());
-		var observations = request.members().stream()
-				.distinct()
-				.map(identity -> normalizedStore.find(identity)
+		var distinctMembers = request.members().stream().distinct().toList();
+		var byIdentity = new java.util.HashMap<
+				io.cryptoresearch.marketdata.api.MarketDataApi.NormalizedSwapIdentity,
+				io.cryptoresearch.marketdata.api.MarketDataApi.MarketObservation>();
+		for (var observation : normalizedStore.findAll(distinctMembers)) {
+			byIdentity.put(observation.identity(), observation);
+		}
+		var observations = distinctMembers.stream()
+				.map(identity -> java.util.Optional.ofNullable(byIdentity.get(identity))
 						.orElseThrow(() -> new IllegalArgumentException("Unknown normalized member: " + identity)))
 				.filter(observation -> !observation.observedAt().isAfter(cutoff))
 				.sorted(SNAPSHOT_ORDER)

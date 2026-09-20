@@ -7,6 +7,7 @@ import java.sql.Types;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
@@ -83,10 +84,20 @@ public class JdbcNormalizedMarketDataStore implements NormalizedMarketDataStore 
 			          normalized.transaction_value COLLATE "C", normalized.event_locator COLLATE "C"
 			""";
 
-	private final JdbcClient jdbcClient;
+	private static final String QUERY_ORDER_PLAIN = """
+			 ORDER BY observed_at, chain_id COLLATE "C", transaction_value COLLATE "C", event_locator COLLATE "C"
+			""";
 
-	public JdbcNormalizedMarketDataStore(JdbcClient jdbcClient) {
+	private final JdbcClient jdbcClient;
+	private final org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
+
+	private static final int BATCH_CHUNK_SIZE = 1000;
+
+	public JdbcNormalizedMarketDataStore(
+			JdbcClient jdbcClient,
+			org.springframework.jdbc.core.JdbcTemplate jdbcTemplate) {
 		this.jdbcClient = jdbcClient;
+		this.jdbcTemplate = jdbcTemplate;
 	}
 
 	@Override
@@ -124,6 +135,48 @@ public class JdbcNormalizedMarketDataStore implements NormalizedMarketDataStore 
 	}
 
 	@Override
+	public List<MarketObservation> findAll(List<NormalizedSwapIdentity> identities) {
+		if (identities.isEmpty()) {
+			return List.of();
+		}
+		var found = new ArrayList<MarketObservation>(identities.size());
+		for (var start = 0; start < identities.size(); start += BATCH_CHUNK_SIZE) {
+			var chunk = identities.subList(start, Math.min(start + BATCH_CHUNK_SIZE, identities.size()));
+			var values = new StringBuilder();
+			var statement = jdbcClient.sql("SELECT " + COLUMNS + """
+						 FROM marketdata.normalized_swaps
+						 WHERE (chain_id, transaction_value, event_locator) IN (VALUES """
+					+ appendIdentityValues(chunk, values) + ")"
+					+ QUERY_ORDER_PLAIN);
+			for (var index = 0; index < chunk.size(); index++) {
+				var identity = chunk.get(index);
+				statement = bindIdentity(statement, identity, index);
+			}
+			found.addAll(statement.query(this::map).list());
+		}
+		return found;
+	}
+
+	private String appendIdentityValues(List<NormalizedSwapIdentity> chunk, StringBuilder values) {
+		for (var index = 0; index < chunk.size(); index++) {
+			if (index > 0) {
+				values.append(", ");
+			}
+			values.append("(:chainId").append(index).append(", :transactionValue").append(index)
+					.append(", :eventLocator").append(index).append(')');
+		}
+		return values.toString();
+	}
+
+	private JdbcClient.StatementSpec bindIdentity(
+			JdbcClient.StatementSpec statement, NormalizedSwapIdentity identity, int index) {
+		return statement
+				.param("chainId" + index, identity.chain().value())
+				.param("transactionValue" + index, identity.transactionId().value())
+				.param("eventLocator" + index, identity.eventId().locator());
+	}
+
+	@Override
 	public DatasetSnapshot storeSnapshot(DatasetSnapshot snapshot) {
 		var inserted = jdbcClient.sql("""
 				INSERT INTO marketdata.dataset_snapshots (
@@ -138,16 +191,24 @@ public class JdbcNormalizedMarketDataStore implements NormalizedMarketDataStore 
 				.param("cutoff", timestamp(snapshot.cutoff()))
 				.query(Integer.class).optional().isPresent();
 		if (inserted) {
-			for (var index = 0; index < snapshot.observations().size(); index++) {
-				var identity = snapshot.observations().get(index).identity();
-				bindIdentity(jdbcClient.sql("""
+			for (var start = 0; start < snapshot.observations().size(); start += BATCH_CHUNK_SIZE) {
+				var chunk = snapshot.observations().subList(
+						start, Math.min(start + BATCH_CHUNK_SIZE, snapshot.observations().size()));
+				var parameters = new java.util.ArrayList<Object[]>(chunk.size());
+				for (var index = 0; index < chunk.size(); index++) {
+					var identity = chunk.get(index).identity();
+					parameters.add(new Object[] {
+							snapshot.snapshotId(),
+							start + index,
+							identity.chain().value(),
+							identity.transactionId().value(),
+							identity.eventId().locator() });
+				}
+				jdbcTemplate.batchUpdate("""
 						INSERT INTO marketdata.dataset_snapshot_members (
 						    snapshot_id, member_ordinal, chain_id, transaction_value, event_locator
-						) VALUES (:snapshotId, :memberOrdinal, :chainId, :transactionValue, :eventLocator)
-						"""), identity)
-						.param("snapshotId", snapshot.snapshotId())
-						.param("memberOrdinal", index)
-						.update();
+						) VALUES (?, ?, ?, ?, ?)
+						""", parameters);
 			}
 			return snapshot;
 		}
