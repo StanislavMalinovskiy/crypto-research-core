@@ -42,6 +42,15 @@ Do not make pure domain tests start Spring or Docker. Do not replace PostgreSQL-
 - `mvnw.cmd clean verify` is the complete gate and requires Docker.
 - CI publishes Surefire and Failsafe reports even when verification fails.
 
+### Windows Codex Docker access
+
+Codex's restricted Windows sandbox cannot open Docker Desktop named pipes even when Docker is healthy. Every
+Docker/Testcontainers command must therefore run with escalated host access. Run `docker version` first in the
+same escalated context, then run the targeted integration command or complete Maven gate there. Do not diagnose
+Docker as unavailable from an in-sandbox `permission denied`, `docker_engine is not listening`, or discovery
+timeout: retry once outside the restricted sandbox. Only a failed same-context escalated `docker version` is a
+Docker availability blocker. The context retry is infrastructure handling, not an artifact repair.
+
 Every change adds tests with its behavior. A test checkbox is complete only after the relevant command has actually passed; an unavailable Docker engine must be reported rather than hidden.
 
 ## Agent-assisted development

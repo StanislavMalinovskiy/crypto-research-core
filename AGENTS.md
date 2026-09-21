@@ -32,6 +32,12 @@ Read `docs/OPERATIONS.md` for runtime or configuration work and `docs/TESTING.md
 
 ## Agent workflow mode
 
+Project-agent transport is fixed to native Codex. Use project roles from `.codex/agents/**` for native
+subagents and `codex queue` for user-created Codex sessions. Do not invoke Orca, `orca-cli`, Orca
+orchestration/run/worker commands, or start the Orca application unless the user explicitly says to use Orca
+in the current task. Generic requests for agents, subagents, multi-agent work, supervision, coordination, or
+periodic progress updates are not permission to use Orca.
+
 Determine the mode once at task start from `.codex/config.toml`:
 
 - If `[agents].enabled = true` is the exact boolean setting, use `MULTIAGENT` and load [docs/AGENT_WORKFLOW_MULTIAGENT.md](docs/AGENT_WORKFLOW_MULTIAGENT.md) plus the applicable `.codex/agents/*.toml` role configuration.
@@ -107,6 +113,14 @@ mvnw.cmd clean verify
 openspec validate --all --strict --no-interactive
 openspec doctor
 ```
+
+On Windows under Codex, the restricted execution sandbox cannot access Docker Desktop named pipes. Run every
+Docker/Testcontainers command, including targeted integration tests and `mvnw.cmd clean verify`, with escalated
+host access. First run `docker version` in the same escalated execution context. An in-sandbox `permission
+denied`, Testcontainers `docker_engine is not listening`, or Docker discovery timeout is not evidence that
+Docker is down. Retry once with escalated host access; this is an infrastructure execution retry and does not
+consume an implementation repair. Report Docker as unavailable only when the same-context escalated
+`docker version` fails.
 
 On Unix, `./mvnw clean verify` is equivalent. Report skipped or blocked checks with the exact command and cause; do not claim completion when a required check has not passed. GitHub Actions runs the same contract in the stable `quality-gate` job and publishes Surefire/Failsafe reports when present. Repository files cannot enable branch protection; after an authorized push and first successful remote run, an administrator must require `quality-gate` in the primary-branch ruleset.
 

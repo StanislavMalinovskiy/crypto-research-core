@@ -47,7 +47,7 @@ routing is considered only after the benchmark.
 
 Main owns process and control, not architecture or implementation.
 
-- Classify task risk before writer work starts.
+- Set preliminary task risk before writer work starts.
 - Dispatch phases and provide bounded task capsules.
 - Validate the active OpenSpec change before implementation.
 - Execute the complete final gate independently after review and documentation are complete.
@@ -82,6 +82,7 @@ Responsibilities:
 
 - Create or update the OpenSpec proposal, delta specification, design, and tasks.
 - Define acceptance behavior without prescribing a test-only implementation.
+- Treat Main's risk as preliminary: Architect may upgrade it, never downgrade it.
 - Classify test impact in the accepted contract as `RED_REQUIRED` or `RED_NOT_REQUIRED`, with a concise
   rationale.
 - Record applicable core invariants and the implementation change budget.
@@ -147,7 +148,8 @@ Builder entirely. `RED_NOT_REQUIRED` does not require a pre-implementation diff.
 3. Run targeted GREEN checks, verify the frozen-test hash when `RED_REQUIRED`, and return `BUILD_DONE` with
    concise evidence.
 4. Do not modify frozen tests, expectations, fixtures, discovery, or test configuration.
-5. Apply bounded production repairs routed from Reviewer findings.
+5. Apply bounded production repairs routed from Reviewer findings. Two ordinary repair rounds are available
+   without separate approval; a third requires explicit Reviewer authorization.
 
 If a frozen test is wrong, Builder returns `BLOCKED` with `blocked_reason = TEST_SPEC_ERROR`. Reviewer may
 issue `REPAIR` with `requires_new_red = true`; the replacement test then needs new RED evidence and a new
@@ -212,7 +214,8 @@ If the approved contract is insufficient, Builder returns `BLOCKED` with
 For ROUTINE and STANDARD work, the same Architect thread performs the full review. Main sends a review capsule
 that contains requirements, applicable invariants, stable diff, tests, the test-impact decision, and applicable
 compact RED/GREEN evidence, without Builder advocacy or implementation rationale. Reviewer checks test meaning
-before production details and does not infer correctness merely from a green command.
+before production details and does not infer correctness merely from a green command. In REVIEW, Architect
+does not modify any file.
 
 A fresh `gpt-5.6-terra / high` review thread is required for every CORE-RISK task and whenever Main classifies
 a task as complex because it affects:
@@ -229,12 +232,13 @@ For CORE-RISK, the original Architect does not return after implementation. The 
 conformance and the complete code, test, applicable RED/GREEN evidence, and invariant review.
 
 The fresh reviewer is read-only and receives only the approved contract, applicable invariants, stable diff,
-tests, the test-impact decision, and RED/GREEN evidence. It returns `APPROVE`, one consolidated `REPAIR`, or
+tests, the test-impact decision, and RED/GREEN evidence. It returns `APPROVE`, a consolidated `REPAIR`, or
 `ESCALATE`.
 
-Reviewer returns one consolidated set of findings. Builder receives one consolidated repair pass, followed by
-one review pass. A remaining substantive release blocker triggers Sol escalation or a user decision; it does
-not open an unbounded repair loop.
+Reviewer returns one consolidated set of findings per review. Builder has two ordinary repair passes without
+separate approval, each followed by review. If a blocker remains, Reviewer may authorize exactly one third
+repair without a user turn. If that repair fails, or Reviewer cannot define a bounded safe repair, the issue
+escalates to Sol High. The workflow does not open an unbounded repair loop.
 
 After `APPROVE`, Architect may update only completion status, task checkboxes, evidence links, and
 non-semantic documentation. If Architect discovers that normative requirements, scenarios, acceptance
@@ -248,7 +252,7 @@ Main may start a fresh `gpt-5.6-sol / high` Architect + Reviewer only for a boun
 conditions holds:
 
 - `BLOCKED` with a contract or design reason cannot be resolved from accepted project sources;
-- the same substantive defect survives a repair;
+- the same substantive defect survives all three repair passes;
 - Main and Terra Reviewer disagree on a release-blocking issue;
 - an invariant violation or ambiguous transaction/concurrency/migration semantic remains;
 - the change presents a credible data-loss, recovery, security, or architecture-boundary risk.
@@ -294,14 +298,20 @@ Main -> classify risk and define capsule
   -> Builder implements and returns BUILD_DONE with targeted GREEN
   -> ROUTINE/STANDARD: original Architect performs the full review
   -> CORE-RISK: fresh Terra High performs contract, code, test, and invariant review
-  -> Reviewer returns APPROVE, one consolidated REPAIR, or ESCALATE
-  -> Builder performs one consolidated repair when required
-  -> Reviewer performs one follow-up review
+  -> Reviewer returns APPROVE, a consolidated REPAIR, or ESCALATE
+  -> Builder may perform two ordinary repair rounds, each followed by review
+  -> Reviewer may authorize one third repair, followed by review
+  -> a blocker remaining after repair round 3 escalates to Sol High
   -> Sol High challenge only on an escalation trigger
   -> after APPROVE, Architect updates only status, checkboxes, evidence links, and non-semantic documentation
   -> a required semantic change is not edited; it returns PLAN_READY with reason = CONTRACT_CHANGED
   -> Main independently runs the complete final gate and returns DONE
 ```
+
+If the final gate fails, route an implementation or test issue to Builder `REPAIR`, a documentation or
+contract issue to Architect, and an infrastructure issue to `BLOCKED`. The failure consumes the next available
+repair round; after two ordinary rounds Reviewer may authorize round 3, and any blocker surviving round 3
+escalates to Sol High.
 
 ## Evaluation data
 

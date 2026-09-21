@@ -30,15 +30,19 @@ public class JdbcEvaluationPersistence {
 			throw new IllegalArgumentException("first-slice report must contain exactly one outcome");
 		}
 		var outcome = report.outcomes().getFirst();
-		storeRun(report, outcome);
+		var runInserted = storeRun(report, outcome);
+		if (!runInserted) {
+			assertCompleteAggregate(report, outcome);
+		}
 		storeOutcome(report.runId(), outcome);
 		storeReport(report);
+		assertCompleteAggregate(report, outcome);
 		return report;
 	}
 
-	private void storeRun(EvaluationReport report, EntryOutcome outcome) {
+	private boolean storeRun(EvaluationReport report, EntryOutcome outcome) {
 		var provenance = report.provenance();
-		var inserted = jdbcClient.sql("""
+		return jdbcClient.sql("""
 				INSERT INTO evaluation.evaluation_runs (
 				    run_id, signal_id, horizon, build_identity, source_revision, source_dirty,
 				    algorithm_version, configuration_fingerprint, dataset_fingerprint,
@@ -64,10 +68,6 @@ public class JdbcEvaluationPersistence {
 				.param("randomSeed", provenance.seed().isPresent() ? provenance.seed().getAsLong() : null, Types.BIGINT)
 				.param("evidenceFingerprint", report.runId())
 				.query(Integer.class).optional().isPresent();
-		if (!inserted) {
-			assertFingerprint("evaluation.evaluation_runs", "run_id", report.runId(),
-					"evidence_fingerprint", report.runId(), "evaluation run");
-		}
 	}
 
 	private void storeOutcome(String runId, EntryOutcome outcome) {
@@ -89,7 +89,7 @@ public class JdbcEvaluationPersistence {
 				    :horizonPrice, :horizonLiquidity, :horizonConfidence, :horizonProvider, :horizonObservedAt,
 				    :grossReturn, :friction, :netReturn, CAST(:evidence AS JSONB), :evidenceFingerprint
 				)
-				ON CONFLICT (outcome_id) DO NOTHING
+			ON CONFLICT DO NOTHING
 				RETURNING 1
 				""")
 				.param("outcomeId", outcome.outcomeId())
@@ -106,10 +106,6 @@ public class JdbcEvaluationPersistence {
 		statement = bindPrice(statement, "entry", entry);
 		statement = bindPrice(statement, "horizon", horizon);
 		var inserted = statement.query(Integer.class).optional().isPresent();
-		if (!inserted) {
-			assertFingerprint("evaluation.entry_outcomes", "outcome_id", outcome.outcomeId(),
-					"evidence_fingerprint", outcome.outcomeId(), "entry outcome");
-		}
 	}
 
 	private void storeReport(EvaluationReport report) {
@@ -121,7 +117,7 @@ public class JdbcEvaluationPersistence {
 				    :reportId, :runId, :family, :signalCount, :pricedCount,
 				    :unpricedCount, :averageNetReturn, CAST(:orderedContent AS JSONB), :reportFingerprint
 				)
-				ON CONFLICT (report_id) DO NOTHING
+			ON CONFLICT DO NOTHING
 				RETURNING 1
 				""")
 				.param("reportId", report.reportFingerprint())
@@ -134,10 +130,103 @@ public class JdbcEvaluationPersistence {
 				.param("orderedContent", reportContent(report))
 				.param("reportFingerprint", report.reportFingerprint())
 				.query(Integer.class).optional().isPresent();
-		if (!inserted) {
-			assertFingerprint("evaluation.evaluation_reports", "report_id", report.reportFingerprint(),
-					"report_fingerprint", report.reportFingerprint(), "evaluation report");
-		}
+	}
+
+	private void assertCompleteAggregate(EvaluationReport report, EntryOutcome outcome) {
+		var provenance = report.provenance();
+		assertMatch("evaluation run", report.runId(), jdbcClient.sql("""
+				SELECT signal_id = :signalId
+				   AND horizon = :horizon
+				   AND build_identity = :buildIdentity
+				   AND source_revision = :sourceRevision
+				   AND source_dirty = :sourceDirty
+				   AND algorithm_version = :algorithmVersion
+				   AND configuration_fingerprint = :configurationFingerprint
+				   AND dataset_fingerprint = :datasetFingerprint
+				   AND evaluation_cutoff = :evaluationCutoff
+				   AND random_seed IS NOT DISTINCT FROM :randomSeed
+				   AND evidence_fingerprint = :evidenceFingerprint
+				FROM evaluation.evaluation_runs WHERE run_id = :runId
+				""")
+				.param("runId", report.runId())
+				.param("signalId", outcome.signalId())
+				.param("horizon", outcome.horizon())
+				.param("buildIdentity", provenance.buildIdentity())
+				.param("sourceRevision", provenance.sourceRevision())
+				.param("sourceDirty", provenance.sourceDirty())
+				.param("algorithmVersion", provenance.algorithmVersion())
+				.param("configurationFingerprint", provenance.configurationFingerprint())
+				.param("datasetFingerprint", provenance.datasetFingerprint())
+				.param("evaluationCutoff", timestamp(provenance.evaluationCutoff()))
+				.param("randomSeed", provenance.seed().isPresent() ? provenance.seed().getAsLong() : null, Types.BIGINT)
+				.param("evidenceFingerprint", report.runId()));
+
+		var entry = outcome.entryPrice().orElse(null);
+		var horizon = outcome.horizonPrice().orElse(null);
+		var outcomeStatement = jdbcClient.sql("""
+				SELECT run_id = :runId
+				   AND signal_id = :signalId
+				   AND horizon = :horizon
+				   AND pricing_status = :pricingStatus
+				   AND missing_price_reason IS NOT DISTINCT FROM :missingPriceReason
+				   AND entry_chain_id IS NOT DISTINCT FROM :entryChainId
+				   AND entry_transaction_value IS NOT DISTINCT FROM :entryTransaction
+				   AND entry_event_locator IS NOT DISTINCT FROM :entryLocator
+				   AND entry_price_usd IS NOT DISTINCT FROM :entryPrice
+				   AND entry_liquidity_usd IS NOT DISTINCT FROM :entryLiquidity
+				   AND entry_confidence IS NOT DISTINCT FROM :entryConfidence
+				   AND entry_provider IS NOT DISTINCT FROM :entryProvider
+				   AND entry_observed_at IS NOT DISTINCT FROM :entryObservedAt
+				   AND horizon_chain_id IS NOT DISTINCT FROM :horizonChainId
+				   AND horizon_transaction_value IS NOT DISTINCT FROM :horizonTransaction
+				   AND horizon_event_locator IS NOT DISTINCT FROM :horizonLocator
+				   AND horizon_price_usd IS NOT DISTINCT FROM :horizonPrice
+				   AND horizon_liquidity_usd IS NOT DISTINCT FROM :horizonLiquidity
+				   AND horizon_confidence IS NOT DISTINCT FROM :horizonConfidence
+				   AND horizon_provider IS NOT DISTINCT FROM :horizonProvider
+				   AND horizon_observed_at IS NOT DISTINCT FROM :horizonObservedAt
+				   AND gross_return IS NOT DISTINCT FROM :grossReturn
+				   AND friction IS NOT DISTINCT FROM :friction
+				   AND net_return IS NOT DISTINCT FROM :netReturn
+				   AND evidence = CAST(:evidence AS JSONB)
+				   AND evidence_fingerprint = :evidenceFingerprint
+				FROM evaluation.entry_outcomes WHERE outcome_id = :outcomeId
+				""")
+				.param("outcomeId", outcome.outcomeId())
+				.param("runId", report.runId())
+				.param("signalId", outcome.signalId())
+				.param("horizon", outcome.horizon())
+				.param("pricingStatus", outcome.status().name())
+				.param("missingPriceReason", outcome.missingPriceReason().orElse(null), Types.VARCHAR)
+				.param("grossReturn", outcome.grossReturn().orElse(null), Types.NUMERIC)
+				.param("friction", outcome.friction().orElse(null), Types.NUMERIC)
+				.param("netReturn", outcome.netReturn().orElse(null), Types.NUMERIC)
+				.param("evidence", outcomeEvidence(outcome))
+				.param("evidenceFingerprint", outcome.outcomeId());
+		outcomeStatement = bindPrice(outcomeStatement, "entry", entry);
+		outcomeStatement = bindPrice(outcomeStatement, "horizon", horizon);
+		assertMatch("entry outcome", outcome.outcomeId(), outcomeStatement);
+
+		assertMatch("evaluation report", report.reportFingerprint(), jdbcClient.sql("""
+				SELECT run_id = :runId
+				   AND family = :family
+				   AND signal_count = :signalCount
+				   AND priced_outcome_count = :pricedCount
+				   AND unpriced_outcome_count = :unpricedCount
+				   AND average_net_return IS NOT DISTINCT FROM :averageNetReturn
+				   AND ordered_content = CAST(:orderedContent AS JSONB)
+				   AND report_fingerprint = :reportFingerprint
+				FROM evaluation.evaluation_reports WHERE report_id = :reportId
+				""")
+				.param("reportId", report.reportFingerprint())
+				.param("runId", report.runId())
+				.param("family", report.family())
+				.param("signalCount", report.signalCount())
+				.param("pricedCount", report.pricedOutcomeCount())
+				.param("unpricedCount", report.unpricedOutcomeCount())
+				.param("averageNetReturn", report.averageNetReturn().orElse(null), Types.NUMERIC)
+				.param("orderedContent", reportContent(report))
+				.param("reportFingerprint", report.reportFingerprint()));
 	}
 
 	private JdbcClient.StatementSpec bindPrice(
@@ -153,13 +242,15 @@ public class JdbcEvaluationPersistence {
 				.param(prefix + "ObservedAt", observation == null ? null : timestamp(observation.observedAt()), Types.TIMESTAMP_WITH_TIMEZONE);
 	}
 
-	private void assertFingerprint(
-			String table, String idColumn, String id, String fingerprintColumn, String expected, String description) {
-		var actual = jdbcClient.sql("SELECT " + fingerprintColumn + " FROM " + table + " WHERE " + idColumn + " = :id")
-				.param("id", id).query(String.class).optional().orElseThrow(() ->
-						new IllegalStateException(description + " disappeared after uniqueness resolution"));
-		if (!actual.equals(expected)) {
-			throw new IllegalStateException(description + " immutable retry conflict for " + id);
+	private void assertMatch(String description, String id, JdbcClient.StatementSpec statement) {
+		if (!statement.query(Boolean.class).optional().orElse(false)) {
+			throw new ImmutableRetryConflictException(description + " immutable retry conflict for " + id);
+		}
+	}
+
+	private static final class ImmutableRetryConflictException extends IllegalStateException {
+		ImmutableRetryConflictException(String message) {
+			super(message);
 		}
 	}
 

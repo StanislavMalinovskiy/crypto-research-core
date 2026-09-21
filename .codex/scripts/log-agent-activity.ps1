@@ -8,10 +8,10 @@ param(
     [ValidatePattern('^[A-Za-z0-9._-]{1,128}$')]
     [string] $AssignmentId,
 
-    [ValidateSet('developer', 'tester', 'reviewer', 'researcher')]
+    [ValidateSet('architect', 'builder_terra', 'builder_luna', 'reviewer', 'escalation')]
     [string] $Role,
 
-    [ValidateSet('research', 'threat-check', 'skeleton', 'tests-red', 'tests-evidence', 'implementation', 'adjudicate', 'audit')]
+    [ValidateSet('plan', 'build', 'review', 'repair', 'docs-close', 'challenge')]
     [string] $Phase,
 
     [Parameter(Mandatory)]
@@ -37,28 +37,25 @@ param(
 $ErrorActionPreference = 'Stop'
 
 $allowedStatuses = @(
-    'SKELETON_READY', 'IMPL_DONE', 'TEST_SUSPECT', 'BLOCKED',
-    'RED_CANDIDATE', 'EVIDENCE_CANDIDATE', 'SPEC_INCOMPLETE',
-    'RESEARCH_DONE', 'INCONCLUSIVE',
-    'THREAT_CHECK_PASSED', 'THREATS_FOUND',
-    'CODE_WRONG', 'TEST_WRONG', 'SPEC_AMBIGUOUS',
-    'AUDIT_FAILED', 'APPROVE'
+    'PLAN_READY', 'BUILD_DONE', 'REPAIR', 'APPROVE', 'BLOCKED', 'ESCALATE', 'DONE'
 )
 $rolePhases = @{
-    developer = @('skeleton', 'implementation')
-    tester = @('tests-red', 'tests-evidence')
-    reviewer = @('threat-check', 'adjudicate', 'audit')
-    researcher = @('research')
+    architect = @('plan', 'review', 'docs-close')
+    builder_terra = @('build', 'repair')
+    builder_luna = @('build', 'repair')
+    reviewer = @('review')
+    escalation = @('challenge')
 }
-$roleStatuses = @{
-    developer = @('SKELETON_READY', 'IMPL_DONE', 'TEST_SUSPECT', 'BLOCKED')
-    tester = @('RED_CANDIDATE', 'EVIDENCE_CANDIDATE', 'SPEC_INCOMPLETE', 'TEST_SUSPECT', 'BLOCKED')
-    researcher = @('RESEARCH_DONE', 'INCONCLUSIVE', 'BLOCKED')
-}
-$reviewerStatuses = @{
-    'threat-check' = @('THREAT_CHECK_PASSED', 'THREATS_FOUND')
-    adjudicate = @('CODE_WRONG', 'TEST_WRONG', 'SPEC_AMBIGUOUS')
-    audit = @('AUDIT_FAILED', 'APPROVE')
+$rolePhaseStatuses = @{
+    'architect:plan' = @('PLAN_READY', 'BLOCKED', 'ESCALATE')
+    'architect:review' = @('APPROVE', 'REPAIR', 'ESCALATE', 'BLOCKED')
+    'architect:docs-close' = @('APPROVE', 'PLAN_READY', 'BLOCKED')
+    'builder_terra:build' = @('BUILD_DONE', 'BLOCKED')
+    'builder_terra:repair' = @('BUILD_DONE', 'BLOCKED')
+    'builder_luna:build' = @('BUILD_DONE', 'BLOCKED')
+    'builder_luna:repair' = @('BUILD_DONE', 'BLOCKED')
+    'reviewer:review' = @('APPROVE', 'REPAIR', 'ESCALATE', 'BLOCKED')
+    'escalation:challenge' = @('APPROVE', 'REPAIR', 'BLOCKED')
 }
 
 function ConvertTo-OneLine {
@@ -202,12 +199,7 @@ try {
     if ($state.completed) {
         throw "Assignment '$AssignmentId' has already been completed."
     }
-    $expectedStatuses = if ($state.role -ceq 'reviewer') {
-        $reviewerStatuses[[string] $state.phase]
-    }
-    else {
-        $roleStatuses[[string] $state.role]
-    }
+    $expectedStatuses = $rolePhaseStatuses[([string] $state.role + ':' + [string] $state.phase)]
     if ($Status -cnotin $expectedStatuses) {
         throw "Status '$Status' is not valid for role '$($state.role)' in phase '$($state.phase)'."
     }
@@ -249,7 +241,7 @@ try {
         (Format-TokenValue $OutputTokens),
         (Format-TokenValue $ReasoningTokens),
         (Format-TokenValue $TotalTokens)
-    $readableLine = "$startLocal | Architect -> ${displayRole}: $($state.task_summary) | ${displayRole} -> Architect: STATUS: $Status; $normalizedSummary | phase=$($state.phase) | duration=$duration | tokens: $tokens"
+    $readableLine = "$startLocal | Main -> ${displayRole}: $($state.task_summary) | ${displayRole} -> Main: STATUS: $Status; $normalizedSummary | phase=$($state.phase) | duration=$duration | tokens: $tokens"
     Write-AppendLine $readableLogPath $readableLine
 
     $state.completed = $true

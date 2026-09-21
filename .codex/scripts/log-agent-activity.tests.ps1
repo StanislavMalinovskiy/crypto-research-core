@@ -42,13 +42,13 @@ function Test-CompletedAssignmentWithTokens {
     $scenario = 'completed assignment with tokens'
     $logDirectory = Join-Path $testRoot 'complete'
     $dispatch = Invoke-ScriptProcess $loggerPath @(
-        '-Action', 'Dispatch', '-AssignmentId', 'assignment-1', '-Role', 'tester', '-Phase', 'tests-red',
-        '-Summary', "Write requirement-derived`nred test", '-AgentId', 'agent-7', '-LogDirectory', $logDirectory,
+        '-Action', 'Dispatch', '-AssignmentId', 'assignment-1', '-Role', 'builder_terra', '-Phase', 'build',
+        '-Summary', "Implement requirement-derived`nchange", '-AgentId', 'agent-7', '-LogDirectory', $logDirectory,
         '-Timestamp', '2026-09-15T23:23:00+05:00'
     )
     $return = Invoke-ScriptProcess $loggerPath @(
-        '-Action', 'Return', '-AssignmentId', 'assignment-1', '-Summary', 'RED_CANDIDATE for scenario A',
-        '-Status', 'RED_CANDIDATE', '-InputTokens', '1200', '-CachedInputTokens', '300',
+        '-Action', 'Return', '-AssignmentId', 'assignment-1', '-Summary', 'BUILD_DONE for scenario A',
+        '-Status', 'BUILD_DONE', '-InputTokens', '1200', '-CachedInputTokens', '300',
         '-OutputTokens', '240', '-ReasoningTokens', '80', '-TotalTokens', '1440',
         '-LogDirectory', $logDirectory, '-Timestamp', '2026-09-15T23:24:05+05:00'
     )
@@ -56,7 +56,7 @@ function Test-CompletedAssignmentWithTokens {
     Assert-Exit "$scenario return" $return 0
 
     $records = @(Get-Content (Join-Path $logDirectory 'subagents.jsonl') | ForEach-Object { $_ | ConvertFrom-Json })
-    if ($records.Count -ne 2 -or $records[1].duration_ms -ne 65000 -or $records[1].phase -cne 'tests-red') {
+    if ($records.Count -ne 2 -or $records[1].duration_ms -ne 65000 -or $records[1].phase -cne 'build') {
         Add-Failure $scenario 'machine records do not preserve correlation, phase, or duration'
     }
     if ($records[1].token_usage.input -ne 1200 -or $records[1].token_usage.reasoning -ne 80) {
@@ -64,7 +64,7 @@ function Test-CompletedAssignmentWithTokens {
     }
     $readable = Get-Content -Raw (Join-Path $logDirectory 'subagents-readable.log')
     if ($readable -notmatch '^15-09-26 23:23 \|' -or $readable -notmatch 'duration=00:01:05' -or
-            $readable -notmatch 'Architect -> Tester: Write requirement-derived red test' -or
+            $readable -notmatch 'Main -> Builder_Terra: Implement requirement-derived change' -or
             $readable -notmatch 'input=1200.*reasoning=80.*total=1440') {
         Add-Failure $scenario "unexpected readable line: $readable"
     }
@@ -74,27 +74,27 @@ function Test-UnavailableTokensAndValidation {
     $scenario = 'unavailable tokens and validation'
     $logDirectory = Join-Path $testRoot 'unavailable'
     $dispatch = Invoke-ScriptProcess $loggerPath @(
-        '-Action', 'Dispatch', '-AssignmentId', 'assignment-2', '-Role', 'reviewer', '-Phase', 'threat-check',
-        '-Summary', 'Check bypass classes', '-LogDirectory', $logDirectory,
+        '-Action', 'Dispatch', '-AssignmentId', 'assignment-2', '-Role', 'architect', '-Phase', 'plan',
+        '-Summary', 'Prepare contract and plan', '-LogDirectory', $logDirectory,
         '-Timestamp', '2026-09-15T20:00:00Z'
     )
     $return = Invoke-ScriptProcess $loggerPath @(
-        '-Action', 'Return', '-AssignmentId', 'assignment-2', '-Summary', 'No blocking bypass found',
-        '-Status', 'THREAT_CHECK_PASSED', '-LogDirectory', $logDirectory,
+        '-Action', 'Return', '-AssignmentId', 'assignment-2', '-Summary', 'Contract is implementation ready',
+        '-Status', 'PLAN_READY', '-LogDirectory', $logDirectory,
         '-Timestamp', '2026-09-15T20:02:00Z'
     )
     $duplicate = Invoke-ScriptProcess $loggerPath @(
         '-Action', 'Return', '-AssignmentId', 'assignment-2', '-Summary', 'Duplicate',
-        '-Status', 'THREAT_CHECK_PASSED', '-LogDirectory', $logDirectory,
+        '-Status', 'PLAN_READY', '-LogDirectory', $logDirectory,
         '-Timestamp', '2026-09-15T20:03:00Z'
     )
     $invalidDispatch = Invoke-ScriptProcess $loggerPath @(
-        '-Action', 'Dispatch', '-AssignmentId', 'invalid-phase', '-Role', 'tester', '-Phase', 'implementation',
+        '-Action', 'Dispatch', '-AssignmentId', 'invalid-phase', '-Role', 'builder_terra', '-Phase', 'plan',
         '-Summary', 'Invalid role phase', '-LogDirectory', $logDirectory
     )
     $invalidStatusDispatch = Invoke-ScriptProcess $loggerPath @(
-        '-Action', 'Dispatch', '-AssignmentId', 'invalid-status', '-Role', 'tester', '-Phase', 'tests-red',
-        '-Summary', 'Prepare test', '-LogDirectory', $logDirectory
+        '-Action', 'Dispatch', '-AssignmentId', 'invalid-status', '-Role', 'builder_terra', '-Phase', 'build',
+        '-Summary', 'Implement change', '-LogDirectory', $logDirectory
     )
     $invalidStatusReturn = Invoke-ScriptProcess $loggerPath @(
         '-Action', 'Return', '-AssignmentId', 'invalid-status', '-Summary', 'Wrong role status',
@@ -107,7 +107,7 @@ function Test-UnavailableTokensAndValidation {
     Assert-Exit "$scenario invalid status dispatch" $invalidStatusDispatch 0
     Assert-Exit "$scenario invalid status return" $invalidStatusReturn 2
     $readable = Get-Content -Raw (Join-Path $logDirectory 'subagents-readable.log')
-    if ($readable -notmatch 'phase=threat-check' -or $readable -notmatch 'input=unavailable' -or
+    if ($readable -notmatch 'phase=plan' -or $readable -notmatch 'input=unavailable' -or
             $readable -notmatch 'duration=00:02:00') {
         Add-Failure $scenario "missing explicit unavailable telemetry: $readable"
     }

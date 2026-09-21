@@ -37,7 +37,12 @@ openspec doctor
 git diff --check
 ```
 
-The independent preflight must pass before `clean verify`. On Unix, `./mvnw clean verify` is equivalent. Report an unavailable Docker engine or another environmental blocker exactly; do not hide it by narrowing the lifecycle.
+The independent preflight must pass before `clean verify`. On Windows under Codex, run `docker version` and
+every Docker/Testcontainers Maven command with escalated host access, outside the restricted sandbox. A sandbox
+`permission denied`, `docker_engine is not listening`, or discovery timeout requires one escalated retry and is
+not yet an unavailable-Docker blocker or an artifact repair. Report Docker unavailable only when escalated
+`docker version` in the same execution context fails. On Unix, `./mvnw clean verify` is equivalent. Report a
+confirmed environmental blocker exactly; do not hide it by narrowing the lifecycle.
 
 ## Review and repair
 

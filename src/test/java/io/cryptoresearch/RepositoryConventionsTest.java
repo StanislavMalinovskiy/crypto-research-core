@@ -51,21 +51,13 @@ class RepositoryConventionsTest {
 	private static final Pattern MODEL_REASONING_EFFORT = Pattern.compile(
 			"(?m)^\\s*model_reasoning_effort\\s*=\\s*\"([^\"]+)\"\\s*$");
 	private static final Pattern STATUS_TOKEN = Pattern.compile(
-			"\\b(?:SKELETON_READY|IMPL_DONE|TEST_SUSPECT|BLOCKED|RED_CANDIDATE|EVIDENCE_CANDIDATE|SPEC_INCOMPLETE|"
-					+ "RESEARCH_DONE|INCONCLUSIVE|THREAT_CHECK_PASSED|THREATS_FOUND|CODE_WRONG|TEST_WRONG|"
-					+ "SPEC_AMBIGUOUS|AUDIT_FAILED|APPROVE|"
-					+ "TESTS_RED_CONFIRMED|TESTS_GREEN_CONFIRMED)\\b");
-	private static final Set<String> LEGACY_TESTER_STATUSES = Set.of(
-			"TESTS_RED_CONFIRMED", "TESTS_GREEN_CONFIRMED");
+			"\\b(?:PLAN_READY|BUILD_DONE|REPAIR|APPROVE|BLOCKED|ESCALATE|DONE)\\b");
 	private static final Map<String, Set<String>> ROLE_OUTPUT_STATUSES = Map.of(
-			"developer", Set.of("SKELETON_READY", "IMPL_DONE", "TEST_SUSPECT", "BLOCKED"),
-			"tester", Set.of("RED_CANDIDATE", "EVIDENCE_CANDIDATE", "SPEC_INCOMPLETE", "TEST_SUSPECT", "BLOCKED"),
-			"researcher", Set.of("RESEARCH_DONE", "INCONCLUSIVE", "BLOCKED"));
-	private static final Set<String> REVIEWER_ADJUDICATE_STATUSES =
-			Set.of("CODE_WRONG", "TEST_WRONG", "SPEC_AMBIGUOUS");
-	private static final Set<String> REVIEWER_THREAT_CHECK_STATUSES =
-			Set.of("THREAT_CHECK_PASSED", "THREATS_FOUND");
-	private static final Set<String> REVIEWER_AUDIT_STATUSES = Set.of("AUDIT_FAILED", "APPROVE");
+			"architect", Set.of("PLAN_READY", "APPROVE", "REPAIR", "ESCALATE", "BLOCKED"),
+			"builder_terra", Set.of("BUILD_DONE", "BLOCKED"),
+			"builder_luna", Set.of("BUILD_DONE", "BLOCKED"),
+			"reviewer", Set.of("APPROVE", "REPAIR", "ESCALATE", "BLOCKED"),
+			"escalation", Set.of("APPROVE", "REPAIR", "BLOCKED"));
 	private static final Set<String> MAVEN_SELECTOR_ELEMENTS = Set.of(
 			"includes", "include", "excludes", "exclude", "groups", "excludedGroups",
 			"includeTags", "excludeTags", "test", "itTest", "it.test", "suiteXmlFiles");
@@ -175,25 +167,17 @@ class RepositoryConventionsTest {
 	}
 
 	@Test
-	void testerDescriptionInspectionRejectsPostImplementationValidationClaim() {
-		var beforeOnly = "description = \"Use before implementation to author spec-derived tests.\"";
-		var beforeAndAfter = "description = \"Use before implementation and after implementation for validation.\"";
-
-		assertThat(testerDescriptionViolations(beforeOnly)).isEmpty();
-		assertThat(testerDescriptionViolations(beforeAndAfter))
-				.containsExactly("tester description must not claim post-implementation validation");
-	}
-
-	@Test
-	void multiagentWorkflowRequiresDocumentationBeforeAuditAndRepairLogger() throws IOException {
-		var valid = "Architect -> OpenSpec/docs\nArchitect -> Reviewer(AUDIT)\nlog-repair-routing.ps1";
-		var auditFirst = "Architect -> Reviewer(AUDIT)\nArchitect -> OpenSpec/docs";
+	void multiagentWorkflowRequiresLeanApprovalClosureAndFinalGateRouting() throws IOException {
+		var valid = "APPROVE\nDOCS_CLOSE\ncomplete final gate\ntwo ordinary repair passes\nthird repair\nSol High\n"
+				+ "implementation or test issue\ndocumentation or contract issue\ninfrastructure issue";
+		var invalid = "DOCS_CLOSE\nAPPROVE\ncomplete final gate";
 		var multiagentWorkflow = repositoryRoot.resolve("docs/AGENT_WORKFLOW_MULTIAGENT.md");
 
 		assertThat(workflowLifecycleViolations(valid)).isEmpty();
-		assertThat(workflowLifecycleViolations(auditFirst))
-				.contains("workflow must update OpenSpec/docs before final Reviewer(AUDIT)",
-						"workflow must document log-repair-routing.ps1");
+		assertThat(workflowLifecycleViolations(invalid))
+				.contains("workflow must close documentation after APPROVE and before the final gate",
+						"workflow must bound repair to two ordinary passes plus one reviewer-authorized pass",
+						"workflow must route final-gate failures by ownership");
 		assertThat(workflowLifecycleViolations(
 				Files.exists(multiagentWorkflow) ? Files.readString(multiagentWorkflow) : "")).isEmpty();
 	}
@@ -257,7 +241,7 @@ class RepositoryConventionsTest {
 
 		assertThat(violations).isEmpty();
 		assertThat(selectedAgentWorkflowMode(Files.readString(repositoryRoot.resolve(".codex/config.toml"))))
-				.isEqualTo(AgentWorkflowMode.DEFAULT);
+				.isEqualTo(AgentWorkflowMode.MULTIAGENT);
 		assertThat(Files.isRegularFile(repositoryRoot.resolve(".codex/scripts/log-agent-activity.ps1"))).isTrue();
 		assertThat(Files.isRegularFile(repositoryRoot.resolve(".codex/scripts/export-subagent-log.ps1"))).isTrue();
 		assertThat(Files.isRegularFile(repositoryRoot.resolve(".codex/scripts/log-agent-activity.tests.ps1"))).isTrue();
@@ -266,32 +250,36 @@ class RepositoryConventionsTest {
 	@Test
 	void projectAgentConfigurationMatchesClosedRoutingProtocol() throws IOException {
 		var roleConfigurations = new LinkedHashMap<String, String>();
-		for (var role : List.of("developer", "tester", "reviewer", "researcher")) {
+		for (var role : List.of("architect", "builder_terra", "builder_luna", "reviewer", "escalation")) {
 			roleConfigurations.put(role, Files.readString(repositoryRoot.resolve(".codex/agents/" + role + ".toml")));
 		}
 
 		var violations = agentConfigurationViolations(
 				Files.readString(repositoryRoot.resolve(".codex/config.toml")),
 				roleConfigurations,
-				Files.exists(repositoryRoot.resolve("docs/AGENT_WORKFLOW_MULTIAGENT.md"))
-						? Files.readString(repositoryRoot.resolve("docs/AGENT_WORKFLOW_MULTIAGENT.md")) : "",
+				Files.readString(repositoryRoot.resolve("AGENTS.md")),
 				Files.exists(repositoryRoot.resolve("docs/AGENT_WORKFLOW_MULTIAGENT.md"))
 						? Files.readString(repositoryRoot.resolve("docs/AGENT_WORKFLOW_MULTIAGENT.md")) : "");
 
 		assertThat(violations).isEmpty();
+		assertThat(repositoryRoot.resolve(".codex/agents/developer.toml")).doesNotExist();
+		assertThat(repositoryRoot.resolve(".codex/agents/tester.toml")).doesNotExist();
+		assertThat(repositoryRoot.resolve(".codex/agents/researcher.toml")).doesNotExist();
+		assertThat(repositoryRoot.resolve(".codex/scripts/phase-manifest.ps1")).doesNotExist();
+		assertThat(repositoryRoot.resolve(".codex/scripts/log-repair-routing.ps1")).doesNotExist();
 	}
 
 	@Test
 	void closedStatusComparisonRejectsDriftedRoleVocabulary() {
 		assertThat(statusSetViolations(
-				"tester", Set.of("RED_CANDIDATE", "EVIDENCE_CANDIDATE", "SPEC_INCOMPLETE", "TEST_SUSPECT", "BLOCKED"),
-				ROLE_OUTPUT_STATUSES.get("tester")))
+				"builder_terra", Set.of("BUILD_DONE", "BLOCKED"),
+				ROLE_OUTPUT_STATUSES.get("builder_terra")))
 				.isEmpty();
 		assertThat(statusSetViolations(
-				"tester", Set.of("RED_CANDIDATE", "TESTS_GREEN_CONFIRMED", "BLOCKED"),
-				ROLE_OUTPUT_STATUSES.get("tester")))
-				.containsExactly("tester status set differs from the canonical routing contract: "
-						+ "[BLOCKED, RED_CANDIDATE, TESTS_GREEN_CONFIRMED]");
+				"builder_terra", Set.of("BUILD_DONE", "APPROVE", "BLOCKED"),
+				ROLE_OUTPUT_STATUSES.get("builder_terra")))
+				.containsExactly("builder_terra status set differs from the canonical routing contract: "
+						+ "[APPROVE, BLOCKED, BUILD_DONE]");
 	}
 
 	@Test
@@ -408,26 +396,6 @@ class RepositoryConventionsTest {
 		assertThat(mavenConfigViolations("--define=it.test=OnlyThisIT\n"))
 				.containsExactly(".mvn/maven.config narrows test execution: --define=it.test=OnlyThisIT");
 	}
-
-	@Test
-        void evidenceCandidateInspectionLimitsStatusToPostAuditEvidenceRepair() {
-                var valid = """
-                                Phase: skeleton | tests-red | tests-evidence | implementation | adjudicate | audit
-                                AUDIT_FAILED missing test evidence -> tests-evidence -> EVIDENCE_CANDIDATE after green implementation.
-                                TEST_WRONG -> tests-red -> RED_CANDIDATE.
-                                """;
-                var invalid = """
-                                Phase: skeleton | tests-red | implementation | adjudicate | audit
-                                AUDIT_FAILED missing test evidence -> tests-red -> EVIDENCE_CANDIDATE after green implementation.
-                                TEST_WRONG -> tests-red -> RED_CANDIDATE.
-                                """;
-
-                assertThat(evidenceCandidateGuidanceViolations("sample", valid)).isEmpty();
-                assertThat(evidenceCandidateGuidanceViolations("sample", invalid))
-                                .contains(
-                                                "sample must route AUDIT_FAILED missing evidence to tests-evidence",
-                                                "sample task capsule must include tests-evidence");
-        }
 
 	@Test
 	void committedMavenConfigurationDoesNotNarrowDefaultTestLifecycle() throws IOException {
@@ -621,15 +589,6 @@ class RepositoryConventionsTest {
 		return length;
 	}
 
-	private List<String> testerDescriptionViolations(String testerConfig) {
-		var matcher = Pattern.compile("(?m)^\\s*description\\s*=\\s*\"([^\"]*)\"\\s*$")
-				.matcher(testerConfig);
-		if (matcher.find() && matcher.group(1).toLowerCase().contains("after implementation")) {
-			return List.of("tester description must not claim post-implementation validation");
-		}
-		return List.of();
-	}
-
 	private AgentWorkflowMode selectedAgentWorkflowMode(String rootConfig) {
 		var inAgents = false;
 		var enabledSeen = false;
@@ -709,49 +668,21 @@ class RepositoryConventionsTest {
 
 	private List<String> workflowLifecycleViolations(String workflow) {
 		var violations = new ArrayList<String>();
-		var documentation = workflow.indexOf("OpenSpec/docs");
-		var audit = workflow.indexOf("Reviewer(AUDIT)");
-		if (documentation < 0 || audit < 0 || documentation > audit) {
-			violations.add("workflow must update OpenSpec/docs before final Reviewer(AUDIT)");
+		var flowStart = workflow.indexOf("## End-to-end flow");
+		var flow = flowStart >= 0 ? workflow.substring(flowStart) : workflow;
+		var approve = flow.indexOf("APPROVE");
+		var documentation = flow.indexOf("DOCS_CLOSE");
+		var finalGate = flow.indexOf("complete final gate");
+		if (approve < 0 || documentation < 0 || finalGate < 0
+				|| approve > documentation || documentation > finalGate) {
+			violations.add("workflow must close documentation after APPROVE and before the final gate");
 		}
-		if (!workflow.contains("log-repair-routing.ps1")) {
-			violations.add("workflow must document log-repair-routing.ps1");
+		if (!containsAll(workflow, "two ordinary repair passes", "third repair", "Sol High")) {
+			violations.add("workflow must bound repair to two ordinary passes plus one reviewer-authorized pass");
 		}
-		return violations;
-	}
-
-	private List<String> contextEfficiencyViolations(String rootGuide, String workflow) {
-		var violations = new ArrayList<String>();
-		for (var entry : Map.of("root guidance", rootGuide, "workflow", workflow).entrySet()) {
-			if (!entry.getValue().contains("fork_turns: \"none\"")) {
-				violations.add(entry.getKey() + " must require isolated fork_turns context");
-			}
-		}
-
-		for (var field : List.of(
-				"Goal:", "Phase:", "Writable paths:", "Frozen paths:", "Requirement/scenario IDs:",
-				"Files to read:", "Acceptance checks:", "Expected status:")) {
-			if (!workflow.contains(field)) {
-				violations.add("task capsule is missing required field: " + field);
-			}
-		}
-		if (!workflow.contains("200-400") || !workflow.contains("не включает историю")) {
-			violations.add("workflow must bound the capsule and prohibit inherited conversation history");
-		}
-
-		var threatCheck = workflow.indexOf("Reviewer(THREAT_CHECK)");
-		var testerRed = workflow.indexOf("Tester -> RED_CANDIDATE");
-		if (threatCheck < 0 || testerRed < 0 || threatCheck > testerRed) {
-			violations.add("workflow must place Reviewer(THREAT_CHECK) before Tester red");
-		}
-		if (!workflow.contains("guard-а") || !workflow.contains("path case")
-				|| !workflow.contains("quoted/folded") || !workflow.contains("initially-green")) {
-			violations.add("workflow must name the bounded adversarial bypass classes");
-		}
-		if (!rootGuide.contains("log-agent-activity.ps1") || !workflow.contains("log-agent-activity.ps1")
-				|| !rootGuide.contains("subagents-readable.log") || !workflow.contains("subagents-readable.log")
-				|| !workflow.contains("duration=") || !workflow.contains("tokens:")) {
-			violations.add("root and workflow must document role/phase duration and token telemetry");
+		if (!containsAll(workflow,
+				"implementation or test issue", "documentation or contract issue", "infrastructure issue")) {
+			violations.add("workflow must route final-gate failures by ownership");
 		}
 		return violations;
 	}
@@ -763,74 +694,95 @@ class RepositoryConventionsTest {
 			String workflow) {
 		var violations = new ArrayList<String>();
 		checkReasoningEffort("root", rootConfig, violations);
+		if (!rootConfig.contains("model = \"gpt-5.6-terra\"")
+				|| !"medium".equals(configuredReasoningEffort(rootConfig))) {
+			violations.add("Main must use gpt-5.6-terra with medium reasoning");
+		}
 		if (!Pattern.compile("(?m)^\\s*max_depth\\s*=\\s*1\\s*$").matcher(rootConfig).find()) {
 			violations.add("root config must set max_depth = 1");
 		}
+		if (selectedAgentWorkflowMode(rootConfig) != AgentWorkflowMode.MULTIAGENT) {
+			violations.add("root config must enable MULTIAGENT for the committed lean workflow");
+		}
 
+		var expectedModels = Map.of(
+				"architect", "gpt-5.6-terra",
+				"builder_terra", "gpt-5.6-terra",
+				"builder_luna", "gpt-5.6-luna",
+				"reviewer", "gpt-5.6-terra",
+				"escalation", "gpt-5.6-sol");
+		var expectedEfforts = Map.of(
+				"architect", "high",
+				"builder_terra", "medium",
+				"builder_luna", "max",
+				"reviewer", "high",
+				"escalation", "high");
 		for (var entry : roleConfigurations.entrySet()) {
 			var role = entry.getKey();
 			var content = entry.getValue();
 			checkReasoningEffort(role, content, violations);
-			if (!content.contains("MULTIAGENT-only")) {
-				violations.add(role + " description must identify a MULTIAGENT-only role");
+			if (!content.contains("model = \"" + expectedModels.get(role) + "\"")) {
+				violations.add(role + " must use " + expectedModels.get(role));
 			}
-			if (!content.contains("model = \"gpt-5.6-sol\"")) {
-				violations.add(role + " must use gpt-5.6-sol");
+			if (!expectedEfforts.get(role).equals(configuredReasoningEffort(content))) {
+				violations.add(role + " must use " + expectedEfforts.get(role) + " reasoning");
 			}
 			if (!content.contains("Do not spawn subagents.")) {
 				violations.add(role + " must prohibit nested subagents");
 			}
 		}
 
-		var tester = roleConfigurations.getOrDefault("tester", "");
-		if (!"high".equals(configuredReasoningEffort(tester))) {
-			violations.add("tester must use high reasoning");
+		var architect = roleConfigurations.getOrDefault("architect", "");
+		if (!architect.contains("may upgrade it, never downgrade it")
+				|| !architect.contains("In REVIEW") || !architect.contains("do not modify any file")) {
+			violations.add("architect must preserve risk monotonicity and remain read-only in REVIEW");
 		}
-		violations.addAll(testerDescriptionViolations(tester));
-		violations.addAll(evidenceCandidateGuidanceViolations("tester", tester));
+		for (var builderRole : List.of("builder_terra", "builder_luna")) {
+			var builder = roleConfigurations.getOrDefault(builderRole, "");
+			if (!containsAll(builder, "repair_round=1", "repair_round=2", "repair_round=3",
+					"third_repair_authorized=true", "Never start a fourth ordinary repair")) {
+				violations.add(builderRole + " must enforce the two-plus-one repair budget");
+			}
+			if (!containsAll(builder, "docker version", "escalated host access", "restricted sandbox",
+					"infrastructure retry")) {
+				violations.add(builderRole + " must retry Docker checks outside the Windows sandbox");
+			}
+		}
 		var reviewer = roleConfigurations.getOrDefault("reviewer", "");
 		if (!Pattern.compile("(?m)^\\s*sandbox_mode\\s*=\\s*\"read-only\"\\s*$").matcher(reviewer).find()) {
 			violations.add("reviewer must set sandbox_mode = \"read-only\"");
 		}
+		if (!containsAll(reviewer, "Repair rounds 1 and 2", "third_repair_authorized=true",
+				"blocker surviving round 3 must return ESCALATE")) {
+			violations.add("reviewer must authorize at most one third repair before escalation");
+		}
+		var escalation = roleConfigurations.getOrDefault("escalation", "");
+		if (!Pattern.compile("(?m)^\\s*sandbox_mode\\s*=\\s*\"read-only\"\\s*$").matcher(escalation).find()) {
+			violations.add("escalation must set sandbox_mode = \"read-only\"");
+		}
 
 		for (var entry : ROLE_OUTPUT_STATUSES.entrySet()) {
-			var actual = declaredStatuses(roleConfigurations.getOrDefault(entry.getKey(), ""), null);
+			var actual = declaredStatuses(roleConfigurations.getOrDefault(entry.getKey(), ""));
 			violations.addAll(statusSetViolations(entry.getKey(), actual, entry.getValue()));
 		}
-		violations.addAll(statusSetViolations(
-				"reviewer THREAT_CHECK",
-				declaredStatuses(reviewer, "THREAT_CHECK"),
-				REVIEWER_THREAT_CHECK_STATUSES));
-		violations.addAll(statusSetViolations(
-				"reviewer ADJUDICATE",
-				declaredStatuses(reviewer, "ADJUDICATE"),
-				REVIEWER_ADJUDICATE_STATUSES));
-		violations.addAll(statusSetViolations(
-				"reviewer AUDIT",
-				declaredStatuses(reviewer, "AUDIT"),
-				REVIEWER_AUDIT_STATUSES));
 
 		var guidance = rootGuide + System.lineSeparator() + workflow;
-		for (var legacyStatus : LEGACY_TESTER_STATUSES) {
-			if (guidance.contains(legacyStatus) || tester.contains(legacyStatus)) {
-				violations.add("obsolete Tester status remains committed: " + legacyStatus);
-			}
+		if (!containsAll(guidance, "native Codex", "codex queue") || !guidance.contains("explicitly requests Orca")) {
+			violations.add("guidance must require native Codex and forbid implicit Orca routing");
 		}
-		if (!rootGuide.contains("RED_CANDIDATE") || !workflow.contains("RED_CANDIDATE")) {
-			violations.add("root and workflow guidance must route RED_CANDIDATE to Architect");
+		if (!containsAll(guidance, "Docker Desktop named pipes", "docker version", "escalated host access",
+				"restricted sandbox")) {
+			violations.add("guidance must distinguish Windows sandbox denial from Docker unavailability");
 		}
-		if (!rootGuide.contains("phase-manifest.ps1") || !workflow.contains("phase-manifest.ps1")) {
-			violations.add("root and workflow guidance must name the Architect-owned phase manifest gate");
-		}
-		if (!rootGuide.contains("clean verify") || !workflow.contains("clean verify")) {
-			violations.add("root and workflow guidance must name the Architect-owned complete Maven gate");
+		if (!containsAll(workflow,
+				"PLAN_READY", "BUILD_DONE", "REPAIR", "APPROVE", "BLOCKED", "ESCALATE", "DONE",
+				"two ordinary repair passes", "third repair", "red_suspect = true")) {
+			violations.add("workflow must preserve the lean state, repair, and RED rerun contract");
 		}
 		if (!hasOrderedPreflight(rootGuide) || !hasOrderedPreflight(workflow)) {
 			violations.add("root and workflow guidance must run verify-test-integrity.ps1 before clean verify");
 		}
-		violations.addAll(evidenceCandidateGuidanceViolations("root guidance", rootGuide));
-		violations.addAll(evidenceCandidateGuidanceViolations("workflow guidance", workflow));
-		violations.addAll(contextEfficiencyViolations(rootGuide, workflow));
+		violations.addAll(workflowLifecycleViolations(workflow));
 
 		return violations;
 	}
@@ -839,44 +791,6 @@ class RepositoryConventionsTest {
 		var preflight = content.indexOf("verify-test-integrity.ps1");
 		return preflight >= 0 && content.indexOf("clean verify", preflight) > preflight;
 	}
-
-        private List<String> evidenceCandidateGuidanceViolations(String owner, String content) {
-                var lower = content.toLowerCase();
-                var scoped = content.contains("EVIDENCE_CANDIDATE")
-                                && content.contains("AUDIT_FAILED")
-                                && content.contains("tests-evidence")
-                                && content.contains("RED_CANDIDATE")
-                                && lower.contains("green");
-                var violations = new ArrayList<String>();
-                if (!scoped) {
-                        violations.add(owner + " must confine EVIDENCE_CANDIDATE to post-AUDIT test-evidence repair");
-                }
-                if (!nearbyInEitherOrder(content, "AUDIT_FAILED", "tests-evidence", 240)) {
-                        violations.add(owner + " must route AUDIT_FAILED missing evidence to tests-evidence");
-                }
-                if (!nearbyInEitherOrder(content, "TEST_WRONG", "tests-red", 240)) {
-                        violations.add(owner + " must route TEST_WRONG to tests-red");
-                }
-                if (!nearbyInEitherOrder(content, "EVIDENCE_CANDIDATE", "tests-evidence", 240)) {
-                        violations.add(owner + " must use EVIDENCE_CANDIDATE only in tests-evidence");
-                }
-                if (content.contains("Phase:")
-                                && !Pattern.compile("(?m)^\\s*(?:-\\s*)?Phase:.*tests-red.*tests-evidence")
-                                                .matcher(content).find()) {
-                        violations.add(owner + " task capsule must include tests-evidence");
-                }
-                return violations;
-        }
-
-        private boolean nearbyInEitherOrder(String content, String left, String right, int distance) {
-                var quotedLeft = Pattern.quote(left);
-                var quotedRight = Pattern.quote(right);
-                return Pattern.compile(
-                                "(?s)(?:" + quotedLeft + ".{0," + distance + "}" + quotedRight
-                                                + "|" + quotedRight + ".{0," + distance + "}" + quotedLeft + ")")
-                                .matcher(content)
-                                .find();
-        }
 
 	private void checkReasoningEffort(String owner, String content, List<String> violations) {
 		var effort = configuredReasoningEffort(content);
@@ -892,10 +806,9 @@ class RepositoryConventionsTest {
 		return matcher.find() ? matcher.group(1) : null;
 	}
 
-	private Set<String> declaredStatuses(String content, String mode) {
+	private Set<String> declaredStatuses(String content) {
 		return content.lines()
-				.filter(line -> line.toLowerCase().contains("return exactly one"))
-				.filter(line -> mode == null || line.contains(mode))
+				.filter(line -> line.contains("Allowed output states:"))
 				.flatMap(line -> {
 					var matcher = STATUS_TOKEN.matcher(line);
 					var statuses = new ArrayList<String>();

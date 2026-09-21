@@ -1,231 +1,288 @@
-# MULTIAGENT: supervised project roles
+# MULTIAGENT: lean supervised workflow v1
 
-## Статус и принцип
+## Purpose and activation
 
-Architect работает в основной сессии. Он единственный общается с пользователем, выбирает роли, назначает ровно одну фазу, исполняет механические гейты, маршрутизирует обязательные вердикты и отвечает за итог. Подагенты не создаются заранее и не создают собственных подагентов.
+This is the normative workflow when `.codex/config.toml` contains the exact Boolean setting
+`[agents].enabled = true` at task start. Main coordinates the workflow, communicates with the user, and is the
+only role that spawns project subagents. Subagents never spawn other subagents.
 
-Настройки: Architect — `gpt-5.6-sol/high`; Developer — `gpt-5.6-sol/medium`; Tester, Reviewer и Researcher — `gpt-5.6-sol/high`. `ultra` запрещён для всего supervised workflow, потому что автоматическая делегация конфликтует с явным графом ролей. Одновременно разрешены четыре подагента, `max_depth = 1`.
+Coordination uses native Codex project agents from `.codex/agents/**`, or `codex queue` when the user has
+already created named Codex sessions. Orca and `orca-cli` are outside this workflow and must not be invoked
+unless the user explicitly requests Orca in the current task.
 
-## Канонический протокол статусов
+The workflow minimizes agent turns while retaining independent review for integrity-sensitive work. Main
+reports to the user at major phase boundaries or blockers, not after every internal action.
 
-Каждый ответ роли начинается с одной строки `STATUS: <value>`. Неизвестный, отсутствующий или несовместимый с назначенным режимом статус — protocol error; Architect не выводит предполагаемый вердикт из свободного текста.
-
-| Роль или режим | Разрешённые статусы |
-|---|---|
-| Developer | `SKELETON_READY`, `IMPL_DONE`, `TEST_SUSPECT`, `BLOCKED` |
-| Tester | `RED_CANDIDATE`, `EVIDENCE_CANDIDATE`, `SPEC_INCOMPLETE`, `TEST_SUSPECT`, `BLOCKED` |
-| Researcher | `RESEARCH_DONE`, `INCONCLUSIVE`, `BLOCKED` |
-| Reviewer `THREAT_CHECK` | `THREAT_CHECK_PASSED`, `THREATS_FOUND` |
-| Reviewer `ADJUDICATE` | `CODE_WRONG`, `TEST_WRONG`, `SPEC_AMBIGUOUS` |
-| Reviewer `AUDIT` | `AUDIT_FAILED`, `APPROVE` |
-
-## Роли
-
-### Architect
-
-- определяет scope и источник контракта;
-- решает, нужны ли Researcher и Tester;
-- создаёт каждую новую проектную роль только с `fork_turns: "none"` и изолированным task capsule;
-- назначает роли, режим Reviewer, writable-path allowlist и один ограниченный pass;
-- для CI, security/integrity и agent-workflow changes проводит `THREAT_CHECK` до test-writing и implementation;
-- независимо запускает targeted red, phase-manifest verification, targeted green и полный `mvnw.cmd clean verify`;
-- ведёт один общий лимит из трёх repair routings;
-- после code gate обновляет обязательные OpenSpec/status/docs до финального `AUDIT`;
-- не заменяет валидный Reviewer verdict собственным содержательным вердиктом;
-- принимает решение о следующем действии и отвечает пользователю.
-
-### Developer
-
-- отдельным вызовом создаёт behavior-free API skeleton до Tester;
-- после принятого red реализует production-код по активной спеке;
-- по умолчанию пишет только `src/main/**`; другие пути Architect явно перечисляет в task capsule;
-- читает тесты и запускает только минимальные targeted Surefire/Failsafe checks;
-- не запускает полный Maven gate и не обновляет документацию;
-- никогда не меняет тесты, fixtures, snapshots, expected results, test configuration или discovery;
-- не добавляет production behavior, оправданное только тестовым артефактом.
-
-### Tester
-
-- пишет минимальные тесты из активного OpenSpec change и согласованного публичного контракта;
-- для каждого нового теста указывает capability, requirement, scenario, `TestClass#method` и ожидаемый failing assertion;
-- возвращает `RED_CANDIDATE`, но не подтверждает red самостоятельно;
-- только в `tests-evidence`, открытой после `AUDIT_FAILED` о недостающем тесте, возвращает `EVIDENCE_CANDIDATE`, если новый тест уже green на неизменённой реализации; этот статус не заменяет initial `RED_CANDIDATE` или implementation green gate;
-- после принятого Architect red не изменяет тесты, fixtures, expectations или test configuration;
-- возобновляет запись только когда Architect маршрутизирует Reviewer `TEST_WRONG` в `tests-red` либо `AUDIT_FAILED` о недостающем тесте в отдельную `tests-evidence`;
-- не изменяет production-код и не запускает полный Maven gate.
-
-### Reviewer
-
-- получает от Architect ровно один режим: `THREAT_CHECK`, `ADJUDICATE` или `AUDIT`;
-- работает с `sandbox_mode = "read-only"` и не предлагает ready-to-apply patch;
-- в `THREAT_CHECK` до реализации проверяет только self-bypass guard-а, additions/deletions/path case, CI control flow, quoted/folded config, initially-green tests и конфликты фаз/статусов;
-- в `ADJUDICATE` отвечает только на переданное code/test/spec противоречие;
-- в `AUDIT` проверяет стабильный diff, инварианты, specification alignment и test adequacy;
-- возвращает один статус из набора назначенного режима.
-
-Валидный Reviewer verdict обязателен. Architect маршрутизирует его или эскалирует несогласие пользователю, но не заменяет другим содержательным вердиктом. `APPROVE` необходим, но не отменяет failed mechanical gate или невыполненный Definition of Done.
-
-### Researcher
-
-- проверяет внешние изменяемые факты, API и протоколы;
-- отделяет подтверждённое от предположений;
-- не пишет код или тесты и не принимает финальное решение.
-
-## Когда Tester обязателен
-
-Tester нужен для нового или изменённого observable behavior, bug fix, public API, schema/migration, persistence/idempotency, parser/normalization, финансовой или point-in-time логики, provider contract и test-execution tooling.
-
-`TEST_NOT_NEEDED` допустим для документации, комментариев, форматирования, механической конфигурации, чистого rename или внутреннего refactoring, уже полностью покрытого неизменными тестами. Причину фиксирует Architect.
-
-## Red gate и трассировка
-
-Для незавершённой задачи Tester читает `proposal.md`, delta specs, `design.md`, `tasks.md` и согласованные public API signatures активного change. Main specs описывают только уже принятое поведение и недостаточны для ещё не архивированного change.
-
-Если новый публичный контракт нужен для компиляции, Architect сначала отдельным вызовом получает от Developer `SKELETON_READY`. Tester затем возвращает `RED_CANDIDATE` с точной командой, requirement/scenario, тестовым методом и ожидаемым assertion. Architect выполняет команду на неизменённом implementation source. Red принимается только когда названный тест запущен и упал по ожидаемому assertion; compilation, discovery, configuration, startup, Docker или другая infrastructure failure red-гейт не подтверждает.
-
-`SPEC_INCOMPLETE` возвращается Architect. Он может привести однозначный ответ только из accepted ADR, main spec или уже согласованного change artifact и обновить контракт, потратив repair round. Если требуется продуктовое решение, результат повторяется или общий лимит исчерпан, Architect останавливается и спрашивает пользователя.
-
-Если `AUDIT_FAILED` требует только недостающий тест, а accepted behavior уже реализован, Architect открывает отдельную фазу `tests-evidence`, не red-фазу. Только в `tests-evidence` Tester возвращает `EVIDENCE_CANDIDATE` с requirement/scenario/test/assertion trace и точной targeted-командой. Architect независимо подтверждает green и через phase manifest проверяет, что implementation paths не менялись. `TEST_WRONG` по-прежнему направляется в `tests-red` для нового `RED_CANDIDATE`; evidence-путь не заменяет первоначальный red или основной implementation green gate.
-
-## Phase manifest
-
-Перед каждой пишущей фазой Architect создаёт snapshot в пути вне репозитория:
-
-```powershell
-$phaseManifest = Join-Path ([System.IO.Path]::GetTempPath()) "crypto-research-phase-$PID.json"
-pwsh -NoProfile -File .codex/scripts/phase-manifest.ps1 -Command Snapshot -RepositoryRoot . -ManifestPath $phaseManifest
-```
-
-После возврата писателя Architect проверяет положительный allowlist из task capsule:
-
-```powershell
-pwsh -NoProfile -File .codex/scripts/phase-manifest.ps1 -Command Verify -RepositoryRoot . -ManifestPath $phaseManifest -AllowPath 'src/main/**'
-```
-
-Exit `0` означает, что изменены только разрешённые пути; exit `3` печатает запрещённые `ADDED`, `MODIFIED` или `DELETED` paths; exit `2` означает некорректный input или manifest. Snapshot включает имена и SHA-256 содержимого tracked и untracked файлов, поэтому замечает добавления и повторное изменение уже dirty-файла. В текущем одномодульном репозитории исключаются только корневые `.git`, `target` и `.codex-logs`; вложенный каталог с именем `target` остаётся защищённым. Writer-фазы последовательны.
-
-После принятого red Tester-файлы заморожены. `TEST_WRONG` завершает текущую фазу и открывает `tests-red`; `AUDIT_FAILED` о недостающем тесте открывает отдельную `tests-evidence`. В обоих случаях Architect делает новый snapshot и возвращает тест тому же Tester.
-
-## Рабочий цикл
+## Roles and benchmark configurations
 
 ```text
-Architect -> Researcher? -> contract
-                            |
-             high-risk workflow change?
-                            |
-             Reviewer(THREAT_CHECK) -> plan/tests repair?
-                            |
-                    Developer -> skeleton?
-                            |
-                    Tester -> RED_CANDIDATE
-                            |
-                    Architect -> targeted red + snapshot
-                            |
-                    Developer -> implementation
-                            |
-                    Architect -> manifest + targeted green
-                            |
-              TEST_SUSPECT? -> Reviewer(ADJUDICATE)
-                            |
-                    Architect -> OpenSpec/docs
-                            |
-                    Architect -> test-integrity preflight -> clean verify
-                            |
-                    Architect -> Reviewer(AUDIT)
-                            |
-                    Architect -> audit-result marker
+Main                  gpt-5.6-terra / medium
+Architect             gpt-5.6-terra / high
+Builder B             gpt-5.6-terra / medium
+Builder C             gpt-5.6-luna / max
+Fresh Reviewer        gpt-5.6-terra / high
+Escalation            gpt-5.6-sol / high
 ```
 
-## Маршрутизация и лимит
+During a B-vs-C benchmark, Builder is the only model variable: B always uses `builder_terra`, and C always
+uses `builder_luna`. The contract, base state, workflow, evidence requirements, reviewer routing, checks, and
+repair limit remain identical. Risk-based Builder selection is allowed only after the benchmark policy is
+chosen.
 
-| Статус | Действие Architect |
-|---|---|
-| `THREAT_CHECK_PASSED` | продолжить к skeleton/Tester red/implementation согласно test-impact assessment |
-| `THREATS_FOUND` | исправить OpenSpec design или planned tests до writer-фазы, раунд +1 |
-| `RED_CANDIDATE` | независимо выполнить targeted red; при успехе открыть implementation-фазу |
-| `EVIDENCE_CANDIDATE` | только в post-`AUDIT_FAILED` test-evidence repair независимо подтвердить targeted green и неизменность implementation paths |
-| `SPEC_INCOMPLETE` | уточнить только из accepted sources, раунд +1, либо сразу спросить пользователя |
-| `TEST_SUSPECT` | передать узкое противоречие Reviewer в `ADJUDICATE`; раунд пока не считать |
-| `CODE_WRONG` | вернуть тому же Developer, раунд +1 |
-| `TEST_WRONG` | открыть `tests-red` для того же Tester, раунд +1 |
-| `SPEC_AMBIGUOUS` | остановиться и спросить пользователя |
-| `AUDIT_FAILED` | вернуть указанному владельцу дефекта, раунд +1; для недостающего теста открыть `tests-evidence` |
-| `BLOCKED` | остановиться с точной причиной |
-| `APPROVE` | завершить только после всех независимых checks и Definition of Done |
+## Main
 
-Счётчик один и принадлежит Architect: максимум три автономных repair routings на задачу. Перед передачей исправления Architect выполняет:
+Main owns PROCESS, ROUTING, FINAL GATE, and ESCALATION. Main:
 
-```powershell
-pwsh -NoProfile -File .codex/scripts/log-repair-routing.ps1 -Loop AUDIT -SourceStatus AUDIT_FAILED -RepairOwner Tester,Developer,Architect -Round 1
+- sets the preliminary task risk as ROUTINE, STANDARD, or CORE_RISK;
+- invokes Architect for planning and dispatches one bounded capsule per phase;
+- invokes the configured Builder after `PLAN_READY`;
+- routes ROUTINE/STANDARD review back to the same Architect thread;
+- creates a fresh Reviewer thread for CORE_RISK;
+- permits two ordinary repair passes without separate approval and routes a Reviewer-authorized third repair;
+- invokes Sol High only for a bounded escalation trigger;
+- independently runs the complete final gate and returns `DONE`;
+- does not redesign, implement, or duplicate normal review work;
+- reruns a claimed RED only when Reviewer returns `red_suspect = true`.
+
+## Architect
+
+Architect owns WHAT, WHY, PLAN, applicable invariants, test impact, and documentation. In PLAN, Architect:
+
+- reads the required project sources and inspects existing code and tests;
+- creates or updates the active OpenSpec proposal, delta specs, design, and tasks;
+- defines acceptance behavior and a bounded change budget;
+- records applicable `CORE_INVARIANTS.md` IDs with controlling sources;
+- may upgrade Main's preliminary risk but never downgrade it, then records effective `risk` and
+  `test_mode = RED_REQUIRED | RED_NOT_REQUIRED`;
+- returns `PLAN_READY` only after strict validation and a testable contract.
+
+Documentation-only work stays with Architect and skips Builder. For ROUTINE/STANDARD work, the same Architect
+thread later performs full review. For CORE_RISK, Architect does not review implementation; a fresh Reviewer
+owns contract conformance, code, tests, evidence, and invariants.
+
+In REVIEW, Architect is read-only and must not modify any file.
+
+After `APPROVE`, Architect may update only completion status, task checkboxes, evidence links, and
+non-semantic documentation. If a requirement, scenario, acceptance criterion, scope, or design decision must
+change, Architect does not edit it. The workflow returns to:
+
+```text
+PLAN_READY
+reason = CONTRACT_CHANGED
 ```
 
-Команда добавляет в `.codex-logs/repair-routings.jsonl` одну JSONL-запись с UTC timestamp, `loop`, `source_status`, `repair_owner` и общим `round`. Лог содержит только метаданные маршрутизации, исключён из Git и допускает конкурентные append-вызовы без потери записей. Infrastructure retry и исправление синтаксически некорректного статуса не являются artifact repair, но не могут использоваться для повторного запроса более удобного содержательного вердикта. Повторный protocol error эскалируется.
+The semantic change is made in a new planning pass and the applicable review reopens.
+
+## Builder
+
+Builder combines Developer and Tester. It owns HOW, TESTS, CODE, targeted GREEN, and bounded repairs in one
+continuous thread.
+
+For `RED_REQUIRED`, Builder:
+
+1. writes the smallest meaningful tests before production implementation;
+2. runs the exact targeted command;
+3. accepts RED only when the named test executes and fails at the expected behavioral assertion;
+4. records compact RED evidence and freezes the establishing tests;
+5. implements without waiting for a Main RED turn;
+6. runs targeted GREEN and verifies that the test hash is unchanged;
+7. returns `BUILD_DONE`.
+
+Compilation, discovery, configuration, startup, Docker, or another infrastructure failure is not behavioral
+RED. Persistence, migration, transaction, locking, retry, concurrency, and idempotency behavior uses real
+PostgreSQL through Testcontainers when required by `docs/TESTING.md`.
+
+On Windows under Codex, Builder runs `docker version` and every targeted Docker/Testcontainers command with
+escalated host access, outside the restricted sandbox. An in-sandbox `permission denied`, `docker_engine is not
+listening`, or Docker discovery timeout triggers one escalated infrastructure retry; it is neither RED nor a
+repair round. Docker is unavailable only when same-context escalated `docker version` fails.
+
+Compact RED evidence contains only:
+
+- changed test paths;
+- test content hash after RED;
+- exact targeted command;
+- failing test and expected/actual assertion;
+- Git diff captured before production implementation.
+
+The pre-implementation diff is required only for `RED_REQUIRED`. Raw logs, timestamps, phase IDs, and a
+separate production-tree manifest are not required.
+
+For `RED_NOT_REQUIRED`, Builder records Architect's reason and the existing verification, creates no
+artificial failure, and does not capture a pre-implementation diff merely for process evidence.
+
+After RED, Builder must not weaken, skip, narrow, retag, reconfigure, regenerate, relocate, or otherwise change
+the frozen test, expectation, fixture, snapshot, discovery, or runtime configuration. A test change requires a
+Reviewer-authorized `REPAIR` with `requires_new_red = true`, followed by new RED evidence and a new hash.
+
+Builder does not update OpenSpec or documentation and does not run the complete repository gate.
+
+## Review routing
+
+```text
+ROUTINE or STANDARD -> same Architect thread
+CORE_RISK           -> fresh reviewer thread
+```
+
+CORE_RISK includes persistence, transactions, idempotency, concurrency, locking, retry, duplicate
+suppression, ordering, reproducible identity, migration, point-in-time semantics, provider reconnect,
+degradation, data loss, recovery, gaps, cross-module boundaries, security, and integrity controls.
+
+Reviewer receives the approved contract, applicable invariants, change budget, stable diff, tests, test mode,
+and compact RED/GREEN evidence. Review starts with correctness, point-in-time integrity, idempotency,
+transaction semantics, data-loss risk, and test adequacy before style.
+
+Before `APPROVE`, Reviewer reports every applicable invariant as:
+
+```text
+Invariant | Applicable | Evidence | Verdict
+```
+
+`Not applicable` requires a reason. Reviewer returns exactly one consolidated verdict: `APPROVE`, `REPAIR`,
+`ESCALATE`, or `BLOCKED`. If RED evidence is suspicious, Reviewer also sets `red_suspect = true`; only then
+does Main rerun the claimed RED.
+
+## States and attributes
+
+Only these workflow states are used:
+
+```text
+PLAN_READY
+BUILD_DONE
+REPAIR
+APPROVE
+BLOCKED
+ESCALATE
+DONE
+```
+
+Details are attributes, not additional states:
+
+```text
+risk = ROUTINE | STANDARD | CORE_RISK
+test_mode = RED_REQUIRED | RED_NOT_REQUIRED
+tests_changed_after_red = true | false | not_applicable
+blocked_reason = TEST_SPEC_ERROR | CONTRACT_ERROR | INFRASTRUCTURE | OTHER
+reviewer = SAME_ARCHITECT | FRESH_TERRA_HIGH
+requires_new_red = true | false
+repair_round = 1 | 2 | 3
+third_repair_authorized = true | false
+reason = CONTRACT_CHANGED | OTHER
+red_suspect = true | false
+```
+
+Each subagent response begins with `STATUS: <state>`. A missing, unknown, or role-incompatible state is a
+protocol error and is corrected once without consuming the artifact repair pass.
+
+## Stable write policy and change budget
+
+Architect may write the active `openspec/changes/<change>/**`, task-scoped `docs/**`, and `README.md` when
+required. Architect may not write production code, tests, accepted main specs outside an authorized
+sync/archive phase, `AGENTS.md`, `.codex/**`, `pom.xml`, runtime/build configuration, governance documents, or
+accepted ADR decisions unless the user explicitly authorized that exact change.
+
+Builder may write only implementation and test paths within the accepted contract. Unless explicitly
+approved, Builder must not change architecture, module dependency direction, dependencies, unrelated modules,
+public contracts, migrations, fallback behavior, or refactor beyond the bounded implementation.
+
+Reviewer and Escalation are read-only.
+
+## Repair and escalation
+
+Reviewer returns one consolidated repair set per review. Builder has two ordinary `REPAIR` passes available
+without separate approval; Main tracks them as `repair_round = 1` and `repair_round = 2`. If a blocker remains,
+Reviewer may authorize exactly one third repair by returning `REPAIR` with `repair_round = 3` and
+`third_repair_authorized = true`. This authorization does not require a user turn. Each repair is followed by
+review. A blocker that remains after the third repair returns `ESCALATE`; it never opens an unbounded loop.
+
+Reviewer may escalate before the third repair when it cannot state a bounded safe repair or when the issue is
+an unresolved contract, invariant, data-loss, transaction, concurrency, migration, security, or architecture
+dispute. Builder never starts repair round 3 without the explicit Reviewer attribute.
+
+Main invokes the read-only Sol High `escalation` agent only when:
+
+- a contract/design blocker cannot be resolved from accepted sources;
+- the same substantive defect survives all three repair passes;
+- Main and Reviewer disagree on a release blocker;
+- transaction, concurrency, migration, or invariant semantics remain ambiguous;
+- credible data-loss, recovery, security, or architecture-boundary risk remains.
+
+Sol receives one exact question plus the contract, invariants, diff, tests, and evidence. It does not restart
+the project, edit files, or propose an unrelated redesign.
 
 ## Task capsule
 
-Каждый новый проектный агент создаётся с `fork_turns: "none"`. Capsule содержит 200-400 слов, самодостаточен для одного pass и не включает историю пользовательского обсуждения или отчёты других ролей. Для correction используется тот же агент; ему передаётся только новый bounded delta.
+Each new subagent starts without conversation history and receives a concise, self-contained capsule:
 
 ```text
 Goal:
-Phase: research | threat-check | skeleton | tests-red | tests-evidence | implementation | adjudicate | audit
-Writable paths:
-Frozen paths:
-Requirement/scenario IDs:
-Files to read:
-Acceptance checks:
-Expected status:
-
-Optional bounded metadata:
-Scope:
-Reviewer mode: none | THREAT_CHECK | ADJUDICATE | AUDIT
-Repair round: 0 | 1 | 2 | 3
+Phase: PLAN | BUILD | REVIEW | REPAIR | DOCS_CLOSE | CHALLENGE
+Risk:
+Test mode:
 Active OpenSpec change:
-Constraints:
+Contract and scenario IDs:
+Applicable invariants:
+Change budget:
+Files to read:
 Checks to run:
+Evidence supplied:
+Expected status:
 ```
 
-Один агент владеет одним набором изменяемых файлов. Параллельно выполняются только независимые read-heavy задачи; writer-фазы идут последовательно, если не используются отдельно утверждённые worktrees.
+Use the same Architect thread for ROUTINE/STANDARD review and the same Builder thread for all repair passes.
+CORE_RISK review always starts in a fresh Reviewer thread.
 
-## Полный verification gate
+## End-to-end flow
 
-Test-integrity preflight выполняется вне Maven и раньше него, поэтому проверяемые Maven skip/selection settings не могут отключить сам guard:
+```text
+Main classifies risk
+  -> Architect PLAN
+  -> PLAN_READY
+  -> documentation-only: Architect completes docs and skip Builder
+  -> otherwise Builder performs RED when required, implementation, and targeted GREEN
+  -> BUILD_DONE
+  -> ROUTINE/STANDARD: same Architect reviews
+  -> CORE_RISK: fresh Reviewer reviews
+  -> APPROVE | REPAIR | ESCALATE | BLOCKED
+  -> Builder may perform two ordinary repair rounds, each followed by review
+  -> Reviewer may authorize one third repair, followed by review
+  -> a blocker remaining after repair round 3 escalates to Sol High
+  -> after APPROVE Architect performs DOCS_CLOSE
+  -> Main independently runs the complete final gate
+  -> DONE
+```
+
+## Complete final gate
+
+Main runs from the repository root:
 
 ```powershell
 pwsh -NoProfile -File .codex/scripts/verify-test-integrity.ps1
 mvnw.cmd clean verify
 openspec validate --all --strict --no-interactive
 openspec doctor
+git diff --check
 ```
 
-На Unix второй вызов эквивалентен `./mvnw clean verify`. Любой ненулевой exit останавливает последовательность; `clean verify` не запускается после failed preflight.
+On Windows under Codex, Main first runs `docker version` with escalated host access and runs
+`mvnw.cmd clean verify` in that same host-access context. A named-pipe failure observed only inside the
+restricted sandbox must be retried outside it and does not consume a repair round.
 
-## Журнал подагентов
+Any nonzero exit blocks `DONE`. Report infrastructure blockers exactly; never narrow or skip required checks.
+Route a final-gate failure by ownership:
 
-Проектные хуки `SubagentStart` и `SubagentStop` добавляют низкоуровневые lifecycle-записи в `.codex-logs/subagents.jsonl`. Для каждой логической команды Architect использует отдельный assignment id и фиксирует dispatch до вызова роли:
+- implementation or test issue -> Builder `REPAIR`;
+- documentation or contract issue -> Architect;
+- infrastructure issue -> `BLOCKED`.
 
-```powershell
-$assignmentId = [guid]::NewGuid().ToString('N')
-pwsh -NoProfile -File .codex/scripts/log-agent-activity.ps1 -Action Dispatch -AssignmentId $assignmentId -Role tester -Phase tests-red -Summary 'Write requirement-derived red tests'
-```
+An implementation or test failure in the final gate consumes the next available repair round. Rounds 1 and 2
+need no separate approval. If both are exhausted, Reviewer decides whether to authorize round 3 or escalate.
+After round 3, any remaining substantive blocker escalates to Sol High. No new workflow status is introduced.
 
-После ответа роли Architect записывает её канонический статус, короткий результат и фактические token counters, если runtime их предоставил:
+## Benchmark telemetry
 
-```powershell
-pwsh -NoProfile -File .codex/scripts/log-agent-activity.ps1 -Action Return -AssignmentId $assignmentId -Status RED_CANDIDATE -Summary 'Named test fails at the expected assertion' -InputTokens 1200 -OutputTokens 240 -TotalTokens 1440
-```
-
-Если token counters недоступны, параметры не передаются и логгер пишет `unavailable`, не оценку. JSONL получает `AssignmentDispatch`/`AssignmentReturn` с ролью, фазой, UTC start/end и `duration_ms`. Отдельный `.codex-logs/subagents-readable.log` получает одну завершённую строку вида:
-
-```text
-15-09-26 23:23 | Architect -> Tester: Write requirement-derived red tests | Tester -> Architect: STATUS: RED_CANDIDATE; Named test fails at the expected assertion | phase=tests-red | duration=00:08:41 | tokens: input=1200, cached_input=unavailable, output=240, reasoning=unavailable, total=1440
-```
-
-Для экспорта уже существующего JSONL используется:
-
-```powershell
-pwsh -NoProfile -File .codex/scripts/export-subagent-log.ps1
-```
-
-Старые lifecycle-пары получают точную длительность. Старые follow-up stop без записанного dispatch честно получают `duration=unavailable`. Полные prompts, responses и transcript paths не копируются; сохраняются только однострочные summary длиной до 400 символов.
-
-Architect отдельно фиксирует repair routing с полями `loop`, `source_status`, `repair_owner` и `round`. Лог локальный и исключён из Git. Hooks загружаются при старте сессии и не применяются задним числом; после изменения hook-файлов новая сессия проверяет и доверяет точное определение через `/hooks`.
+Main records dispatch/return timing and available token counters with
+`.codex/scripts/log-agent-activity.ps1`. Record aggregate wall time and usage across Main, Architect, Builder,
+Reviewer, repair, and Sol escalation. Score authored test quality separately from behavioral correctness,
+including meaningful RED, real infrastructure, deterministic concurrency control, durable-state assertions,
+rollback, retry, and resistance to controlled test mutations.
