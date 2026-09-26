@@ -61,6 +61,28 @@ When observable behavior changes in DEFAULT, Developer derives a meaningful test
 
 Documentation, comments, formatting, mechanical configuration, a pure rename or internally covered refactoring may require no new behavioral test, but applicable targeted checks and the complete gate still run. The independent integrity preflight remains before Maven in both modes, and explicit targeted developer commands never substitute for `mvnw.cmd clean verify` at completion.
 
+In MULTIAGENT, Architect alone fixes risk, matched triggers, invariants and test mode at PLAN_READY using the
+[single trigger authority](AGENT_WORKFLOW_MULTIAGENT.md#architect-planning-and-risk). Builder owns meaningful
+specification-derived tests, behavioral RED before implementation, frozen-test evidence and targeted GREEN.
+Documentation-only work stays with Architect and skips Builder. Executable policy or routing changes need
+test-first evidence when they change observable behavior.
+
+- ROUTINE / STANDARD implementation or non-normative docs → same Architect thread.
+- Any CORE_RISK change → fresh Reviewer (new thread).
+- Any change to an accepted normative OpenSpec spec → fresh Reviewer, regardless of risk.
+
+Either fresh-review condition takes precedence. The current reviewer validates RED meaning and the unchanged
+establishing-test hash. Confirmed TEST_SPEC_ERROR correction requires that reviewer's REPAIR with
+`requires_new_red = true`, new behavioral RED and a new hash. Main reruns claimed RED only when the reviewer
+sets `red_suspect = true`. Repairs return to the same author and retain bounded repair accounting.
+
+After approval, Architect closes non-semantic documentation and tasks; Main independently runs the complete
+gate. Main then records a scoped pre-archive checkpoint and Architect archives. Main runs strict all-item
+validation, doctor, targeted repository conventions and diff checking after archive. Failure uses the
+[scoped restoration protocol](AGENT_WORKFLOW_MULTIAGENT.md#checkpoint-archive-and-recovery) before correction,
+full verification and archive again. Accepted specs need not match proposed behavior before archive; the
+active delta records that migration.
+
 ## Reproducibility tests
 
 - Time-dependent rules use fixed or controlled clocks/reference instants; tests never depend on the current machine time.

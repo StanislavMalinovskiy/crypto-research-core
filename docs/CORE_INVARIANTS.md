@@ -16,6 +16,33 @@ Invariant | Applicable | Evidence | Verdict
 
 `Not applicable` requires a short reason. A blanket statement that all invariants were checked is not evidence.
 
+## Workflow classification and review
+
+Architect classifies risk using the single [MULTIAGENT trigger authority](AGENT_WORKFLOW_MULTIAGENT.md#architect-planning-and-risk).
+This checklist defines no second trigger list. CI IDs guide evidence review without replacing that assessment
+or narrowing the controlling sources.
+
+| Trigger IDs in that authority | Related invariants |
+|---|---|
+| TR-01, TR-05 | CI-01, CI-03, CI-04, CI-05, CI-06 |
+| TR-02 | CI-06, CI-14 |
+| TR-03, TR-04 | CI-03, CI-04, CI-05, CI-11, CI-15 |
+| TR-06 | CI-08, CI-09 |
+| TR-08 | CI-07, CI-10, CI-11 |
+| TR-09 | CI-01, CI-02, CI-12, CI-13, CI-15 |
+| TR-10 | CI-12, CI-14 |
+| TR-11 | CI-01, CI-07, CI-08, CI-09, CI-10, CI-11 |
+| TR-07, TR-12 | Apply [Reproducibility](REPRODUCIBILITY.md) and [Operations](OPERATIONS.md) directly; absence of a dedicated CI ID does not exclude a trigger. |
+
+The current reviewing role follows this rule:
+
+- ROUTINE / STANDARD implementation or non-normative docs → same Architect thread.
+- Any CORE_RISK change → fresh Reviewer (new thread).
+- Any change to an accepted normative OpenSpec spec → fresh Reviewer, regardless of risk.
+
+Either fresh-review condition takes precedence. Architect fixes risk and matched trigger evidence at
+PLAN_READY. New risk or scope evidence reopens Architect planning; ordinary repairs retain fixed risk.
+
 ## Integrity and durability
 
 ### CI-01: No silent outcome or evidence loss

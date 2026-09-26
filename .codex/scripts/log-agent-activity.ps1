@@ -8,10 +8,10 @@ param(
     [ValidatePattern('^[A-Za-z0-9._-]{1,128}$')]
     [string] $AssignmentId,
 
-    [ValidateSet('architect', 'builder_sol', 'builder_luna', 'builder_luna_max', 'reviewer', 'escalation')]
+    [ValidateSet('architect', 'builder_sol', 'builder_luna_xhigh', 'builder_luna_max', 'reviewer', 'escalation')]
     [string] $Role,
 
-    [ValidateSet('plan', 'build', 'review', 'repair', 'docs-close', 'challenge')]
+    [ValidateSet('plan', 'docs', 'build', 'review', 'repair', 'docs-close', 'archive', 'challenge')]
     [string] $Phase,
 
     [Parameter(Mandatory)]
@@ -40,24 +40,28 @@ $allowedStatuses = @(
     'PLAN_READY', 'BUILD_DONE', 'REPAIR', 'APPROVE', 'BLOCKED', 'ESCALATE', 'DONE'
 )
 $rolePhases = @{
-    architect = @('plan', 'docs-close')
+    architect = @('plan', 'docs', 'review', 'repair', 'docs-close', 'archive')
     builder_sol = @('build', 'repair')
-    builder_luna = @('build', 'repair')
+    builder_luna_xhigh = @('build', 'repair')
     builder_luna_max = @('build', 'repair')
     reviewer = @('review')
     escalation = @('challenge')
 }
 $rolePhaseStatuses = @{
     'architect:plan' = @('PLAN_READY', 'BLOCKED', 'ESCALATE')
-    'architect:docs-close' = @('APPROVE', 'PLAN_READY', 'BLOCKED')
+    'architect:docs' = @('PLAN_READY', 'BLOCKED', 'ESCALATE')
+    'architect:review' = @('APPROVE', 'REPAIR', 'ESCALATE', 'BLOCKED')
+    'architect:repair' = @('PLAN_READY', 'BLOCKED', 'ESCALATE')
+    'architect:docs-close' = @('APPROVE', 'BLOCKED', 'ESCALATE')
+    'architect:archive' = @('APPROVE', 'BLOCKED')
     'builder_sol:build' = @('BUILD_DONE', 'BLOCKED')
     'builder_sol:repair' = @('BUILD_DONE', 'BLOCKED')
-    'builder_luna:build' = @('BUILD_DONE', 'BLOCKED')
-    'builder_luna:repair' = @('BUILD_DONE', 'BLOCKED')
+    'builder_luna_xhigh:build' = @('BUILD_DONE', 'BLOCKED')
+    'builder_luna_xhigh:repair' = @('BUILD_DONE', 'BLOCKED')
     'builder_luna_max:build' = @('BUILD_DONE', 'BLOCKED')
     'builder_luna_max:repair' = @('BUILD_DONE', 'BLOCKED')
     'reviewer:review' = @('APPROVE', 'REPAIR', 'ESCALATE', 'BLOCKED')
-    'escalation:challenge' = @('APPROVE', 'REPAIR', 'BLOCKED')
+    'escalation:challenge' = @('APPROVE', 'REPAIR', 'ESCALATE', 'BLOCKED')
 }
 
 function ConvertTo-OneLine {

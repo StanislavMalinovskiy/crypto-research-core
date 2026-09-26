@@ -91,11 +91,11 @@ function Test-UnavailableTokensAndValidation {
         '-Timestamp', '2026-09-15T20:03:00Z'
     )
     $invalidDispatch = Invoke-ScriptProcess $loggerPath @(
-        '-Action', 'Dispatch', '-AssignmentId', 'invalid-phase', '-Role', 'builder_luna', '-Phase', 'plan',
+        '-Action', 'Dispatch', '-AssignmentId', 'invalid-phase', '-Role', 'builder_luna_xhigh', '-Phase', 'plan',
         '-Summary', 'Invalid role phase', '-LogDirectory', $logDirectory
     )
     $invalidStatusDispatch = Invoke-ScriptProcess $loggerPath @(
-        '-Action', 'Dispatch', '-AssignmentId', 'invalid-status', '-Role', 'builder_luna', '-Phase', 'build',
+        '-Action', 'Dispatch', '-AssignmentId', 'invalid-status', '-Role', 'builder_luna_xhigh', '-Phase', 'build',
         '-Summary', 'Implement change', '-LogDirectory', $logDirectory
     )
     $invalidStatusReturn = Invoke-ScriptProcess $loggerPath @(
@@ -121,11 +121,8 @@ function Test-CurrentRoleRouting {
         '-Action', 'Dispatch', '-AssignmentId', 'architect-review', '-Role', 'architect', '-Phase', 'review',
         '-Summary', 'Review contract', '-LogDirectory', $logDirectory
     )
-    Assert-Exit 'Architect cannot own REVIEW' $architectReview 2
-    if (Test-Path (Join-Path $logDirectory 'subagent-assignments/architect-review.json')) {
-        Add-Failure 'Architect cannot own REVIEW' 'rejected dispatch must not create assignment state'
-    }
-    foreach ($role in @('builder_sol', 'builder_luna', 'builder_luna_max')) {
+    Assert-Exit 'Architect owns eligible REVIEW' $architectReview 0
+    foreach ($role in @('builder_sol', 'builder_luna_xhigh', 'builder_luna_max')) {
         foreach ($phase in @('build', 'repair')) {
             $assignment = "$role-$phase"
             $dispatch = Invoke-ScriptProcess $loggerPath @(
@@ -144,6 +141,45 @@ function Test-CurrentRoleRouting {
                 Add-Failure $assignment 'role, phase, and completion must survive dispatch and return'
             }
         }
+    }
+}
+
+function Test-PhaseStatusCompatibility {
+    $logDirectory = Join-Path $testRoot 'phase-status'
+    $cases = @{
+        'architect:plan' = @('PLAN_READY', 'BLOCKED', 'ESCALATE')
+        'architect:docs' = @('PLAN_READY', 'BLOCKED', 'ESCALATE')
+        'architect:review' = @('APPROVE', 'REPAIR', 'ESCALATE', 'BLOCKED')
+        'architect:repair' = @('PLAN_READY', 'BLOCKED', 'ESCALATE')
+        'architect:docs-close' = @('APPROVE', 'BLOCKED', 'ESCALATE')
+        'architect:archive' = @('APPROVE', 'BLOCKED')
+        'escalation:challenge' = @('REPAIR', 'ESCALATE', 'APPROVE', 'BLOCKED')
+        'reviewer:review' = @('REPAIR', 'ESCALATE', 'APPROVE', 'BLOCKED')
+    }
+    foreach ($case in $cases.GetEnumerator()) {
+        $role, $phase = $case.Key.Split(':')
+        foreach ($status in @('PLAN_READY', 'BUILD_DONE', 'REPAIR', 'APPROVE', 'BLOCKED', 'ESCALATE', 'DONE', 'REPLAN', 'OWNER_DECISION')) {
+            $assignment = "$role-$phase-$status"
+            $dispatch = Invoke-ScriptProcess $loggerPath @(
+                '-Action', 'Dispatch', '-AssignmentId', $assignment, '-Role', $role, '-Phase', $phase,
+                '-Summary', 'Check phase status contract', '-LogDirectory', $logDirectory
+            )
+            Assert-Exit "$assignment dispatch" $dispatch 0
+            if ($dispatch.ExitCode -ne 0) { continue }
+            $result = Invoke-ScriptProcess $loggerPath @(
+                '-Action', 'Return', '-AssignmentId', $assignment, '-Status', $status,
+                '-Summary', 'Check role compatible status', '-LogDirectory', $logDirectory
+            )
+            $expected = if ($status -cin $case.Value) { 0 } else { 2 }
+            Assert-Exit "$assignment return" $result $expected
+        }
+    }
+    foreach ($pair in @(@('architect', 'build'), @('reviewer', 'repair'), @('escalation', 'plan'))) {
+        $result = Invoke-ScriptProcess $loggerPath @(
+            '-Action', 'Dispatch', '-AssignmentId', ($pair -join '-'), '-Role', $pair[0], '-Phase', $pair[1],
+            '-Summary', 'Invalid phase', '-LogDirectory', $logDirectory
+        )
+        Assert-Exit ($pair -join '-') $result 2
     }
 }
 
@@ -171,6 +207,7 @@ try {
     Test-CompletedAssignmentWithTokens
     Test-UnavailableTokensAndValidation
     Test-CurrentRoleRouting
+    Test-PhaseStatusCompatibility
     Test-LegacyExport
 }
 finally {

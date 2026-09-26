@@ -53,12 +53,12 @@ class RepositoryConventionsTest {
 	private static final Pattern STATUS_TOKEN = Pattern.compile(
 			"\\b(?:PLAN_READY|BUILD_DONE|REPAIR|APPROVE|BLOCKED|ESCALATE|DONE)\\b");
 	private static final Map<String, Set<String>> ROLE_OUTPUT_STATUSES = Map.of(
-			"architect", Set.of("PLAN_READY", "APPROVE", "ESCALATE", "BLOCKED"),
+			"architect", Set.of("PLAN_READY", "APPROVE", "REPAIR", "ESCALATE", "BLOCKED"),
 			"builder_sol", Set.of("BUILD_DONE", "BLOCKED"),
-			"builder_luna", Set.of("BUILD_DONE", "BLOCKED"),
+			"builder_luna_xhigh", Set.of("BUILD_DONE", "BLOCKED"),
 			"builder_luna_max", Set.of("BUILD_DONE", "BLOCKED"),
 			"reviewer", Set.of("APPROVE", "REPAIR", "ESCALATE", "BLOCKED"),
-			"escalation", Set.of("APPROVE", "REPAIR", "BLOCKED"));
+			"escalation", Set.of("APPROVE", "REPAIR", "ESCALATE", "BLOCKED"));
 	private static final Set<String> MAVEN_SELECTOR_ELEMENTS = Set.of(
 			"includes", "include", "excludes", "exclude", "groups", "excludedGroups",
 			"includeTags", "excludeTags", "test", "itTest", "it.test", "suiteXmlFiles");
@@ -251,7 +251,7 @@ class RepositoryConventionsTest {
 	@Test
 	void projectAgentConfigurationMatchesClosedRoutingProtocol() throws IOException {
 		var roleConfigurations = new LinkedHashMap<String, String>();
-		for (var role : List.of("architect", "builder_sol", "builder_luna", "builder_luna_max", "reviewer", "escalation")) {
+		for (var role : List.of("architect", "builder_sol", "builder_luna_xhigh", "builder_luna_max", "reviewer", "escalation")) {
 			var rolePath = repositoryRoot.resolve(".codex/agents/" + role + ".toml");
 			roleConfigurations.put(role, Files.exists(rolePath) ? Files.readString(rolePath) : "");
 		}
@@ -265,6 +265,7 @@ class RepositoryConventionsTest {
 
 		assertThat(violations).isEmpty();
 		assertThat(repositoryRoot.resolve(".codex/agents/builder_terra.toml")).doesNotExist();
+		assertThat(repositoryRoot.resolve(".codex/agents/builder_luna.toml")).doesNotExist();
 		assertThat(repositoryRoot.resolve(".codex/agents/developer.toml")).doesNotExist();
 		assertThat(repositoryRoot.resolve(".codex/agents/tester.toml")).doesNotExist();
 		assertThat(repositoryRoot.resolve(".codex/agents/researcher.toml")).doesNotExist();
@@ -283,6 +284,125 @@ class RepositoryConventionsTest {
 				ROLE_OUTPUT_STATUSES.get("builder_sol")))
 				.containsExactly("builder_sol status set differs from the canonical routing contract: "
 						+ "[APPROVE, BLOCKED, BUILD_DONE]");
+	}
+
+	private static final List<String> LEAN_POLICY_CLAUSES = List.of(
+			"Architect is the sole risk classifier",
+			"risk_triggers = matched triggers | none",
+			"Risk remains fixed during implementation, review and repairs",
+			"Only explicit owner direction may lower risk",
+			"reason = CONTRACT_CHANGED", "subreason = RISK_CHANGED",
+			"ROUTINE / STANDARD implementation or non-normative docs → same Architect thread.",
+			"Any CORE_RISK change → fresh Reviewer (new thread).",
+			"Any change to an accepted normative OpenSpec spec → fresh Reviewer, regardless of risk.",
+			"Either fresh-review condition takes precedence",
+			"Implementation or test repairs return to the same Builder",
+			"Documentation repairs return to the same Architect",
+			"The current reviewer authorizes the third repair",
+			"requires_new_red = true", "new behavioral RED", "new hash",
+			"Replanning and escalation never reset the repair budget",
+			"verdict = REPAIR | REPLAN | APPROVE | OWNER_DECISION",
+			"REPLAN → ESCALATE", "OWNER_DECISION → BLOCKED",
+			"Only Architect may issue a new PLAN_READY",
+			"Owner intent or scope ambiguity goes directly to the owner",
+			"pre-archive", "temporary Git index", "raw-byte", "hash-object -w --no-filters",
+			"post-archive", "exact paths", "unchanged real index",
+			"Never reset-hard", "whole-tree checkout", "git clean", "stash owner work",
+			"BLOCKED before destructive action");
+
+	@Test
+	void leanWorkflowPolicyCoversRiskReviewRepairEscalationAndRecovery() throws IOException {
+		assertThat(leanPolicyViolations(Files.readString(repositoryRoot.resolve("docs/AGENT_WORKFLOW_MULTIAGENT.md"))))
+				.isEmpty();
+	}
+
+	@Test
+	void leanPolicyGuardRejectsEachMissingSafetyObligation() {
+		var valid = String.join("\n", LEAN_POLICY_CLAUSES);
+		assertThat(leanPolicyViolations(valid)).isEmpty();
+		for (var clause : LEAN_POLICY_CLAUSES) {
+			assertThat(leanPolicyViolations(valid.replace(clause, "omitted")))
+					.as("missing obligation: %s", clause).contains(clause);
+		}
+	}
+
+	@Test
+	void archiveClosureMustFollowApprovalGateAndCheckpointInOrder() throws IOException {
+		var stages = List.of("APPROVE", "DOCS_CLOSE", "complete final gate", "checkpoint", "archive", "post-checks", "DONE");
+		var valid = String.join(" → ", stages);
+		assertThat(orderedClosure(valid, stages)).isTrue();
+		for (var index = 0; index < stages.size() - 1; index++) {
+			var reordered = new ArrayList<>(stages);
+			java.util.Collections.swap(reordered, index, index + 1);
+			assertThat(orderedClosure(String.join(" → ", reordered), stages)).isFalse();
+		}
+		var workflow = Files.readString(repositoryRoot.resolve("docs/AGENT_WORKFLOW_MULTIAGENT.md"));
+		var start = workflow.indexOf("## End-to-end flow");
+		assertThat(orderedClosure(start < 0 ? workflow : workflow.substring(start), stages)).isTrue();
+	}
+
+	private boolean orderedClosure(String guidance, List<String> stages) {
+		var previous = -1;
+		for (var stage : stages) {
+			var current = guidance.indexOf(stage);
+			if (current <= previous) { return false; }
+			previous = current;
+		}
+		return true;
+	}
+
+	@Test
+	void activeRoutingRejectsLegacyNamesButIgnoresHistoricalEvidence() throws IOException {
+		var active = new LinkedHashMap<String, String>();
+		for (var file : List.of("AGENTS.md", "docs/AGENT_WORKFLOW.md", "docs/AGENT_WORKFLOW_MULTIAGENT.md", ".codex/config.toml")) {
+			active.put(file, Files.readString(repositoryRoot.resolve(file)));
+		}
+		try (var paths = Files.list(repositoryRoot.resolve(".codex/agents"))) {
+			paths.filter(Files::isRegularFile).forEach(path -> active.put(relative(path).replace('\\', '/'), readString(path)));
+		}
+		assertThat(obsoleteRoutingViolations(active)).isEmpty();
+		assertThat(obsoleteRoutingViolations(Map.of("docs/archive/old.md", "builder_terra gpt-5.6-terra"))).isEmpty();
+		for (var path : active.keySet()) {
+			for (var obsolete : List.of("builder_terra", "gpt-5.6-terra")) {
+				assertThat(obsoleteRoutingViolations(Map.of(path, obsolete))).containsExactly(path);
+			}
+		}
+	}
+
+	@Test
+	void riskTriggerDefinitionHasOneActiveAuthority() throws IOException {
+		var sources = new LinkedHashMap<String, String>();
+		for (var file : List.of("AGENTS.md", "docs/AGENT_WORKFLOW.md", "docs/AGENT_WORKFLOW_MULTIAGENT.md", "docs/CORE_INVARIANTS.md", "docs/TESTING.md")) {
+			sources.put(file, Files.readString(repositoryRoot.resolve(file)));
+		}
+		try (var paths = Files.list(repositoryRoot.resolve(".codex/agents"))) {
+			paths.filter(Files::isRegularFile).forEach(path -> sources.put(relative(path), readString(path)));
+		}
+		assertThat(triggerAuthorities(sources)).containsExactly("docs/AGENT_WORKFLOW_MULTIAGENT.md");
+		var valid = Map.of("docs/AGENT_WORKFLOW_MULTIAGENT.md", "CORE_RISK triggers: persistence; transactions; concurrency; security");
+		assertThat(triggerAuthorities(valid)).containsExactly("docs/AGENT_WORKFLOW_MULTIAGENT.md");
+		var duplicate = new LinkedHashMap<>(valid);
+		duplicate.put("docs/CORE_INVARIANTS.md", "CORE_RISK includes persistence, transactions, concurrency, security.");
+		assertThat(triggerAuthorities(duplicate)).hasSize(2);
+	}
+
+	private List<String> leanPolicyViolations(String guidance) {
+		var normalized = guidance.replace("`", "").replaceAll("\\s+", " ");
+		return LEAN_POLICY_CLAUSES.stream().filter(clause -> !normalized.contains(clause)).toList();
+	}
+
+	private List<String> obsoleteRoutingViolations(Map<String, String> sources) {
+		return sources.entrySet().stream()
+				.filter(entry -> entry.getKey().equals("AGENTS.md") || entry.getKey().matches("docs/AGENT_WORKFLOW[^/]*\\.md")
+						|| entry.getKey().equals(".codex/config.toml") || entry.getKey().startsWith(".codex/agents/"))
+				.filter(entry -> entry.getValue().contains("builder_terra") || entry.getValue().contains("gpt-5.6-terra"))
+				.map(Map.Entry::getKey).toList();
+	}
+
+	private List<String> triggerAuthorities(Map<String, String> sources) {
+		return sources.entrySet().stream().filter(entry -> Pattern.compile(
+				"(?is)CORE_RISK(?: triggers)?(?: includes|:)[^\\n]*(?:persistence|transactions)")
+				.matcher(entry.getValue().replace("`", "")).find()).map(Map.Entry::getKey).toList();
 	}
 
 	@Test
@@ -715,14 +835,14 @@ class RepositoryConventionsTest {
 		var expectedModels = Map.of(
 				"architect", "gpt-6-sol",
 				"builder_sol", "gpt-6-sol",
-				"builder_luna", "gpt-6-luna",
+				"builder_luna_xhigh", "gpt-6-luna",
 				"builder_luna_max", "gpt-6-luna",
 				"reviewer", "gpt-6-sol",
 				"escalation", "gpt-6-sol");
 		var expectedEfforts = Map.of(
 				"architect", "high",
 				"builder_sol", "medium",
-				"builder_luna", "xhigh",
+				"builder_luna_xhigh", "xhigh",
 				"builder_luna_max", "max",
 				"reviewer", "medium",
 				"escalation", "high");
@@ -730,6 +850,9 @@ class RepositoryConventionsTest {
 			var role = entry.getKey();
 			var content = entry.getValue();
 			checkReasoningEffort(role, content, violations);
+			if (!content.contains("name = \"" + role + "\"")) {
+				violations.add(role + " must declare its exact role name");
+			}
 			if (!content.contains("model = \"" + expectedModels.get(role) + "\"")) {
 				violations.add(role + " must use " + expectedModels.get(role));
 			}
@@ -742,11 +865,10 @@ class RepositoryConventionsTest {
 		}
 
 		var architect = roleConfigurations.getOrDefault("architect", "");
-		if (!architect.contains("may upgrade it, never downgrade it")
-				|| !architect.contains("PLAN or DOCS_CLOSE") || architect.contains("In REVIEW")) {
-			violations.add("architect must preserve risk monotonicity and restrict its phases to PLAN or DOCS_CLOSE");
+		if (!containsAll(architect, "sole risk classifier", "risk_triggers", "PLAN, DOCS, REVIEW, REPAIR, DOCS_CLOSE, ARCHIVE")) {
+			violations.add("architect must own risk classification and all authorized phases");
 		}
-		for (var builderRole : List.of("builder_sol", "builder_luna", "builder_luna_max")) {
+		for (var builderRole : List.of("builder_sol", "builder_luna_xhigh", "builder_luna_max")) {
 			var builder = roleConfigurations.getOrDefault(builderRole, "");
 			if (!containsAll(builder, "repair_round=1", "repair_round=2", "repair_round=3",
 					"third_repair_authorized=true", "Never start a fourth ordinary repair")) {
@@ -758,8 +880,8 @@ class RepositoryConventionsTest {
 			}
 		}
 		var reviewer = roleConfigurations.getOrDefault("reviewer", "");
-		if (!reviewer.contains("every risk level")) {
-			violations.add("reviewer must independently review every risk level");
+		if (!containsAll(reviewer, "CORE_RISK", "accepted normative OpenSpec spec", "fresh thread")) {
+			violations.add("reviewer must independently review core risk and normative specifications");
 		}
 		if (!Pattern.compile("(?m)^\\s*sandbox_mode\\s*=\\s*\"read-only\"\\s*$").matcher(reviewer).find()) {
 			violations.add("reviewer must set sandbox_mode = \"read-only\"");
