@@ -42,7 +42,7 @@ function Test-CompletedAssignmentWithTokens {
     $scenario = 'completed assignment with tokens'
     $logDirectory = Join-Path $testRoot 'complete'
     $dispatch = Invoke-ScriptProcess $loggerPath @(
-        '-Action', 'Dispatch', '-AssignmentId', 'assignment-1', '-Role', 'builder_terra', '-Phase', 'build',
+        '-Action', 'Dispatch', '-AssignmentId', 'assignment-1', '-Role', 'builder_sol', '-Phase', 'build',
         '-Summary', "Implement requirement-derived`nchange", '-AgentId', 'agent-7', '-LogDirectory', $logDirectory,
         '-Timestamp', '2026-09-15T23:23:00+05:00'
     )
@@ -55,6 +55,8 @@ function Test-CompletedAssignmentWithTokens {
     Assert-Exit "$scenario dispatch" $dispatch 0
     Assert-Exit "$scenario return" $return 0
 
+    if ($dispatch.ExitCode -ne 0 -or $return.ExitCode -ne 0) { return }
+
     $records = @(Get-Content (Join-Path $logDirectory 'subagents.jsonl') | ForEach-Object { $_ | ConvertFrom-Json })
     if ($records.Count -ne 2 -or $records[1].duration_ms -ne 65000 -or $records[1].phase -cne 'build') {
         Add-Failure $scenario 'machine records do not preserve correlation, phase, or duration'
@@ -64,7 +66,7 @@ function Test-CompletedAssignmentWithTokens {
     }
     $readable = Get-Content -Raw (Join-Path $logDirectory 'subagents-readable.log')
     if ($readable -notmatch '^15-09-26 23:23 \|' -or $readable -notmatch 'duration=00:01:05' -or
-            $readable -notmatch 'Main -> Builder_Terra: Implement requirement-derived change' -or
+            $readable -notmatch 'Main -> Builder_Sol: Implement requirement-derived change' -or
             $readable -notmatch 'input=1200.*reasoning=80.*total=1440') {
         Add-Failure $scenario "unexpected readable line: $readable"
     }
@@ -89,11 +91,11 @@ function Test-UnavailableTokensAndValidation {
         '-Timestamp', '2026-09-15T20:03:00Z'
     )
     $invalidDispatch = Invoke-ScriptProcess $loggerPath @(
-        '-Action', 'Dispatch', '-AssignmentId', 'invalid-phase', '-Role', 'builder_terra', '-Phase', 'plan',
+        '-Action', 'Dispatch', '-AssignmentId', 'invalid-phase', '-Role', 'builder_luna', '-Phase', 'plan',
         '-Summary', 'Invalid role phase', '-LogDirectory', $logDirectory
     )
     $invalidStatusDispatch = Invoke-ScriptProcess $loggerPath @(
-        '-Action', 'Dispatch', '-AssignmentId', 'invalid-status', '-Role', 'builder_terra', '-Phase', 'build',
+        '-Action', 'Dispatch', '-AssignmentId', 'invalid-status', '-Role', 'builder_luna', '-Phase', 'build',
         '-Summary', 'Implement change', '-LogDirectory', $logDirectory
     )
     $invalidStatusReturn = Invoke-ScriptProcess $loggerPath @(
@@ -110,6 +112,38 @@ function Test-UnavailableTokensAndValidation {
     if ($readable -notmatch 'phase=plan' -or $readable -notmatch 'input=unavailable' -or
             $readable -notmatch 'duration=00:02:00') {
         Add-Failure $scenario "missing explicit unavailable telemetry: $readable"
+    }
+}
+
+function Test-CurrentRoleRouting {
+    $logDirectory = Join-Path $testRoot 'routing'
+    $architectReview = Invoke-ScriptProcess $loggerPath @(
+        '-Action', 'Dispatch', '-AssignmentId', 'architect-review', '-Role', 'architect', '-Phase', 'review',
+        '-Summary', 'Review contract', '-LogDirectory', $logDirectory
+    )
+    Assert-Exit 'Architect cannot own REVIEW' $architectReview 2
+    if (Test-Path (Join-Path $logDirectory 'subagent-assignments/architect-review.json')) {
+        Add-Failure 'Architect cannot own REVIEW' 'rejected dispatch must not create assignment state'
+    }
+    foreach ($role in @('builder_sol', 'builder_luna', 'builder_luna_max')) {
+        foreach ($phase in @('build', 'repair')) {
+            $assignment = "$role-$phase"
+            $dispatch = Invoke-ScriptProcess $loggerPath @(
+                '-Action', 'Dispatch', '-AssignmentId', $assignment, '-Role', $role, '-Phase', $phase,
+                '-Summary', 'Implement bounded contract', '-LogDirectory', $logDirectory
+            )
+            Assert-Exit "$assignment dispatch" $dispatch 0
+            if ($dispatch.ExitCode -ne 0) { continue }
+            $return = Invoke-ScriptProcess $loggerPath @(
+                '-Action', 'Return', '-AssignmentId', $assignment, '-Status', 'BUILD_DONE',
+                '-Summary', 'Targeted checks passed', '-LogDirectory', $logDirectory
+            )
+            Assert-Exit "$assignment return" $return 0
+            $state = Get-Content -Raw (Join-Path $logDirectory "subagent-assignments/$assignment.json") | ConvertFrom-Json
+            if ($state.role -cne $role -or $state.phase -cne $phase -or -not $state.completed) {
+                Add-Failure $assignment 'role, phase, and completion must survive dispatch and return'
+            }
+        }
     }
 }
 
@@ -136,6 +170,7 @@ try {
     [System.IO.Directory]::CreateDirectory($testRoot) | Out-Null
     Test-CompletedAssignmentWithTokens
     Test-UnavailableTokensAndValidation
+    Test-CurrentRoleRouting
     Test-LegacyExport
 }
 finally {

@@ -33,8 +33,6 @@
 | [docs/modules/README.md](docs/modules/README.md) | Карта документации логических модулей |
 | [docs/adr/README.md](docs/adr/README.md) | Журнал архитектурных решений |
 | [docs/notes/AGENT_ORCHESTRATION_RESEARCH.md](docs/notes/AGENT_ORCHESTRATION_RESEARCH.md) | Непринятые идеи и вопросы по развитию агентного конвейера |
-| [docs/archive/API_SERVICES_ARCHIVE.md](docs/archive/API_SERVICES_ARCHIVE.md) | Архив обзора API и сервисов; не источник истины |
-| [docs/archive/PAID_API_ARCHIVE.md](docs/archive/PAID_API_ARCHIVE.md) | Архив платных API; не источник истины |
 | [docs/notes/THINK.md](docs/notes/THINK.md) | Черновые идеи и вопросы |
 | [docs/notes/EXTERNAL_AUDIT_REVIEW_2026-09-20.md](docs/notes/EXTERNAL_AUDIT_REVIEW_2026-09-20.md) | Оценка Control первого внешнего аудита; non-normative |
 | [docs/notes/GLM_5_3_MAX_EXTERNAL_AUDIT_REVIEW_2026-09-20.md](docs/notes/GLM_5_3_MAX_EXTERNAL_AUDIT_REVIEW_2026-09-20.md) | Оценка Control аудита GLM 5.3 MAX; non-normative |
@@ -51,6 +49,9 @@
 6. Existing code and tests.
 
 Документы имеют разные области ответственности, а не общий линейный приоритет. Правила разрешения конфликтов зафиксированы в `AGENTS.md`. Архивные документы используются только как справочные материалы.
+
+Project default: `gpt-6-sol / medium`. When MULTIAGENT is explicitly enabled, the
+[workflow](docs/AGENT_WORKFLOW_MULTIAGENT.md) defines GPT-6 role routing, independent review and bounded repairs.
 
 ## OpenSpec navigation
 

@@ -1,4 +1,4 @@
-# MULTIAGENT: lean supervised workflow v1
+# MULTIAGENT: GPT-6 supervised workflow
 
 ## Purpose and activation
 
@@ -13,21 +13,22 @@ unless the user explicitly requests Orca in the current task.
 The workflow minimizes agent turns while retaining independent review for integrity-sensitive work. Main
 reports to the user at major phase boundaries or blockers, not after every internal action.
 
-## Roles and benchmark configurations
+## Roles and model routing
 
 ```text
-Main                  gpt-5.6-terra / medium
-Architect             gpt-5.6-terra / high
-Builder B             gpt-5.6-terra / medium
-Builder C             gpt-5.6-luna / max
-Fresh Reviewer        gpt-5.6-terra / high
-Escalation            gpt-5.6-sol / high
+Main                  gpt-6-sol / medium
+Architect             gpt-6-sol / high
+Ordinary Builder      gpt-6-luna / xhigh (builder_luna)
+Ordinary Builder max  gpt-6-luna / max (builder_luna_max)
+CORE_RISK Builder     gpt-6-sol / medium (builder_sol)
+Fresh Reviewer        gpt-6-sol / medium
+Escalation            gpt-6-sol / high
 ```
 
-During a B-vs-C benchmark, Builder is the only model variable: B always uses `builder_terra`, and C always
-uses `builder_luna`. The contract, base state, workflow, evidence requirements, reviewer routing, checks, and
-repair limit remain identical. Risk-based Builder selection is allowed only after the benchmark policy is
-chosen.
+Main routes ROUTINE and STANDARD implementation to `builder_luna`. It may select `builder_luna_max` when
+additional reasoning is useful and records that choice in the task capsule. CORE_RISK implementation uses
+`builder_sol`. Architect records the effective risk before Builder selection. Every review uses the separate
+`reviewer` role in a fresh thread. Old model comparisons do not govern current routing.
 
 ## Main
 
@@ -36,8 +37,7 @@ Main owns PROCESS, ROUTING, FINAL GATE, and ESCALATION. Main:
 - sets the preliminary task risk as ROUTINE, STANDARD, or CORE_RISK;
 - invokes Architect for planning and dispatches one bounded capsule per phase;
 - invokes the configured Builder after `PLAN_READY`;
-- routes ROUTINE/STANDARD review back to the same Architect thread;
-- creates a fresh Reviewer thread for CORE_RISK;
+- creates a fresh Sol Medium Reviewer thread for every review, including documentation-only work;
 - permits two ordinary repair passes without separate approval and routes a Reviewer-authorized third repair;
 - invokes Sol High only for a bounded escalation trigger;
 - independently runs the complete final gate and returns `DONE`;
@@ -56,11 +56,9 @@ Architect owns WHAT, WHY, PLAN, applicable invariants, test impact, and document
   `test_mode = RED_REQUIRED | RED_NOT_REQUIRED`;
 - returns `PLAN_READY` only after strict validation and a testable contract.
 
-Documentation-only work stays with Architect and skips Builder. For ROUTINE/STANDARD work, the same Architect
-thread later performs full review. For CORE_RISK, Architect does not review implementation; a fresh Reviewer
-owns contract conformance, code, tests, evidence, and invariants.
-
-In REVIEW, Architect is read-only and must not modify any file.
+Documentation-only work stays with Architect and skips Builder. Architect performs PLAN and DOCS_CLOSE only.
+A fresh Sol Medium Reviewer owns contract conformance, code, tests, evidence, and invariants for every risk
+level. Architect does not review its own plan or the implementation.
 
 After `APPROVE`, Architect may update only completion status, task checkboxes, evidence links, and
 non-semantic documentation. If a requirement, scenario, acceptance criterion, scope, or design decision must
@@ -120,8 +118,8 @@ Builder does not update OpenSpec or documentation and does not run the complete 
 ## Review routing
 
 ```text
-ROUTINE or STANDARD -> same Architect thread
-CORE_RISK           -> fresh reviewer thread
+ROUTINE or STANDARD -> fresh reviewer / gpt-6-sol / medium
+CORE_RISK           -> fresh reviewer / gpt-6-sol / medium
 ```
 
 CORE_RISK includes persistence, transactions, idempotency, concurrency, locking, retry, duplicate
@@ -163,7 +161,7 @@ risk = ROUTINE | STANDARD | CORE_RISK
 test_mode = RED_REQUIRED | RED_NOT_REQUIRED
 tests_changed_after_red = true | false | not_applicable
 blocked_reason = TEST_SPEC_ERROR | CONTRACT_ERROR | INFRASTRUCTURE | OTHER
-reviewer = SAME_ARCHITECT | FRESH_TERRA_HIGH
+reviewer = FRESH_SOL_MEDIUM
 requires_new_red = true | false
 repair_round = 1 | 2 | 3
 third_repair_authorized = true | false
@@ -229,8 +227,8 @@ Evidence supplied:
 Expected status:
 ```
 
-Use the same Architect thread for ROUTINE/STANDARD review and the same Builder thread for all repair passes.
-CORE_RISK review always starts in a fresh Reviewer thread.
+Reuse the Architect thread for DOCS_CLOSE and the Builder thread for all repair passes. Each task's first
+review starts in a fresh Reviewer thread; that Reviewer may review the task's bounded repairs.
 
 ## End-to-end flow
 
@@ -241,8 +239,7 @@ Main classifies risk
   -> documentation-only: Architect completes docs and skip Builder
   -> otherwise Builder performs RED when required, implementation, and targeted GREEN
   -> BUILD_DONE
-  -> ROUTINE/STANDARD: same Architect reviews
-  -> CORE_RISK: fresh Reviewer reviews
+  -> fresh Sol Medium Reviewer reviews every risk level
   -> APPROVE | REPAIR | ESCALATE | BLOCKED
   -> Builder may perform two ordinary repair rounds, each followed by review
   -> Reviewer may authorize one third repair, followed by review
@@ -279,7 +276,7 @@ An implementation or test failure in the final gate consumes the next available 
 need no separate approval. If both are exhausted, Reviewer decides whether to authorize round 3 or escalate.
 After round 3, any remaining substantive blocker escalates to Sol High. No new workflow status is introduced.
 
-## Benchmark telemetry
+## Assignment telemetry
 
 Main records dispatch/return timing and available token counters with
 `.codex/scripts/log-agent-activity.ps1`. Record aggregate wall time and usage across Main, Architect, Builder,

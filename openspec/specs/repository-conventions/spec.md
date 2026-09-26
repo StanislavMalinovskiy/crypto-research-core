@@ -146,32 +146,84 @@ The repository SHALL provide concise common guidance for source responsibilities
 #### Scenario: Multiagent guidance
 - **WHEN** MULTIAGENT is selected
 - **THEN** the agent SHALL load the separate MULTIAGENT workflow document and applicable role configuration
-- **AND** the supervised protocol SHALL remain unavailable as implicit permission to spawn roles in DEFAULT.
+- **AND** the supervised protocol SHALL remain unavailable as implicit permission to spawn roles in DEFAULT
+- **AND** Main alone SHALL spawn project subagents using native Codex, or coordinate user-created Codex sessions through `codex queue`
+- **AND** Orca SHALL require an explicit user request in the current task.
 
 #### Scenario: Independent implementation and test ownership
 - **WHEN** an implementation change requires new observable behavior in MULTIAGENT
-- **THEN** Developer SHALL create any required API skeleton before Tester derives tests from the specification
-- **AND** Developer SHALL not create, change, disable, exclude or otherwise narrow tests, fixtures, expected results or test configuration
-- **AND** after Architect accepts red, Tester SHALL not change tests, fixtures, expectations or test configuration unless Reviewer returns `TEST_WRONG` and Architect starts a new `tests-red` phase, or an `AUDIT_FAILED` verdict explicitly assigns missing test evidence and Architect starts a distinct `tests-evidence` phase
-- **AND** Developer SHALL not add production behavior that exists only for a particular test input.
+- **THEN** Builder SHALL derive meaningful tests from the active requirement and observe targeted behavioral RED before implementation
+- **AND** the named test SHALL execute and fail at the expected behavioral assertion
+- **AND** compilation, discovery, configuration, startup or infrastructure failure SHALL NOT count as RED
+- **AND** Builder SHALL record the test paths and hash, exact command, failing assertion and pre-implementation diff before implementing and running targeted GREEN.
+
+#### Scenario: Frozen behavioral evidence
+- **WHEN** Builder has established valid RED
+- **THEN** Builder SHALL preserve the establishing tests, expectations, fixtures, discovery and runtime configuration through GREEN
+- **AND** a necessary test correction SHALL require Reviewer `REPAIR` with `requires_new_red = true` followed by new RED evidence and a new hash
+- **AND** production behavior SHALL NOT recognize a test artifact to satisfy an expectation.
 
 #### Scenario: Suspected test defect
-- **WHEN** Developer in MULTIAGENT concludes that a failing test contradicts an exact specification statement
-- **THEN** Developer SHALL return `TEST_SUSPECT` without changing or bypassing the test
-- **AND** only Reviewer in `ADJUDICATE` mode SHALL classify the conflict as `CODE_WRONG`, `TEST_WRONG` or `SPEC_AMBIGUOUS`.
+- **WHEN** Builder identifies a conflict between a failing test and the active specification
+- **THEN** Builder SHALL preserve the test and report the exact conflict to Reviewer
+- **AND** Reviewer SHALL return a consolidated `REPAIR` with `requires_new_red = true` for a confirmed test correction, or `ESCALATE` or `BLOCKED` for an unresolved contract conflict
+- **AND** semantic contract changes SHALL reopen Architect planning and the applicable review.
+
+#### Scenario: No behavioral test needed
+- **WHEN** Architect classifies the change as `RED_NOT_REQUIRED` with a concrete reason
+- **THEN** Builder SHALL record that reason and applicable existing verification
+- **AND** it SHALL NOT create an artificial failure or pre-implementation diff solely for process evidence.
+
+#### Scenario: Independent review ownership
+- **WHEN** a MULTIAGENT task is ready for review at any risk level
+- **THEN** Main SHALL start a fresh Reviewer thread separate from Architect and Builder
+- **AND** Reviewer SHALL inspect the stable diff, contract, test meaning, evidence and applicable invariants before returning `APPROVE`, `REPAIR`, `ESCALATE` or `BLOCKED`
+- **AND** Architect SHALL perform PLAN and DOCS_CLOSE only
+- **AND** documentation-only work SHALL skip Builder and still receive Reviewer review.
+
+#### Scenario: Bounded repair and escalation
+- **WHEN** Reviewer identifies repairable defects
+- **THEN** Builder MAY perform two ordinary repair rounds and exactly one further round only with Reviewer `third_repair_authorized = true`
+- **AND** each repair SHALL receive review
+- **AND** an unresolved blocker after round three SHALL escalate without another ordinary repair
+- **AND** Main SHALL use the read-only Escalation role only for a bounded unresolved contract, invariant, data-loss, transaction, concurrency, migration, security or architecture question, or disagreement on a release blocker.
 
 #### Scenario: Role status vocabulary
 - **WHEN** a project subagent finishes a MULTIAGENT assignment
-- **THEN** it SHALL return exactly one status allowed for its role and assigned mode in the canonical routing contract
-- **AND** Researcher SHALL return `RESEARCH_DONE`, `INCONCLUSIVE` or `BLOCKED`
-- **AND** Tester SHALL use `EVIDENCE_CANDIDATE` only in an Architect-opened post-audit test-evidence repair phase
-- **AND** an unknown, missing or mode-incompatible status SHALL be treated as a protocol error rather than inferred by Architect
-- **AND** Reviewer in `THREAT_CHECK` SHALL return only `THREAT_CHECK_PASSED` or `THREATS_FOUND`.
+- **THEN** it SHALL return exactly one role/phase-compatible status from `PLAN_READY`, `BUILD_DONE`, `REPAIR`, `APPROVE`, `BLOCKED` or `ESCALATE`
+- **AND** Main SHALL own final `DONE`
+- **AND** an unknown, missing or role/phase-incompatible status SHALL receive one protocol correction without consuming an artifact repair
+- **AND** assignment logging SHALL accept the current Builder role names and SHALL reject an Architect REVIEW dispatch.
 
 #### Scenario: Verification ownership
-- **WHEN** Developer checks an implementation pass in MULTIAGENT
-- **THEN** Developer SHALL run only the targeted Surefire or Failsafe tests needed for that pass
-- **AND** Architect SHALL own the red command, writer-phase manifest check and complete Maven verification lifecycle.
+- **WHEN** Builder completes a MULTIAGENT implementation pass
+- **THEN** Builder SHALL run targeted GREEN and return `BUILD_DONE` with compact evidence
+- **AND** Main SHALL rerun claimed RED only when Reviewer marks `red_suspect = true`
+- **AND** after Reviewer approval Architect SHALL close documentation without changing contract semantics
+- **AND** Main SHALL independently run the complete final gate before `DONE`, with test-integrity preflight before Maven
+- **AND** a nonzero required check SHALL block completion without narrowing or skipping the check.
+
+### Requirement: GPT-6 agent model routing
+The project SHALL configure its default model as `gpt-6-sol` with `medium` reasoning and SHALL use the declared GPT-6 role mapping in MULTIAGENT without changing the task's manually selected workflow mode.
+
+#### Scenario: Fixed role mapping
+- **WHEN** Main dispatches a non-Builder project role
+- **THEN** Architect SHALL use `gpt-6-sol / high`
+- **AND** Reviewer SHALL use `gpt-6-sol / medium`
+- **AND** Escalation SHALL use `gpt-6-sol / high`.
+
+#### Scenario: Risk-based Builder selection
+- **WHEN** Architect returns a testable plan with effective risk
+- **THEN** ROUTINE and STANDARD implementation SHALL default to `builder_luna` using `gpt-6-luna / xhigh`
+- **AND** Main MAY explicitly select `builder_luna_max` using `gpt-6-luna / max` and record the reason in the capsule
+- **AND** CORE_RISK implementation SHALL use `builder_sol` with `gpt-6-sol / medium`
+- **AND** Architect MAY upgrade Main's preliminary risk but SHALL NOT downgrade it.
+
+#### Scenario: Current guidance consistency
+- **WHEN** the routing migration is completed
+- **THEN** current project configuration, roles, executable policy checks and workflow documentation SHALL agree on the GPT-6 mapping and separate Reviewer ownership
+- **AND** old-model benchmark results SHALL NOT be presented as current routing evidence
+- **AND** application regression coverage SHALL remain intact.
 
 ### Requirement: Test execution integrity
 Repository verification SHALL reject committed configuration and Java test-source constructs that mechanically disable, ignore, exclude, retag or narrow the test suite required by the default Maven verification lifecycle.

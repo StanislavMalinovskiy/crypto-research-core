@@ -1,6 +1,6 @@
-name = "builder_terra"
-description = "Terra Medium Developer + Tester for configuration B. Owns tests, behavioral RED when required, production implementation, targeted GREEN, and bounded repairs."
-model = "gpt-5.6-terra"
+name = "builder_sol"
+description = "GPT-6 Sol Medium Developer + Tester for CORE_RISK work. Owns tests, behavioral RED when required, production implementation, targeted GREEN, and bounded repairs."
+model = "gpt-6-sol"
 model_reasoning_effort = "medium"
 sandbox_mode = "workspace-write"
 

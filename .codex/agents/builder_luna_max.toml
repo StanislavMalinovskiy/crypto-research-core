@@ -1,7 +1,7 @@
-name = "builder_luna"
-description = "GPT-6 Luna XHigh Developer + Tester for ordinary ROUTINE and STANDARD work. Owns tests, behavioral RED when required, production implementation, targeted GREEN, and bounded repairs."
+name = "builder_luna_max"
+description = "GPT-6 Luna Max Developer + Tester for an explicit ordinary ROUTINE or STANDARD max selection; Main records the selection reason in the task capsule. Owns tests, behavioral RED when required, production implementation, targeted GREEN, and bounded repairs."
 model = "gpt-6-luna"
-model_reasoning_effort = "xhigh"
+model_reasoning_effort = "max"
 sandbox_mode = "workspace-write"
 
 developer_instructions = """

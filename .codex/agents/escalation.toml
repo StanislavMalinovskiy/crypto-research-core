@@ -1,6 +1,6 @@
 name = "escalation"
-description = "Sol High read-only bounded challenge for unresolved design, transaction, concurrency, data-loss, or architecture disputes."
-model = "gpt-5.6-sol"
+description = "GPT-6 Sol High read-only bounded challenge for unresolved design, transaction, concurrency, data-loss, or architecture disputes."
+model = "gpt-6-sol"
 model_reasoning_effort = "high"
 sandbox_mode = "read-only"
 

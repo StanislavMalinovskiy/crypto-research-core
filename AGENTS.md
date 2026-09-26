@@ -38,6 +38,9 @@ orchestration/run/worker commands, or start the Orca application unless the user
 in the current task. Generic requests for agents, subagents, multi-agent work, supervision, coordination, or
 periodic progress updates are not permission to use Orca.
 
+The project default is `gpt-6-sol` with `medium` reasoning. Model selection never changes the workflow mode;
+the selected mode's document owns its role routing.
+
 Determine the mode once at task start from `.codex/config.toml`:
 
 - If `[agents].enabled = true` is the exact boolean setting, use `MULTIAGENT` and load [docs/AGENT_WORKFLOW_MULTIAGENT.md](docs/AGENT_WORKFLOW_MULTIAGENT.md) plus the applicable `.codex/agents/*.toml` role configuration.

@@ -5,6 +5,9 @@ DEFAULT is the normal, fail-closed workflow. It uses two user-controlled top-lev
 - **Control** owns the active OpenSpec contract, planning decisions, final documentation, test-first review of the stable diff, completion gates and archive.
 - **Developer** owns specification-derived tests and implementation in one bounded pass, including targeted checks and the complete local gate.
 
+The project default model is `gpt-6-sol` with `medium` reasoning. This default does not enable project
+subagents or import MULTIAGENT role routing into DEFAULT.
+
 The mode is selected at task start from `.codex/config.toml` as described in [root guidance](../AGENTS.md). It remains fixed for the task unless the user explicitly restarts or continues the task after changing the setting.
 
 ## Test impact

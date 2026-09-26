@@ -8,7 +8,7 @@ param(
     [ValidatePattern('^[A-Za-z0-9._-]{1,128}$')]
     [string] $AssignmentId,
 
-    [ValidateSet('architect', 'builder_terra', 'builder_luna', 'reviewer', 'escalation')]
+    [ValidateSet('architect', 'builder_sol', 'builder_luna', 'builder_luna_max', 'reviewer', 'escalation')]
     [string] $Role,
 
     [ValidateSet('plan', 'build', 'review', 'repair', 'docs-close', 'challenge')]
@@ -40,20 +40,22 @@ $allowedStatuses = @(
     'PLAN_READY', 'BUILD_DONE', 'REPAIR', 'APPROVE', 'BLOCKED', 'ESCALATE', 'DONE'
 )
 $rolePhases = @{
-    architect = @('plan', 'review', 'docs-close')
-    builder_terra = @('build', 'repair')
+    architect = @('plan', 'docs-close')
+    builder_sol = @('build', 'repair')
     builder_luna = @('build', 'repair')
+    builder_luna_max = @('build', 'repair')
     reviewer = @('review')
     escalation = @('challenge')
 }
 $rolePhaseStatuses = @{
     'architect:plan' = @('PLAN_READY', 'BLOCKED', 'ESCALATE')
-    'architect:review' = @('APPROVE', 'REPAIR', 'ESCALATE', 'BLOCKED')
     'architect:docs-close' = @('APPROVE', 'PLAN_READY', 'BLOCKED')
-    'builder_terra:build' = @('BUILD_DONE', 'BLOCKED')
-    'builder_terra:repair' = @('BUILD_DONE', 'BLOCKED')
+    'builder_sol:build' = @('BUILD_DONE', 'BLOCKED')
+    'builder_sol:repair' = @('BUILD_DONE', 'BLOCKED')
     'builder_luna:build' = @('BUILD_DONE', 'BLOCKED')
     'builder_luna:repair' = @('BUILD_DONE', 'BLOCKED')
+    'builder_luna_max:build' = @('BUILD_DONE', 'BLOCKED')
+    'builder_luna_max:repair' = @('BUILD_DONE', 'BLOCKED')
     'reviewer:review' = @('APPROVE', 'REPAIR', 'ESCALATE', 'BLOCKED')
     'escalation:challenge' = @('APPROVE', 'REPAIR', 'BLOCKED')
 }

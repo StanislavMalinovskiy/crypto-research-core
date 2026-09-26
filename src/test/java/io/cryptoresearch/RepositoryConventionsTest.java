@@ -53,9 +53,10 @@ class RepositoryConventionsTest {
 	private static final Pattern STATUS_TOKEN = Pattern.compile(
 			"\\b(?:PLAN_READY|BUILD_DONE|REPAIR|APPROVE|BLOCKED|ESCALATE|DONE)\\b");
 	private static final Map<String, Set<String>> ROLE_OUTPUT_STATUSES = Map.of(
-			"architect", Set.of("PLAN_READY", "APPROVE", "REPAIR", "ESCALATE", "BLOCKED"),
-			"builder_terra", Set.of("BUILD_DONE", "BLOCKED"),
+			"architect", Set.of("PLAN_READY", "APPROVE", "ESCALATE", "BLOCKED"),
+			"builder_sol", Set.of("BUILD_DONE", "BLOCKED"),
 			"builder_luna", Set.of("BUILD_DONE", "BLOCKED"),
+			"builder_luna_max", Set.of("BUILD_DONE", "BLOCKED"),
 			"reviewer", Set.of("APPROVE", "REPAIR", "ESCALATE", "BLOCKED"),
 			"escalation", Set.of("APPROVE", "REPAIR", "BLOCKED"));
 	private static final Set<String> MAVEN_SELECTOR_ELEMENTS = Set.of(
@@ -250,8 +251,9 @@ class RepositoryConventionsTest {
 	@Test
 	void projectAgentConfigurationMatchesClosedRoutingProtocol() throws IOException {
 		var roleConfigurations = new LinkedHashMap<String, String>();
-		for (var role : List.of("architect", "builder_terra", "builder_luna", "reviewer", "escalation")) {
-			roleConfigurations.put(role, Files.readString(repositoryRoot.resolve(".codex/agents/" + role + ".toml")));
+		for (var role : List.of("architect", "builder_sol", "builder_luna", "builder_luna_max", "reviewer", "escalation")) {
+			var rolePath = repositoryRoot.resolve(".codex/agents/" + role + ".toml");
+			roleConfigurations.put(role, Files.exists(rolePath) ? Files.readString(rolePath) : "");
 		}
 
 		var violations = agentConfigurationViolations(
@@ -262,6 +264,7 @@ class RepositoryConventionsTest {
 						? Files.readString(repositoryRoot.resolve("docs/AGENT_WORKFLOW_MULTIAGENT.md")) : "");
 
 		assertThat(violations).isEmpty();
+		assertThat(repositoryRoot.resolve(".codex/agents/builder_terra.toml")).doesNotExist();
 		assertThat(repositoryRoot.resolve(".codex/agents/developer.toml")).doesNotExist();
 		assertThat(repositoryRoot.resolve(".codex/agents/tester.toml")).doesNotExist();
 		assertThat(repositoryRoot.resolve(".codex/agents/researcher.toml")).doesNotExist();
@@ -272,13 +275,13 @@ class RepositoryConventionsTest {
 	@Test
 	void closedStatusComparisonRejectsDriftedRoleVocabulary() {
 		assertThat(statusSetViolations(
-				"builder_terra", Set.of("BUILD_DONE", "BLOCKED"),
-				ROLE_OUTPUT_STATUSES.get("builder_terra")))
+				"builder_sol", Set.of("BUILD_DONE", "BLOCKED"),
+				ROLE_OUTPUT_STATUSES.get("builder_sol")))
 				.isEmpty();
 		assertThat(statusSetViolations(
-				"builder_terra", Set.of("BUILD_DONE", "APPROVE", "BLOCKED"),
-				ROLE_OUTPUT_STATUSES.get("builder_terra")))
-				.containsExactly("builder_terra status set differs from the canonical routing contract: "
+				"builder_sol", Set.of("BUILD_DONE", "APPROVE", "BLOCKED"),
+				ROLE_OUTPUT_STATUSES.get("builder_sol")))
+				.containsExactly("builder_sol status set differs from the canonical routing contract: "
 						+ "[APPROVE, BLOCKED, BUILD_DONE]");
 	}
 
@@ -694,9 +697,13 @@ class RepositoryConventionsTest {
 			String workflow) {
 		var violations = new ArrayList<String>();
 		checkReasoningEffort("root", rootConfig, violations);
-		if (!rootConfig.contains("model = \"gpt-5.6-terra\"")
+		if (!rootConfig.contains("model = \"gpt-6-sol\"")
 				|| !"medium".equals(configuredReasoningEffort(rootConfig))) {
-			violations.add("Main must use gpt-5.6-terra with medium reasoning");
+			violations.add("Main must use gpt-6-sol with medium reasoning");
+		}
+		if (!rootConfig.contains("default_subagent_model = \"gpt-6-sol\"")
+				|| !rootConfig.contains("default_subagent_reasoning_effort = \"medium\"")) {
+			violations.add("default subagents must use gpt-6-sol with medium reasoning");
 		}
 		if (!Pattern.compile("(?m)^\\s*max_depth\\s*=\\s*1\\s*$").matcher(rootConfig).find()) {
 			violations.add("root config must set max_depth = 1");
@@ -706,16 +713,18 @@ class RepositoryConventionsTest {
 		}
 
 		var expectedModels = Map.of(
-				"architect", "gpt-5.6-terra",
-				"builder_terra", "gpt-5.6-terra",
-				"builder_luna", "gpt-5.6-luna",
-				"reviewer", "gpt-5.6-terra",
-				"escalation", "gpt-5.6-sol");
+				"architect", "gpt-6-sol",
+				"builder_sol", "gpt-6-sol",
+				"builder_luna", "gpt-6-luna",
+				"builder_luna_max", "gpt-6-luna",
+				"reviewer", "gpt-6-sol",
+				"escalation", "gpt-6-sol");
 		var expectedEfforts = Map.of(
 				"architect", "high",
-				"builder_terra", "medium",
-				"builder_luna", "max",
-				"reviewer", "high",
+				"builder_sol", "medium",
+				"builder_luna", "xhigh",
+				"builder_luna_max", "max",
+				"reviewer", "medium",
 				"escalation", "high");
 		for (var entry : roleConfigurations.entrySet()) {
 			var role = entry.getKey();
@@ -734,10 +743,10 @@ class RepositoryConventionsTest {
 
 		var architect = roleConfigurations.getOrDefault("architect", "");
 		if (!architect.contains("may upgrade it, never downgrade it")
-				|| !architect.contains("In REVIEW") || !architect.contains("do not modify any file")) {
-			violations.add("architect must preserve risk monotonicity and remain read-only in REVIEW");
+				|| !architect.contains("PLAN or DOCS_CLOSE") || architect.contains("In REVIEW")) {
+			violations.add("architect must preserve risk monotonicity and restrict its phases to PLAN or DOCS_CLOSE");
 		}
-		for (var builderRole : List.of("builder_terra", "builder_luna")) {
+		for (var builderRole : List.of("builder_sol", "builder_luna", "builder_luna_max")) {
 			var builder = roleConfigurations.getOrDefault(builderRole, "");
 			if (!containsAll(builder, "repair_round=1", "repair_round=2", "repair_round=3",
 					"third_repair_authorized=true", "Never start a fourth ordinary repair")) {
@@ -749,6 +758,9 @@ class RepositoryConventionsTest {
 			}
 		}
 		var reviewer = roleConfigurations.getOrDefault("reviewer", "");
+		if (!reviewer.contains("every risk level")) {
+			violations.add("reviewer must independently review every risk level");
+		}
 		if (!Pattern.compile("(?m)^\\s*sandbox_mode\\s*=\\s*\"read-only\"\\s*$").matcher(reviewer).find()) {
 			violations.add("reviewer must set sandbox_mode = \"read-only\"");
 		}
