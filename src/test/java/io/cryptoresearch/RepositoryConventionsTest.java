@@ -327,6 +327,44 @@ class RepositoryConventionsTest {
 	}
 
 	@Test
+	void planningRequiresActiveChangeOverlapEvidence() throws IOException {
+		assertPolicyTokens(List.of("docs/AGENT_WORKFLOW_MULTIAGENT.md", ".codex/agents/architect.toml"),
+				List.of("Before PLAN_READY", "openspec list", "same specs", "handoff", "none",
+						"resolve first", "safe to proceed", "blocked"));
+	}
+
+	@Test
+	void testFreezeRequiresVerifiedRedReason() throws IOException {
+		assertPolicyTokens(List.of("docs/TESTING.md", ".codex/agents/builder_sol.toml",
+				".codex/agents/builder_luna_xhigh.toml", ".codex/agents/builder_luna_max.toml"),
+				List.of("before freeze", "each failing test", "requirement/acceptance-criterion",
+						"expected", "actual", "RED evidence", "BUILD_DONE", "wrong target", "wrong assertion",
+						"setup error", "rerun RED", "without reviewer permission", "After freeze", "TEST_SPEC_ERROR"));
+	}
+
+	@Test
+	void lostSessionsPreserveRoleEvidenceAndRepairBudget() throws IOException {
+		assertPolicyTokens(List.of("docs/AGENT_WORKFLOW_MULTIAGENT.md"),
+				List.of("cannot be resumed", "Main starts a fresh session", "same role", "configured model/effort",
+						"contract", "current diff", "RED/GREEN evidence", "open review items", "remaining repair budget",
+						"repair count", "session was replaced", "Session loss alone", "not an owner decision",
+						"Reviewer independence"));
+	}
+
+	private void assertPolicyTokens(List<String> paths, List<String> tokens) throws IOException {
+		var missing = new ArrayList<String>();
+		for (var path : paths) {
+			var content = Files.readString(repositoryRoot.resolve(path)).replace("`", "").replaceAll("\\s+", " ");
+			for (var token : tokens) {
+				if (!content.contains(token)) {
+					missing.add(path + ": " + token);
+				}
+			}
+		}
+		assertThat(missing).as("missing workflow safeguard markers").isEmpty();
+	}
+
+	@Test
 	void archiveClosureMustFollowApprovalGateAndCheckpointInOrder() throws IOException {
 		var stages = List.of("APPROVE", "DOCS_CLOSE", "complete final gate", "checkpoint", "archive", "post-checks", "DONE");
 		var valid = String.join(" → ", stages);

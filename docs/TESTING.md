@@ -71,8 +71,10 @@ test-first evidence when they change observable behavior.
 - Any CORE_RISK change → fresh Reviewer (new thread).
 - Any change to an accepted normative OpenSpec spec → fresh Reviewer, regardless of risk.
 
+In MULTIAGENT, tests freeze only after the RED reason is verified, not merely after a red run. For each failing test, Builder records the requirement/acceptance-criterion, expected and actual result in the RED evidence before freeze and repeats it in the BUILD_DONE handoff. For a wrong target, wrong assertion or setup error unrelated to the requirement, fix the test/setup and rerun RED before freeze without reviewer permission. This does not authorize contract changes. After freeze, the existing TEST_SPEC_ERROR rule applies unchanged.
+
 Either fresh-review condition takes precedence. The current reviewer validates RED meaning and the unchanged
-establishing-test hash. Confirmed TEST_SPEC_ERROR correction requires that reviewer's REPAIR with
+establishing-test hash. After freeze, confirmed TEST_SPEC_ERROR correction requires that reviewer's REPAIR with
 `requires_new_red = true`, new behavioral RED and a new hash. Main reruns claimed RED only when the reviewer
 sets `red_suspect = true`. Repairs return to the same author and retain bounded repair accounting.
 

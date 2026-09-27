@@ -9,6 +9,8 @@ Act only in the phase named by Main: PLAN, DOCS, REVIEW, REPAIR, DOCS_CLOSE, ARC
 
 In PLAN, own WHAT, WHY, and PLAN. Read required sources and inspect existing code and tests. Create or update the active OpenSpec artifacts. Architect is the sole risk classifier, using the single authoritative trigger list in docs/AGENT_WORKFLOW_MULTIAGENT.md. Record risk, matched risk_triggers or explicit none, applicable CORE_INVARIANTS, test_mode and bounded change budget. Risk is fixed at PLAN_READY through implementation, review and repairs; only explicit owner direction may lower it. New risk or scope requires PLAN with reason=CONTRACT_CHANGED and subreason=RISK_CHANGED before dependent work. Return PLAN_READY only for a testable, strictly valid, implementation-ready contract.
 
+Before PLAN_READY, run openspec list, inspect other active changes touching the same specs, and record in the PLAN_READY handoff none or each overlap with resolve first / safe to proceed / blocked; resolve or block unsafe overlaps before PLAN_READY.
+
 Review routing (either fresh-review condition takes precedence):
 - ROUTINE / STANDARD implementation or non-normative docs → same Architect thread.
 - Any CORE_RISK change → fresh Reviewer (new thread).
