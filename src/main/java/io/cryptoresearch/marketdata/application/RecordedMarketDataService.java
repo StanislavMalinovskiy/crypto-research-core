@@ -8,13 +8,22 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Tags;
 import io.cryptoresearch.marketdata.api.MarketDataApi;
 
 @Service
 public class RecordedMarketDataService implements MarketDataApi {
+
+	private static final Logger LOGGER = LoggerFactory.getLogger(RecordedMarketDataService.class);
+	private static final String ITEM_COUNTER = "crypto.research.marketdata.replay.items";
+	private static final String INVOCATION_COUNTER = "crypto.research.marketdata.replay.invocations";
+	private static final String SUMMARY_MESSAGE = "Recorded replay summary";
 
 	private static final Comparator<MarketObservation> SNAPSHOT_ORDER =
 			Comparator.comparing(MarketObservation::identity);
@@ -22,39 +31,89 @@ public class RecordedMarketDataService implements MarketDataApi {
 	private final StoreRawObservationUseCase rawStore;
 	private final NormalizeRecordedSwapUseCase normalizer;
 	private final NormalizedMarketDataStore normalizedStore;
+	private final MeterRegistry meterRegistry;
 
 	public RecordedMarketDataService(
 			StoreRawObservationUseCase rawStore,
 			NormalizeRecordedSwapUseCase normalizer,
-			NormalizedMarketDataStore normalizedStore) {
+			NormalizedMarketDataStore normalizedStore,
+			MeterRegistry meterRegistry) {
 		this.rawStore = rawStore;
 		this.normalizer = normalizer;
 		this.normalizedStore = normalizedStore;
+		this.meterRegistry = meterRegistry;
 	}
 
 	@Override
 	public ReplayResult replay(RecordedDataset dataset) {
 		Objects.requireNonNull(dataset, "dataset must not be null");
 		var results = new ArrayList<ReplayItem>();
-		for (var input : dataset.observations()) {
-			var raw = new RawChainObservation(
-					input.chain(), input.transactionId(), input.eventId(), input.provider(), input.blockPosition(),
-					input.blockHash(), input.sourceEventTime(), input.observedAt(), input.payload(), input.transformationVersion());
-			rawStore.store(raw);
-			var fingerprint = PayloadFingerprint.sha256(input.payload());
-			try {
-				normalizer.normalize(input, fingerprint);
-				results.add(new ReplayItem(
-						new NormalizedSwapIdentity(input.chain(), input.transactionId(), input.eventId()),
-						fingerprint, ReplayStatus.NORMALIZED, java.util.Optional.empty()));
+		var attempted = 0;
+		var normalized = 0;
+		var normalizationFailed = 0;
+		try {
+			for (var input : dataset.observations()) {
+				attempted++;
+				var raw = new RawChainObservation(
+						input.chain(), input.transactionId(), input.eventId(), input.provider(), input.blockPosition(),
+						input.blockHash(), input.sourceEventTime(), input.observedAt(), input.payload(), input.transformationVersion());
+				rawStore.store(raw);
+				var fingerprint = PayloadFingerprint.sha256(input.payload());
+				try {
+					normalizer.normalize(input, fingerprint);
+					results.add(new ReplayItem(
+							new NormalizedSwapIdentity(input.chain(), input.transactionId(), input.eventId()),
+							fingerprint, ReplayStatus.NORMALIZED, java.util.Optional.empty()));
+					normalized++;
+					recordItem("normalized");
+				}
+				catch (IllegalArgumentException | NormalizationConflictException exception) {
+					results.add(new ReplayItem(
+							new NormalizedSwapIdentity(input.chain(), input.transactionId(), input.eventId()),
+							fingerprint, ReplayStatus.NORMALIZATION_FAILED, java.util.Optional.of(exception.getMessage())));
+					normalizationFailed++;
+					recordItem("normalization_failed");
+				}
 			}
-			catch (IllegalArgumentException | NormalizationConflictException exception) {
-				results.add(new ReplayItem(
-						new NormalizedSwapIdentity(input.chain(), input.transactionId(), input.eventId()),
-						fingerprint, ReplayStatus.NORMALIZATION_FAILED, java.util.Optional.of(exception.getMessage())));
-			}
+			var replayResult = new ReplayResult(results);
+			publishSummary("completed", attempted, normalized, normalizationFailed);
+			return replayResult;
 		}
-		return new ReplayResult(results);
+		catch (RuntimeException exception) {
+			publishSummary("aborted", attempted, normalized, normalizationFailed);
+			throw exception;
+		}
+	}
+
+	private void recordItem(String status) {
+		try {
+			meterRegistry.counter(ITEM_COUNTER, Tags.of("status", status)).increment();
+		}
+		catch (RuntimeException ignored) {
+			// Operational telemetry must not change replay behavior.
+		}
+	}
+
+	private void publishSummary(String outcome, int attempted, int normalized, int normalizationFailed) {
+		try {
+			meterRegistry.counter(INVOCATION_COUNTER, Tags.of("outcome", outcome)).increment();
+		}
+		catch (RuntimeException ignored) {
+			// Keep the summary attempt independent from counter availability.
+		}
+		try {
+			LOGGER.atInfo()
+					.addKeyValue("operation", "recorded_replay")
+					.addKeyValue("outcome", outcome)
+					.addKeyValue("attempted", attempted)
+					.addKeyValue("normalized", normalized)
+					.addKeyValue("normalization_failed", normalizationFailed)
+					.addKeyValue("unclassified", attempted - normalized - normalizationFailed)
+					.log(SUMMARY_MESSAGE);
+		}
+		catch (RuntimeException ignored) {
+			// Logging is best-effort and must not replace a replay result or failure.
+		}
 	}
 
 	@Override

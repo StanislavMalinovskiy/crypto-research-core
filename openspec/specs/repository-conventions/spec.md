@@ -441,7 +441,8 @@ The seven repository-local OpenSpec skills SHALL retain their distinct operation
 
 #### Scenario: Archive remains project controlled
 - **WHEN** the archive skill is invoked for this project
-- **THEN** archive mutation SHALL use the authorized OpenSpec CLI operation after the project approval, closure, full gate and checkpoint
+- **THEN** archive mutation SHALL use the authorized OpenSpec CLI operation after the selected workflow's project approval and complete verification gate in both DEFAULT and MULTIAGENT
+- **AND** MULTIAGENT SHALL additionally require its closure procedure and checkpoint, while DEFAULT Control SHALL retain its own existing gate and archive ownership without importing MULTIAGENT protocol
 - **AND** manual directory moves, skip-sync choices or generic confirmation of incomplete work SHALL NOT bypass these requirements
 - **AND** selection, scope, collision, metadata, delta consistency and truthful result safeguards SHALL remain effective.
 
@@ -454,8 +455,8 @@ The seven repository-local OpenSpec skills SHALL retain their distinct operation
 #### Scenario: Explicit authorization survives generic planning text
 - **WHEN** the owner has explicitly authorized a bounded action or a phase transition
 - **THEN** generic propose wording SHALL NOT revoke that authorization or demand a second authorization merely because planning was invoked
-- **AND** propose SHALL perform only planning during its own phase and Main SHALL control any later authorized transition under the selected workflow
-- **AND** a PLAN-only request SHALL stop at PLAN_READY without implementation
+- **AND** propose SHALL perform only planning during its own operation; Main SHALL control later authorized transitions in MULTIAGENT, and Control SHALL own planning and coordinate later authorized Developer implementation in DEFAULT under its existing workflow
+- **AND** a planning-only request SHALL stop without implementation in either mode, at PLAN_READY only in MULTIAGENT and after presenting the planning artifacts in DEFAULT without importing MULTIAGENT phases or statuses
 - **AND** unresolved intent, expanded scope, silence or answers to discovery questions SHALL NOT be treated as new authorization.
 
 ### Requirement: Builder entry-point equivalence

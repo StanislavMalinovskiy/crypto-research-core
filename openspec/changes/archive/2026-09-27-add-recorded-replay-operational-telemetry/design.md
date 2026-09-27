@@ -1,8 +1,8 @@
 ## Context
 
-See [proposal](proposal.md) for motivation and [delta](specs/recorded-market-replay/spec.md) for the complete observable contract. `RecordedMarketDataService.replay` currently stores raw observations, invokes the separately transactional normalizer, and returns ordered `NORMALIZED` / `NORMALIZATION_FAILED` items. Its existing normalization catch handles `IllegalArgumentException` and `NormalizationConflictException`; raw-storage and other runtime failures escape. There is no production telemetry instrumentation. Actuator supplies Micrometer, and SLF4J is already available.
+See [proposal](proposal.md) for motivation and [delta](specs/recorded-market-replay/spec.md) for the complete observable contract. At planning, `RecordedMarketDataService.replay` stored raw observations, invoked the separately transactional normalizer, and returned ordered `NORMALIZED` / `NORMALIZATION_FAILED` items without telemetry instrumentation. Its normalization catch handled `IllegalArgumentException` and `NormalizationConflictException`; raw-storage and other runtime failures escaped. Actuator supplies Micrometer, and SLF4J is already available. The approved implementation preserves that behavior while adding the diagnostics below.
 
-Controlling sources are [F3.4](../../../docs/DELIVERY_PLAN_FIXES.md#f34-минимальный-monitoring), [marketdata](../../../docs/modules/marketdata.md), [Architecture](../../../docs/ARCHITECTURE.md), [Operations](../../../docs/OPERATIONS.md), [Testing](../../../docs/TESTING.md), [Reproducibility](../../../docs/REPRODUCIBILITY.md), accepted `recorded-market-replay`, and ADRs [0005](../../../docs/adr/0005-transactions-and-events.md), [0006](../../../docs/adr/0006-background-work-and-bounded-concurrency.md), [0008](../../../docs/adr/0008-six-module-mvp-topology.md), [0009](../../../docs/adr/0009-research-reproducibility.md). Existing `FirstSignalEvaluationIT` proves raw-first behavior, failure retention and equal replay. There is no nearer module AGENTS.md.
+Controlling sources, expressed as repository-root paths so they remain valid references after archive, are `docs/DELIVERY_PLAN_FIXES.md` section F3.4, `docs/modules/marketdata.md`, `docs/ARCHITECTURE.md`, `docs/OPERATIONS.md`, `docs/TESTING.md`, `docs/REPRODUCIBILITY.md`, accepted `recorded-market-replay`, and ADRs `docs/adr/0005-transactions-and-events.md`, `docs/adr/0006-background-work-and-bounded-concurrency.md`, `docs/adr/0008-six-module-mvp-topology.md`, `docs/adr/0009-research-reproducibility.md`. Existing `FirstSignalEvaluationIT` proves raw-first behavior, failure retention and equal replay. There is no nearer module AGENTS.md.
 
 ## Goals / Non-Goals
 
@@ -20,7 +20,7 @@ Controlling sources are [F3.4](../../../docs/DELIVERY_PLAN_FIXES.md#f34-мини
 
 ## Risk classification and bounded change budget
 
-Product risk is **STANDARD**, `risk_triggers=none`, `test_mode=RED_REQUIRED`. The work needs coordinated counter, summary and failure-path reasoning, rather than a mechanical configuration edit. Classification uses only [the workflow trigger authority](../../../docs/AGENT_WORKFLOW_MULTIAGENT.md#architect-planning-and-risk).
+Product risk is **STANDARD**, `risk_triggers=none`, `test_mode=RED_REQUIRED`. The work needs coordinated counter, summary and failure-path reasoning, rather than a mechanical configuration edit. Classification uses only the workflow trigger authority in `docs/AGENT_WORKFLOW_MULTIAGENT.md`, section Architect planning and risk.
 
 | Trigger | Assessment for this bounded product change |
 |---|---|
@@ -74,3 +74,32 @@ Main's production completion gate remains `pwsh -NoProfile -File .codex/scripts/
 ## Migration Plan
 
 No data or configuration migration. Deploy the ordinary application artifact after verification. Reverting this isolated implementation removes diagnostic emission without changing schema or persisted evidence. Archive the delta only after normal review, documentation closure and the complete gate.
+
+## Implementation and review evidence
+
+On 2026-09-27, Builder completed the R1–R10 implementation and fresh Reviewer returned APPROVE after authorized repair round 1, with `red_suspect=false`. Fixed classification remains STANDARD, `risk_triggers=none`, `test_mode=RED_REQUIRED`. The three changed Java files fit the five-file budget:
+
+- `src/main/java/io/cryptoresearch/marketdata/application/RecordedMarketDataService.java`
+- `src/test/java/io/cryptoresearch/marketdata/application/RecordedMarketDataReplayTelemetryTest.java`
+- `src/test/java/io/cryptoresearch/marketdata/application/RecordedReplayTelemetryFailureIsolationTest.java`
+
+Initial RED executed eight tests with eight behavioral failures. Four later GREEN failures exposed fixture defects; Reviewer confirmed TEST_SPEC_ERROR and authorized correction with `requires_new_red=true`. The corrected tests ran against the baseline production service with an empty production diff: 11 tests executed, ten failed at behavioral assertions, zero errors, and one existing INFO-disabled behavior-preservation test passed. Builder recorded the exact assertion evidence and baseline diff in its handoff, which Reviewer accepted.
+
+New RED and targeted GREEN both used `./mvnw.cmd '-Dtest=*Replay*Telemetry*Test' test`. GREEN passed all 11 tests with zero failures, errors or skips. Surefire reports show four tests in `RecordedMarketDataReplayTelemetryTest` and seven in `RecordedReplayTelemetryFailureIsolationTest`. Frozen SHA-256 hashes were unchanged after new RED and match the documentation-close readback:
+
+| Test file | SHA-256 |
+|---|---|
+| `RecordedMarketDataReplayTelemetryTest.java` | `2A4872A121B5BD10201EFE7D9F89141B7E78F5C2ECDD65F40D801C5CB35A33F0` |
+| `RecordedReplayTelemetryFailureIsolationTest.java` | `1F2C8D5A394D5D1778854B78E0FEB1112F5199FBE3D6024B90A8325CF27DA01A` |
+
+Review accepted R1–R10, actual registry/log assertions, original result and exception preservation, dual metric/log sink failure on abort, applicable invariants, and the bounded diff. Existing tests and fixtures remain unchanged. That approval followed repair round 1; documentation recovery below consumes round 2 without resetting the task-wide budget.
+
+Main's complete gate passed on 2026-09-27: same-host `docker version` and `pwsh -NoProfile -File .codex/scripts/verify-test-integrity.ps1` exited zero; `mvnw.cmd clean verify` passed 92 unit tests and 48 integration tests with zero failures, errors or skips (1:03); `openspec validate --all --strict --no-interactive` passed all 13 items; `openspec doctor` and `git diff --check` passed.
+
+Main recorded the scoped readiness checkpoint `e74bc58974017527f6ab26af53ef7b1c21420bf2` at `refs/codex/checkpoints/replay-telemetry-20260927-ready`, including nine raw-byte paths and successful restoration SHA-256 proof. The real index and owner-staged work remained unchanged. Main refreshed it as final checkpoint `7b42f5cd86f397e76225027554ec3aa18e5b64cc` before the first archive attempt.
+
+The first CLI archive added three requirements successfully, and post-archive strict validation (12 items) and doctor passed. However, `mvnw.cmd -Dtest=RepositoryConventionsTest test` ran 33 tests with one failure in `markdownHasNoExportMarkersOrBrokenRelativeLinks`: moving the change invalidated its external documentation links and two historical-note links to active artifacts. Main restored the five active files and accepted spec from the final checkpoint with exact raw-byte hashes and unchanged index, preserving the failed archive copy outside the repository for recovery.
+
+Documentation repair round 2 replaces this design's fragile external relative links with repository-root text references and replaces the two transient links in `docs/notes/F3_4_BUILDER_EXPERIMENT_PROTOCOL.md` and `docs/notes/F3_4_BUILDER_EXPERIMENT_RESULTS.md` with text navigation paths for after archive. The notes' historical findings, behavior, R1–R10 and frozen tests remain unchanged. The current Reviewer approved repair round 2, including scope, invariants and preserved frozen-test hashes; no third repair was needed. Targeted `mvnw.cmd -Dtest=RepositoryConventionsTest test` passed all 33 tests with zero failures, errors or skips. No ordinary repair passes remain; a third requires current-reviewer authorization. This change does not establish broader F3 monitoring, live-data readiness or authoritative data-quality evidence.
+
+After repair round 2, Main reran the complete gate successfully: integrity preflight and same-host Docker passed; `mvnw.cmd clean verify` passed 92 unit tests and 48 integration tests with zero failures, errors or skips (1:06); strict all-item OpenSpec validation passed 13/13; doctor and diff checks passed. Fresh readiness checkpoint `26df7048add0fd85218685ac442d66f56e9e3dc5` at `refs/codex/checkpoints/replay-telemetry-20260927-ready2` retains 11 raw-byte paths with successful restoration proof and excludes owner-staged changes. HEAD and all seven owner-staged file contents and blobs remained unchanged; Git refreshed index stat metadata without changing staged content. Tasks 3.3 and 3.4 are verified again. Main will refresh the final snapshot after this status-only update; the second archive and its post-checks remain pending.

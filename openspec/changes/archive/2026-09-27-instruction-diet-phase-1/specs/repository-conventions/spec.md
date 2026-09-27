@@ -194,4 +194,3 @@ This change SHALL add only top-level `model_post_turn_compact_threshold_percent 
 - **THEN** it SHALL distinguish on-disk byte estimates, effective configuration support and observed runtime compaction behavior
 - **AND** any observed efficiency result SHALL use available existing evidence and state its workload and limitations
 - **AND** absence of an observed compaction event SHALL NOT be reported as proof of successful runtime tuning.
-

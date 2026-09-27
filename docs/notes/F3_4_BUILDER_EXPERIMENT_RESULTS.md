@@ -1,6 +1,6 @@
 # F3.4 Builder experiment results
 
-Status: **four first submissions and four first assessments complete; production BLOCKED / OWNER_DECISION**. This is a non-normative report under the [frozen experiment protocol](F3_4_BUILDER_EXPERIMENT_PROTOCOL.md). It records existing judgments without rescoring or changing the rubric. No replacement assessments, production adoption, full production gate, archive or commit occurred. The [active product change](../../openspec/changes/add-recorded-replay-operational-telemetry/tasks.md) remains 0/7 tasks complete.
+Status: **four first submissions and four first assessments complete; production BLOCKED / OWNER_DECISION**. This is a non-normative report under the [frozen experiment protocol](F3_4_BUILDER_EXPERIMENT_PROTOCOL.md). It records existing judgments without rescoring or changing the rubric. No replacement assessments, production adoption, full production gate, archive or commit occurred. The active product change (task navigation after archive: `openspec/changes/archive/2026-09-27-add-recorded-replay-operational-telemetry/tasks.md`) remains 0/7 tasks complete.
 
 The external [owner-facing results report](C:/bench/f3_4/RESULTS.md) contains the Russian-language handoff and retained artifact index.
 
