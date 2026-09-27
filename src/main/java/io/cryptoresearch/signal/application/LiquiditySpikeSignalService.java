@@ -3,6 +3,7 @@ package io.cryptoresearch.signal.application;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
+import java.time.DateTimeException;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Objects;
@@ -23,6 +24,7 @@ import io.cryptoresearch.signal.infrastructure.persistence.JdbcSignalPersistence
 public class LiquiditySpikeSignalService implements SignalApi {
 
 	private static final String FAMILY = "LIQUIDITY_SPIKE";
+	private static final String DETECTOR_VERSION = "liquidity-spike-v2";
 	private static final BigDecimal RELATIVE_MULTIPLIER = new BigDecimal("1.50");
 	private static final BigDecimal ABSOLUTE_INCREASE = new BigDecimal("10000.00000000");
 
@@ -46,12 +48,23 @@ public class LiquiditySpikeSignalService implements SignalApi {
 	public DetectionResult detect(DetectionRequest request) {
 		request = normalize(request);
 		validate(request);
+		Instant baselineFrom;
+		Instant currentFrom;
+		try {
+			baselineFrom = request.decisionCutoff().minusSeconds(3900);
+			currentFrom = request.decisionCutoff().minusSeconds(60);
+		}
+		catch (DateTimeException | ArithmeticException exception) {
+			throw new IllegalArgumentException("observation window bounds are not representable", exception);
+		}
 		var dataset = Optional.of(request.datasetFingerprint());
 		var baseline = latest(marketData.observations(new PointInTimeQuery(
-				request.asset(), Instant.EPOCH, request.windowStart(), request.decisionCutoff(), dataset)));
+				request.asset(), baselineFrom, request.windowStart(), request.decisionCutoff(), dataset)));
 		var current = latest(marketData.observations(new PointInTimeQuery(
-				request.asset(), request.windowStart(), request.decisionCutoff(), request.decisionCutoff(), dataset)));
-		if (baseline.isEmpty() || current.isEmpty() || baseline.get().identity().equals(current.get().identity())) {
+				request.asset(), currentFrom, request.decisionCutoff(), request.decisionCutoff(), dataset)));
+		if (baseline.isEmpty() || current.isEmpty()
+				|| baseline.get().identity().equals(current.get().identity())
+				|| baseline.get().observedAt().equals(current.get().observedAt())) {
 			return new DetectionResult(Optional.empty(), Optional.empty());
 		}
 		if (!meetsThresholds(baseline.get().liquidityUsd(), current.get().liquidityUsd())) {
@@ -163,8 +176,18 @@ public class LiquiditySpikeSignalService implements SignalApi {
 		Objects.requireNonNull(request.windowStart(), "windowStart must not be null");
 		Objects.requireNonNull(request.decisionCutoff(), "decisionCutoff must not be null");
 		Objects.requireNonNull(request.riskFacts(), "riskFacts must not be null");
-		if (request.windowStart().isAfter(request.decisionCutoff())) {
-			throw new IllegalArgumentException("windowStart must not be after decisionCutoff");
+		if (!DETECTOR_VERSION.equals(request.detectorVersion())) {
+			throw new IllegalArgumentException("unsupported liquidity spike detector version");
+		}
+		Instant target;
+		try {
+			target = request.decisionCutoff().minusSeconds(3600);
+		}
+		catch (DateTimeException | ArithmeticException exception) {
+			throw new IllegalArgumentException("one-hour target is not representable", exception);
+		}
+		if (!request.windowStart().equals(target)) {
+			throw new IllegalArgumentException("windowStart must equal the one-hour target");
 		}
 		for (var value : List.of(request.datasetFingerprint(), request.configurationFingerprint())) {
 			if (value == null || !value.matches("sha256:[0-9a-f]{64}")) {

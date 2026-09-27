@@ -180,7 +180,7 @@ class FirstSignalEvaluationIT {
 		var noEvidence = signal.detect(new DetectionRequest(
 				snapshot.fingerprint(), new AssetId(ChainId.SOLANA_MAINNET, "AbsentAsset11111111111111111111111111111111"),
 				fixture.decisionCutoff().minusSeconds(3600), fixture.decisionCutoff(), fixture.riskFacts(),
-				"liquidity-spike-v1", "liquidity-score-v1", "sha256:" + "4".repeat(64)));
+				"liquidity-spike-v2", "liquidity-score-v1", "sha256:" + "4".repeat(64)));
 		assertThat(noEvidence.candidate()).isEmpty();
 		assertThat(noEvidence.acceptedSignal()).isEmpty();
 
@@ -280,7 +280,7 @@ class FirstSignalEvaluationIT {
 				snapshot.fingerprint(), fixture.asset(), cutoff.minusSeconds(3600), cutoff,
 				new RiskFacts(fixture.asset(), cutoff, 0, AssetLifecycle.DISCOVERY,
 						new BigDecimal("80000.00000000"), "first-slice-risk-v1"),
-				"liquidity-spike-v1", "liquidity-score-v1", fixture.configurationFingerprint());
+				"liquidity-spike-v2", "liquidity-score-v1", fixture.configurationFingerprint());
 		var captured = new AtomicReference<SignalApi.DetectionResult>();
 
 		assertThatCode(() -> captured.set(signal.detect(request)))
@@ -347,7 +347,7 @@ class FirstSignalEvaluationIT {
 				fixture.decisionCutoff().minusSeconds(3600),
 				fixture.decisionCutoff(),
 				riskFacts,
-				"liquidity-spike-v1",
+				"liquidity-spike-v2",
 				"liquidity-score-v1",
 				configurationFingerprint);
 	}
