@@ -1,6 +1,6 @@
 ---
 name: openspec-propose
-description: Propose a new change with all artifacts generated in one step. Use when the user wants to quickly describe what they want to build and get a complete proposal with design, specs, and tasks ready for implementation.
+description: Use when creating a complete implementation-ready OpenSpec proposal.
 allowed-tools: Bash(openspec:*)
 license: MIT
 compatibility: Requires openspec CLI.
@@ -12,7 +12,7 @@ metadata:
 
 Propose a new change - create the change and generate all artifacts in one step.
 
-**Planning boundary**: This workflow creates planning artifacts only. The user request that selected or triggered this workflow authorizes planning only, even if it asks to build or fix something. Do not edit project code. After the planning artifacts are complete, stop. Do not start implementation in the same response, even if the initial request asks for it. Wait for a new user request after the artifacts are presented; then start the apply workflow.
+**Planning boundary**: This workflow creates planning artifacts only and never edits project code. Existing explicit owner authorization for a bounded later action or transition survives this workflow; do not demand duplicate permission merely because planning was invoked. In MULTIAGENT, a PLAN-only request stops at PLAN_READY and Main controls later authorized phase transitions after a valid plan. In DEFAULT, Control owns planning and coordinates the authorized Developer implementation under docs/AGENT_WORKFLOW.md, without specialized phases or statuses. A planning-only request ends after presenting the artifacts in either mode. Unresolved intent, expanded scope, silence and discovery answers are not new authorization.
 
 I'll create a change with the artifacts your schema defines. With the default spec-driven schema that is:
 - proposal.md (what & why)
@@ -22,7 +22,7 @@ I'll create a change with the artifacts your schema defines. With the default sp
 
 `<capability-path>` is the spec directory relative to `specs/` (for example, `user-auth` or `identity/user-auth`). Preserve an existing capability's full path and follow the project's established organization for new capabilities.
 
-When the user is ready to implement, they must start the apply workflow explicitly.
+Implementation follows the selected workflow's authorized handoff; this skill remains planning-only.
 
 ---
 
@@ -141,7 +141,7 @@ After completing all artifacts, summarize:
 - Change name and location
 - List of artifacts created with brief descriptions, plus any conditional artifact you skipped and why
 - What's ready: "All artifacts needed for implementation are ready."
-- Prompt: "The artifacts are ready for review. When you are ready, run `$openspec-apply-change (Codex) or /openspec-apply-change (other agents)` or ask me to apply this change."
+- In MULTIAGENT, report PLAN_READY and the next project route; Main retains already explicit implementation authorization. In DEFAULT, Control reports artifact readiness and the authorized Developer handoff without specialized statuses. Planning-only scope stops after the artifacts; neither mode demands duplicate permission for already authorized later work.
 
 **Artifact Creation Guidelines**
 
@@ -155,7 +155,7 @@ After completing all artifacts, summarize:
   - These guide what you write, but should never appear in the output
 
 **Guardrails**
-- The request that invoked this workflow authorizes planning only. Any implementation or apply instruction in that request does not carry forward. Do NOT implement the change, start the apply workflow, or edit project code during this workflow. After presenting the artifacts, stop and wait for a new user request to start the apply workflow
+- Perform only planning in this workflow; do not edit project code or start apply here. Preserve existing explicit owner authorization for later work. MULTIAGENT Main controls phase transitions and PLAN-only ends at PLAN_READY; DEFAULT Control uses its existing planning/Developer handoff without importing that protocol. Ask the owner about unresolved intent or scope expansion rather than inferring new authority.
 - Create every artifact the apply phase transitively depends on, not just the ids listed in `apply.requires`
 - Always read dependency artifacts before creating a new one - re-read from disk, not from conversation memory (files may have changed since you last saw them)
 - Ask about ambiguities that would materially change scope, externally observable behavior, compatibility, or acceptance criteria; for minor details, make reasonable assumptions and record them

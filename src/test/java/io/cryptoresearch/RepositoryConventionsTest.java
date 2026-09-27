@@ -64,6 +64,8 @@ class RepositoryConventionsTest {
 			"includeTags", "excludeTags", "test", "itTest", "it.test", "suiteXmlFiles");
 	private static final Set<String> MAVEN_SKIP_ELEMENTS = Set.of(
 			"skip", "skipTests", "skipITs", "maven.test.skip");
+	private static final List<String> BUILDER_ROLES = List.of("builder_sol", "builder_luna_xhigh", "builder_luna_max");
+	private static final String CLOSURE_PATH = "docs/agents/close-archive.md";
 
 	private final Path repositoryRoot = Path.of("").toAbsolutePath().normalize();
 	private final Path moduleRoot = repositoryRoot.resolve("src/main/java/io/cryptoresearch");
@@ -172,15 +174,13 @@ class RepositoryConventionsTest {
 		var valid = "APPROVE\nDOCS_CLOSE\ncomplete final gate\ntwo ordinary repair passes\nthird repair\nSol High\n"
 				+ "implementation or test issue\ndocumentation or contract issue\ninfrastructure issue";
 		var invalid = "DOCS_CLOSE\nAPPROVE\ncomplete final gate";
-		var multiagentWorkflow = repositoryRoot.resolve("docs/AGENT_WORKFLOW_MULTIAGENT.md");
 
 		assertThat(workflowLifecycleViolations(valid)).isEmpty();
 		assertThat(workflowLifecycleViolations(invalid))
 				.contains("workflow must close documentation after APPROVE and before the final gate",
 						"workflow must bound repair to two ordinary passes plus one reviewer-authorized pass",
 						"workflow must route final-gate failures by ownership");
-		assertThat(workflowLifecycleViolations(
-				Files.exists(multiagentWorkflow) ? Files.readString(multiagentWorkflow) : "")).isEmpty();
+		assertThat(workflowLifecycleViolations(reachableWorkflow())).isEmpty();
 	}
 
 	@Test
@@ -260,8 +260,7 @@ class RepositoryConventionsTest {
 				Files.readString(repositoryRoot.resolve(".codex/config.toml")),
 				roleConfigurations,
 				Files.readString(repositoryRoot.resolve("AGENTS.md")),
-				Files.exists(repositoryRoot.resolve("docs/AGENT_WORKFLOW_MULTIAGENT.md"))
-						? Files.readString(repositoryRoot.resolve("docs/AGENT_WORKFLOW_MULTIAGENT.md")) : "");
+				reachableWorkflow());
 
 		assertThat(violations).isEmpty();
 		assertThat(repositoryRoot.resolve(".codex/agents/builder_terra.toml")).doesNotExist();
@@ -286,6 +285,145 @@ class RepositoryConventionsTest {
 						+ "[APPROVE, BLOCKED, BUILD_DONE]");
 	}
 
+	@Test
+	void builderBodiesIgnoreOnlyLineEndingsAndMetadata() {
+		var roles = new LinkedHashMap<String, String>();
+		for (var role : BUILDER_ROLES) {
+			roles.put(role, "name = \"" + role + "\"\ndeveloper_instructions = \"\"\"\nKeep every safeguard.\n\"\"\"\n");
+		}
+		assertThat(builderBodyViolations(roles)).isEmpty();
+		for (var role : BUILDER_ROLES) {
+			var changed = new LinkedHashMap<>(roles);
+			changed.put(role, roles.get(role).replace("name =", "description =").replace("\n", "\r\n"));
+			assertThat(builderBodyViolations(changed)).as("metadata and line endings: %s", role).isEmpty();
+			for (var replacement : List.of("Drop every safeguard.", "Keep  every safeguard.", "")) {
+				changed.put(role, roles.get(role).replace("Keep every safeguard.", replacement));
+				assertThat(builderBodyViolations(changed)).as("body drift: %s", role).isNotEmpty();
+			}
+			changed.put(role, "name = \"" + role + "\"");
+			assertThat(builderBodyViolations(changed)).as("missing body: %s", role).isNotEmpty();
+			changed.remove(role);
+			assertThat(builderBodyViolations(changed)).as("missing role: %s", role).isNotEmpty();
+		}
+	}
+
+	private List<String> builderBodyViolations(Map<String, String> roles) {
+		var violations = new ArrayList<String>();
+		var bodies = new ArrayList<String>();
+		var pattern = Pattern.compile("(?ms)^developer_instructions\\s*=\\s*\"\"\"(.*?)\"\"\"");
+		for (var role : BUILDER_ROLES) {
+			var matcher = pattern.matcher(roles.getOrDefault(role, "").replace("\r\n", "\n").replace('\r', '\n'));
+			if (!matcher.find() || matcher.group(1).isBlank()) {
+				violations.add(role + " must have a nonempty developer_instructions body");
+			} else {
+				bodies.add(matcher.group(1));
+			}
+		}
+		if (bodies.stream().distinct().count() > 1) {
+			violations.add("Builder instruction bodies must be equal, normalizing only line endings");
+		}
+		return violations;
+	}
+
+	@Test
+	void instructionRoutingIsConditional() throws IOException {
+		var root = Files.readString(repositoryRoot.resolve("AGENTS.md"));
+		assertThat(summaryReadingIsConditional(root))
+				.as("PROJECT_SUMMARY.md must be conditional on onboarding, product orientation or task relevance")
+				.isTrue();
+		assertThat(root.lines().count()).as("root router line budget").isLessThanOrEqualTo(150);
+		var workflow = Files.readString(repositoryRoot.resolve("docs/AGENT_WORKFLOW_MULTIAGENT.md"));
+		assertThat(closureRoutingViolations(workflow, reachableClosure(workflow))).isEmpty();
+		assertThat(Files.readString(repositoryRoot.resolve("docs/AGENT_WORKFLOW.md"))).doesNotContain("close-archive.md");
+	}
+
+	@Test
+	void conditionalClosureGuardsRejectBrokenRoutesAndSafeguards() {
+		var workflow = """
+				Load [closure](agents/close-archive.md) only before DOCS_CLOSE, complete final gate, archive,
+				archive recovery or post-archive work. Ordinary PLAN, BUILD and REVIEW do not load it.
+				## End-to-end flow
+				APPROVE → Architect DOCS_CLOSE → Main complete final gate → Main checkpoint → Architect CLI archive → Main post-checks → Main DONE
+				""";
+		var closure = String.join("\n", CLOSURE_POLICY_CLAUSES) + "\n" + """
+				Main runs after DOCS_CLOSE:
+				pwsh -NoProfile -File .codex/scripts/verify-test-integrity.ps1
+				mvnw.cmd clean verify
+				openspec validate --all --strict --no-interactive
+				openspec doctor
+				git diff --check
+				Never narrow or skip a required check.
+				""";
+		assertThat(closureRoutingViolations(workflow, closure)).isEmpty();
+		assertThat(closureRoutingViolations(workflow.replace("agents/close-archive.md", "elsewhere.md"), closure))
+				.contains("mandatory conditional closure route is missing");
+		assertThat(closureRoutingViolations(workflow.replace("Load [closure]", "Optional reference [closure]"), closure))
+				.contains("mandatory conditional closure route is missing");
+		assertThat(closureRoutingViolations(workflow, "")).contains("closure target is missing or empty");
+		assertThat(closureRoutingViolations(workflow.replace("only before", "at task start before"), closure))
+				.contains("mandatory conditional closure route is missing");
+		assertThat(closureRoutingViolations(workflow + "\nAlways read agents/close-archive.md before PLAN, BUILD and REVIEW.\n", closure))
+				.contains("ordinary phases must not eagerly load closure");
+		for (var clause : CLOSURE_POLICY_CLAUSES) {
+			assertThat(closureRoutingViolations(workflow, closure.replace(clause, "omitted")))
+					.as("relocated safeguard: %s", clause).contains(clause);
+		}
+		assertThat(closureRoutingViolations(workflow.replace("Main checkpoint → Architect CLI archive", "Architect CLI archive → Main checkpoint"), closure))
+				.contains("closure order must preserve approval, documentation, gate, checkpoint, archive and post-checks");
+		for (var command : List.of("verify-test-integrity.ps1", "mvnw.cmd clean verify", "openspec validate --all --strict --no-interactive", "openspec doctor", "git diff --check")) {
+			assertThat(closureRoutingViolations(workflow, closure.replace(command, "omitted"))).isNotEmpty();
+		}
+		assertThat(closureRoutingViolations(workflow, closure.replace("mvnw.cmd clean verify", "mvnw.cmd -DskipTests clean verify"))).isNotEmpty();
+		assertThat(closureRoutingViolations(workflow, closure.replace("mvnw.cmd clean verify", "mvnw.cmd -Dtest=OnlyThisTest clean verify"))).isNotEmpty();
+		assertThat(summaryReadingIsConditional("Read AGENTS.md and docs/PROJECT_SUMMARY.md before changes.")).isFalse();
+		assertThat(summaryReadingIsConditional("Read docs/PROJECT_SUMMARY.md only for onboarding, product orientation or task relevance.")).isTrue();
+	}
+
+	private boolean summaryReadingIsConditional(String root) {
+		return root.lines().anyMatch(line -> line.contains("PROJECT_SUMMARY.md")
+				&& Pattern.compile("(?i)\\b(only|optional)\\b").matcher(line).find());
+	}
+
+	private boolean hasConditionalClosureRoute(String workflow) {
+		return Stream.of(workflow.replace("\r\n", "\n").split("\\n\\s*\\n"))
+				.anyMatch(paragraph -> paragraph.contains("agents/close-archive.md")
+						&& containsAll(paragraph, "DOCS_CLOSE", "archive", "before")
+						&& Pattern.compile("(?i)\\b(load|read)\\b")
+								.matcher(paragraph.substring(0, paragraph.indexOf("agents/close-archive.md"))).find()
+						&& Pattern.compile("(?i)\\bonly\\b").matcher(paragraph).find());
+	}
+
+	private List<String> closureRoutingViolations(String workflow, String closure) {
+		var violations = new ArrayList<String>();
+		if (!hasConditionalClosureRoute(workflow)) { violations.add("mandatory conditional closure route is missing"); }
+		if (closure.isBlank()) { violations.add("closure target is missing or empty"); }
+		if (workflow.lines().anyMatch(line -> line.contains("close-archive.md")
+				&& Pattern.compile("(?i)always|at task start|before (?:ordinary )?PLAN").matcher(line).find())) {
+			violations.add("ordinary phases must not eagerly load closure");
+		}
+		violations.addAll(missingClauses(closure, CLOSURE_POLICY_CLAUSES));
+		var flowStart = workflow.indexOf("## End-to-end flow");
+		if (!orderedClosure(flowStart < 0 ? workflow : workflow.substring(flowStart),
+				List.of("APPROVE", "DOCS_CLOSE", "complete final gate", "checkpoint", "archive", "post-checks", "DONE"))) {
+			violations.add("closure order must preserve approval, documentation, gate, checkpoint, archive and post-checks");
+		}
+		if (!hasOrderedPreflight(closure) || !containsAll(closure, "mvnw.cmd clean verify",
+				"openspec validate --all --strict --no-interactive", "openspec doctor", "git diff --check")) {
+			violations.add("closure must retain the complete ordered gate without narrowing or skipping checks");
+		}
+		return violations;
+	}
+
+	private String reachableClosure(String workflow) throws IOException {
+		var closure = repositoryRoot.resolve(CLOSURE_PATH);
+		return hasConditionalClosureRoute(workflow) && Files.isRegularFile(closure) ? Files.readString(closure) : "";
+	}
+
+	private String reachableWorkflow() throws IOException {
+		var workflow = Files.readString(repositoryRoot.resolve("docs/AGENT_WORKFLOW_MULTIAGENT.md"));
+		return workflow + "\n" + reachableClosure(workflow);
+	}
+
 	private static final List<String> LEAN_POLICY_CLAUSES = List.of(
 			"Architect is the sole risk classifier",
 			"risk_triggers = matched triggers | none",
@@ -304,7 +442,9 @@ class RepositoryConventionsTest {
 			"verdict = REPAIR | REPLAN | APPROVE | OWNER_DECISION",
 			"REPLAN → ESCALATE", "OWNER_DECISION → BLOCKED",
 			"Only Architect may issue a new PLAN_READY",
-			"Owner intent or scope ambiguity goes directly to the owner",
+			"Owner intent or scope ambiguity goes directly to the owner");
+	private static final List<String> CLOSURE_POLICY_CLAUSES = List.of(
+			"Any nonzero required check blocks completion", "never narrow or skip it",
 			"pre-archive", "temporary Git index", "raw-byte", "hash-object -w --no-filters",
 			"post-archive", "exact paths", "unchanged real index",
 			"Never reset-hard", "whole-tree checkout", "git clean", "stash owner work",
@@ -312,8 +452,9 @@ class RepositoryConventionsTest {
 
 	@Test
 	void leanWorkflowPolicyCoversRiskReviewRepairEscalationAndRecovery() throws IOException {
-		assertThat(leanPolicyViolations(Files.readString(repositoryRoot.resolve("docs/AGENT_WORKFLOW_MULTIAGENT.md"))))
-				.isEmpty();
+		var workflow = Files.readString(repositoryRoot.resolve("docs/AGENT_WORKFLOW_MULTIAGENT.md"));
+		assertThat(leanPolicyViolations(workflow)).isEmpty();
+		assertThat(missingClauses(reachableClosure(workflow), CLOSURE_POLICY_CLAUSES)).isEmpty();
 	}
 
 	@Test
@@ -425,8 +566,12 @@ class RepositoryConventionsTest {
 	}
 
 	private List<String> leanPolicyViolations(String guidance) {
+		return missingClauses(guidance, LEAN_POLICY_CLAUSES);
+	}
+
+	private List<String> missingClauses(String guidance, List<String> clauses) {
 		var normalized = guidance.replace("`", "").replaceAll("\\s+", " ");
-		return LEAN_POLICY_CLAUSES.stream().filter(clause -> !normalized.contains(clause)).toList();
+		return clauses.stream().filter(clause -> !normalized.contains(clause)).toList();
 	}
 
 	private List<String> obsoleteRoutingViolations(Map<String, String> sources) {
@@ -855,6 +1000,7 @@ class RepositoryConventionsTest {
 			String workflow) {
 		var violations = new ArrayList<String>();
 		checkReasoningEffort("root", rootConfig, violations);
+		violations.addAll(builderBodyViolations(roleConfigurations));
 		if (!rootConfig.contains("model = \"gpt-6-sol\"")
 				|| !"medium".equals(configuredReasoningEffort(rootConfig))) {
 			violations.add("Main must use gpt-6-sol with medium reasoning");
@@ -951,8 +1097,8 @@ class RepositoryConventionsTest {
 				"two ordinary repair passes", "third repair", "red_suspect = true")) {
 			violations.add("workflow must preserve the lean state, repair, and RED rerun contract");
 		}
-		if (!hasOrderedPreflight(rootGuide) || !hasOrderedPreflight(workflow)) {
-			violations.add("root and workflow guidance must run verify-test-integrity.ps1 before clean verify");
+		if (!rootGuide.contains("docs/AGENT_WORKFLOW_MULTIAGENT.md") || !hasOrderedPreflight(workflow)) {
+			violations.add("root must route to workflow requiring verify-test-integrity.ps1 before clean verify");
 		}
 		violations.addAll(workflowLifecycleViolations(workflow));
 

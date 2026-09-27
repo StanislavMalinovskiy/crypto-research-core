@@ -41,6 +41,8 @@ Do not make pure domain tests start Spring or Docker. Do not replace PostgreSQL-
 - `mvnw.cmd -DskipITs clean verify` is the fast local structural gate.
 - `mvnw.cmd clean verify` is the complete gate and requires Docker.
 - CI publishes Surefire and Failsafe reports even when verification fails.
+- GitHub Actions uses the stable `quality-gate` job and the same required local contract. Repository files cannot enable branch protection; after an authorized push and first successful remote run, an administrator must require `quality-gate` in the primary-branch ruleset.
+- Every architecture-affecting change keeps `ApplicationModules.verify()` green.
 
 ### Windows Codex Docker access
 
@@ -54,6 +56,8 @@ Docker availability blocker. The context retry is infrastructure handling, not a
 Every change adds tests with its behavior. A test checkbox is complete only after the relevant command has actually passed; an unavailable Docker engine must be reported rather than hidden.
 
 ## Agent-assisted development
+
+Review correctness, point-in-time integrity, idempotency and measurement bias before style. Verify transaction ownership, failure behavior, migration safety and query-backed indexes. Reject hidden cross-module coupling, shared persistence models and bypasses of public APIs; reject future-data leakage, silent outcome loss, fabricated provider fallback data and unbounded concurrency. New dependencies and architectural boundary changes are blocking unless OpenSpec and an ADR explicitly approve them. Require reproducible tests and concrete verification output; comments and naming must be in English.
 
 The selected workflow mode does not change test levels or the complete Maven lifecycle. Fail-closed `DEFAULT` uses top-level Control and Developer sessions; manually enabled `MULTIAGENT` uses the separate supervised role protocol.
 
@@ -78,12 +82,7 @@ establishing-test hash. After freeze, confirmed TEST_SPEC_ERROR correction requi
 `requires_new_red = true`, new behavioral RED and a new hash. Main reruns claimed RED only when the reviewer
 sets `red_suspect = true`. Repairs return to the same author and retain bounded repair accounting.
 
-After approval, Architect closes non-semantic documentation and tasks; Main independently runs the complete
-gate. Main then records a scoped pre-archive checkpoint and Architect archives. Main runs strict all-item
-validation, doctor, targeted repository conventions and diff checking after archive. Failure uses the
-[scoped restoration protocol](AGENT_WORKFLOW_MULTIAGENT.md#checkpoint-archive-and-recovery) before correction,
-full verification and archive again. Accepted specs need not match proposed behavior before archive; the
-active delta records that migration.
+In MULTIAGENT, read [the closure procedure](agents/close-archive.md) only before approved DOCS_CLOSE, the complete final gate, archive, archive recovery or post-archive work. It retains Architect documentation ownership, Main's gate and checkpoint, CLI archive, post-checks and scoped restoration. Ordinary PLAN, BUILD and REVIEW use the selected workflow and this testing contract. DEFAULT retains its independent [complete local gate](AGENT_WORKFLOW.md#complete-local-gate). Accepted specs need not match proposed behavior before archive; the active delta records that migration.
 
 ## Reproducibility tests
 

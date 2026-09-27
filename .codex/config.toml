@@ -1,5 +1,6 @@
 model = "gpt-6-sol"
 model_reasoning_effort = "medium"
+model_post_turn_compact_threshold_percent = 60
 
 # Exact boolean true manually selects native Codex MULTIAGENT for a new task.
 # False, missing or invalid selects fail-closed DEFAULT; agents never edit this switch.

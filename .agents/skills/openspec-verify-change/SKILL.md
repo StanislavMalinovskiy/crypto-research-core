@@ -1,6 +1,6 @@
 ---
 name: openspec-verify-change
-description: Verify implementation matches change artifacts. Use when the user wants to validate that implementation is complete, correct, and coherent before archiving.
+description: Use when checking implementation against an OpenSpec change before closure.
 allowed-tools: Bash(openspec:*)
 license: MIT
 compatibility: Requires openspec CLI.
@@ -10,7 +10,7 @@ metadata:
   generatedBy: "1.13.0"
 ---
 
-Verify that an implementation matches the change artifacts (specs, tasks, design).
+Verify that an implementation matches the change artifacts (specs, tasks, design). Follow the selected project review ownership and evidence contract. This skill neither authorizes archive nor replaces required review, documentation or complete gates. MULTIAGENT also requires its DOCS_CLOSE/checkpoint protocol; DEFAULT Control follows docs/AGENT_WORKFLOW.md without importing specialized roles, phases, statuses or closure procedures.
 
 **Store selection:** If the user names a store (a store is a standalone OpenSpec repo registered on this machine) or the work lives in one, run `openspec store list --json` to discover registered store ids, then pass `--store <id>` on the commands that read or write specs and changes (`new change`, `status`, `instructions`, `list`, `show`, `validate`, `archive`, `doctor`, `context`, `schemas`, `view`). Once selected, treat `--store <id>` as sticky for the rest of the workflow. Every unscoped example of those commands below is shorthand: before running it, append the flag. For example, run `openspec status --change "<name>" --json --store "<id>"`, not the unscoped form shown below. Other commands do not take the flag. Hints printed by commands already carry the flag; keep it on follow-ups. Without a store, commands act on the nearest local `openspec/` root.
 
@@ -64,8 +64,8 @@ Verify that an implementation matches the change artifacts (specs, tasks, design
    - Parse checkboxes: `- [ ]` (incomplete) vs `- [x]` (complete)
    - Count complete vs total tasks
    - If incomplete tasks exist:
-     - Add CRITICAL issue for each incomplete task
-     - Recommendation: "Complete task: <description>" or "Mark as done if already implemented"
+     - Distinguish missing implementation/evidence from pending final-documentation bookkeeping. Missing required behavior or evidence is CRITICAL; an unchecked but verified task awaiting authorized documentation closure is reported as pending status.
+     - Recommendation: complete missing behavior/evidence. In MULTIAGENT route verified checkbox updates to Architect DOCS_CLOSE after APPROVE, never Builder. In DEFAULT route them to Control under its existing final-documentation ownership, without specialized phases or statuses.
 
    **Spec Coverage**:
    - If delta specs exist in `contextFiles.specs`:
@@ -93,7 +93,7 @@ Verify that an implementation matches the change artifacts (specs, tasks, design
      - Check if conditions are handled in code
      - Check if tests exist covering the scenario
      - If scenario appears uncovered:
-       - Add WARNING: "Scenario not covered: <scenario name>"
+       - Missing required scenario evidence is blocking; report CRITICAL: "Required scenario evidence missing: <scenario name>"
        - Recommendation: "Add test or implementation for scenario: <description>"
 
 7. **Verify Coherence**
@@ -137,7 +137,7 @@ Verify that an implementation matches the change artifacts (specs, tasks, design
 
    2. **WARNING** (Should fix):
       - Spec/design divergences
-      - Missing scenario coverage
+      - Non-blocking coverage improvements only; required scenario evidence belongs under CRITICAL
       - Each with specific recommendation
 
    3. **SUGGESTION** (Nice to fix):
@@ -146,16 +146,15 @@ Verify that an implementation matches the change artifacts (specs, tasks, design
       - Each with specific recommendation
 
    **Final Assessment**:
-   - If CRITICAL issues: "X critical issue(s) found. Fix before archiving."
-   - If only warnings: "No critical issues. Y warning(s) to consider. Ready for archive (with noted improvements)."
-   - If all clear: "All checks passed. Ready for archive."
+   - Report actionable findings and the applicable project review verdict or verification status, including unperformed checks. Never infer archive authorization from warnings-only or all-clear results.
+   - Missing required behavior, missing required scenario evidence or a failed required check blocks approval/completion; warnings cannot bypass that boundary. MULTIAGENT retains its review, DOCS_CLOSE, full gate and checkpoint; DEFAULT retains Control's review, final documentation and complete gate without that specialized protocol.
 
 **Verification Heuristics**
 
 - **Completeness**: Focus on objective checklist items (checkboxes, requirements list)
 - **Correctness**: Use keyword search, file path analysis, reasonable inference - don't require perfect certainty
 - **Coherence**: Look for glaring inconsistencies, don't nitpick style
-- **False Positives**: When uncertain, prefer SUGGESTION over WARNING, WARNING over CRITICAL
+- **False Positives**: Use lower severity for uncertain optional improvements, but uncertainty never establishes required coverage or downgrades a missing required behavior, scenario evidence or failed check. Resolve that evidence before approval.
 - **Actionability**: Every issue must have a specific recommendation with file/line references where applicable
 
 **Graceful Degradation**

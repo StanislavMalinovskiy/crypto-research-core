@@ -24,8 +24,9 @@ This document records allowed technologies and their decision state. Product seq
 
 ### Java 25 model
 
+- Prefer immutable objects, constructor injection, small cohesive classes and explicit exception handling. Use `Optional` where absence is expected.
 - Use records for immutable data carriers and value objects.
-- Use sealed interfaces only for genuinely closed domain hierarchies.
+- Use sealed types only for genuinely closed hierarchies.
 - Use virtual threads for suitable blocking I/O, with explicit admission and resource limits.
 - Maven compilation, tests and `spring-boot:run` use stable Java 25 without `--enable-preview`.
 - A preview feature requires an approved OpenSpec change and superseding ADR naming the exact JEP, need, internal boundary, runtime flag and JDK-upgrade verification.
@@ -35,7 +36,7 @@ This document records allowed technologies and their decision state. Product seq
 - Module contracts return ordinary values, collections and domain types, not reactive or provider-specific async types.
 - WebSocket callbacks may exist only inside transport adapters and must hand work to bounded processing.
 - CPU-bound work uses bounded platform-thread executors.
-- JPA/Hibernate ORM, Spring WebFlux, Reactor application pipelines, R2DBC, Vert.x and Lombok are forbidden.
+- Do not add JPA/Hibernate, WebFlux, Reactor, R2DBC, Vert.x, Kafka, Redis, Lombok, microservices or Maven modules.
 
 ### Modularity and persistence ownership
 
@@ -76,6 +77,7 @@ A cache, broker, additional database, deployable, external observability platfor
 
 ## Supported versions and upgrades
 
+- Do not silently add or upgrade a production dependency. Document it in the OpenSpec design and obtain explicit approval when outside the accepted baseline.
 - Java major 25 is the only supported runtime and build range (`[25,26)`). A new major requires an approved change and full verification.
 - Maven is invoked through the Wrapper only. Update its 3.9.16 distribution URL and SHA-256 atomically, then run a clean Wrapper build.
 - Spring Boot 4.1.1 remains the parent and owns Spring Framework, Spring Data, Flyway and other managed versions. A direct override requires an approved compatibility or security exception.

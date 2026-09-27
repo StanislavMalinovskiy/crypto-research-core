@@ -149,91 +149,39 @@ After APPROVE, Architect performs DOCS_CLOSE: completion status, verified task c
 
 ## End-to-end flow
 
-The successful closure is APPROVE → DOCS_CLOSE → complete final gate → checkpoint → archive → post-checks → DONE.
-The following owner-defined flow includes return paths:
+APPROVE → Architect DOCS_CLOSE → Main complete final gate → Main checkpoint → Architect CLI archive → Main post-checks → Main DONE.
+
+Read [the closure procedure](agents/close-archive.md) only before DOCS_CLOSE, complete final gate, archive, archive recovery or post-archive work. Ordinary PLAN, BUILD and REVIEW do not load it. Main retains full-gate, exact mutation inspection, post-check and final DONE ownership.
 
 ```mermaid
 flowchart TD
-  A["Main: task intake + scope"] --> B["Architect: contract, invariants, plan, test mode, classify risk"]
+  A["Main: intake and scope"] --> B["Architect PLAN: contract, invariants, test mode and risk"]
   B --> C["PLAN_READY: risk fixed"]
-  C --> D{"Docs only?"}
-  D -->|"Yes"| E["Architect: docs"]
-  D -->|"No"| R{"Fixed risk"}
-  R -->|"ROUTINE"| F1["Builder: Luna 6 xhigh"]
-  R -->|"STANDARD"| F2["Builder: Luna 6 max"]
-  R -->|"CORE_RISK"| F3["Builder: Sol 6 medium"]
-  F1 --> G["BUILD_DONE"]
-  F2 --> G
-  F3 --> G
-  E --> H{"Review route"}
-  G --> H
-  H -->|"ROUTINE / STANDARD / non-normative docs"| J["Architect, same thread"]
-  H -->|"CORE_RISK or normative spec"| K["Fresh Reviewer"]
-  J --> L{"Verdict"}
-  K --> L
-  L -->|"REPAIR ≤2, 3rd by reviewer"| SB["Same author thread: Builder, or Architect for docs"]
-  SB --> H
-  L -->|"CONTRACT_CHANGED / RISK_CHANGED"| B
-  L -->|"ESCALATE"| N["Escalation: read-only verdict"]
-  N -->|"REPAIR"| SB
-  N -->|"REPLAN"| B
-  N -->|"OWNER_DECISION"| OW["Owner"]
-  OW --> B
-  N -->|"APPROVE"| O
-  L -->|"APPROVE"| O["Architect: status + non-semantic docs"]
-  O --> P{"Main: full final gate"}
-  P -->|"Builder implementation failure"| SB
-  P -->|"Spec / contract / docs failure"| B
-  P -->|"Infra or pre-existing failure"| BL["BLOCKED: infra retry"]
-  BL --> P
-  P -->|"Pass"| AR["Record pre-archive state; Architect: openspec archive"]
-  AR --> PA{"Main: post-archive checks"}
-  PA -->|"Fail: restore pre-archive state via git"| B
-  PA -->|"Pass"| Q["DONE"]
+  C --> D{"Documentation only?"}
+  D -->|"Yes"| E["Architect DOCS"]
+  D -->|"No"| F["Risk-routed Builder BUILD"]
+  F --> G["BUILD_DONE"]
+  G --> H["Review: same Architect or fresh Reviewer by mandatory routing"]
+  E --> H
+  H -->|"REPAIR"| I["Same author; bounded task repair budget"]
+  I --> H
+  H -->|"CONTRACT_CHANGED / RISK_CHANGED"| B
+  H -->|"ESCALATE"| J["Fresh read-only Escalation"]
+  J -->|"REPAIR"| I
+  J -->|"REPLAN"| B
+  J -->|"OWNER_DECISION"| K["Owner; BLOCKED"]
+  K --> B
+  J -->|"APPROVE"| L["Approved closure procedure"]
+  H -->|"APPROVE"| L
 ```
 
-The author-completion edge `SB --> H` includes Builder BUILD_DONE before review; Architect documentation completion returns directly to review. Review precedence still applies to H. CONTRACT_CHANGED, RISK_CHANGED, REPLAN and OWNER_DECISION describe reasons or verdicts, not extra states. The docs-failure edge returns non-semantic defects to Architect REPAIR and semantic defects to PLAN. BLOCKED returns to the gate only after the condition is resolved; it is not an automatic retry loop. All repair and recovery edges retain the same task budget.
+The author-completion edge includes Builder BUILD_DONE before review; Architect documentation completion returns to review without self-approval. Fresh-review precedence applies at every review. CONTRACT_CHANGED, RISK_CHANGED, REPLAN and OWNER_DECISION are reasons or verdict attributes, not new states. Non-semantic documentation defects return to Architect REPAIR; semantic defects return to PLAN. BLOCKED returns to the gate only after its condition is resolved, never as an automatic retry loop. Closure failure routes and recovery detail are in the conditional procedure; all repairs and recovery retain the same task budget.
 
-## Complete final gate
+## Main context discipline
 
-Main runs from the repository root after DOCS_CLOSE:
+Main requests bounded findings with exact source paths, commands, outcomes and unresolved issues from the appropriate existing role. Deep inspection of large sources, raw logs, reports or complete diffs belongs to Architect, Builder, Reviewer or Escalation under current ownership. Main may inspect exact relevant excerpts for routing, blockers, its full gate and archive mutation checks; short summaries never excuse missing failures, applicable invariant evidence or required checks.
 
-```powershell
-pwsh -NoProfile -File .codex/scripts/verify-test-integrity.ps1
-mvnw.cmd clean verify
-openspec validate --all --strict --no-interactive
-openspec doctor
-git diff --check
-```
-
-On Windows, first run `docker version` in the same escalated host access context used for Maven, outside the restricted sandbox. Preflight passes before Maven. Any nonzero required check blocks completion; never narrow or skip it. Route failures by ownership:
-
-- implementation or test issue attributable to Builder → same Builder REPAIR, review and full gate;
-- documentation or contract issue → Architect documentation REPAIR or PLAN with CONTRACT_CHANGED;
-- infrastructure issue or unrelated pre-existing failure → BLOCKED with exact command and cause.
-
-A Builder-attributable gate failure consumes the next existing repair round. The current reviewer must authorize round three; substantive blockers after it go to technical escalation. Infrastructure retries do not consume implementation repairs. The gate starts no new budget.
-
-## Checkpoint, archive and recovery
-
-After full-gate PASS, Main records `git status --porcelain=v1`, observed HEAD, real-index identity, exact task paths and prospective archive mutations. Create a pre-archive checkpoint using a temporary Git index and `commit-tree` held by a task-specific ref; leave the live branch and real index unchanged. Add only task-owned content and accepted specs needed by this archive to that temporary index. Exclude owner hunks, hooks and IDE/MCP files. If safe separation of shared paths cannot be proved, return BLOCKED.
-
-Preserve raw-byte snapshots of active-change files and accepted specs using `hash-object -w --no-filters`, retaining blob IDs in the checkpoint tree/ref. Record path existence and SHA-256 beside porcelain status. Inspect attributes and filters: normal add/checkout may transform line endings. Prove the chosen literal-path restoration reproduces recorded hashes without changing the real index. Recheck HEAD and affected path hashes before archive; do not overwrite concurrent edits.
-
-Main supplies the checkpoint to Architect, which runs `openspec archive <change-id> --yes`. Only this active change, its new dated archive copy and accepted specs declared by the delta may change. Main compares before/after porcelain status and exact path hashes against that allowlist and runs:
-
-```powershell
-openspec validate --all --strict --no-interactive
-openspec doctor
-mvnw.cmd -Dtest=RepositoryConventionsTest test
-git diff --check
-```
-
-These post-archive checks supplement the complete gate. Main returns DONE only when they pass and the archive diff remains in scope.
-
-On post-archive failure, first verify no concurrent edits to affected paths. Restore only exact paths changed by this archive from the checkpoint's raw bytes and original existence; remove only the new archive copy. Verify pre-archive hashes and the unchanged real index. Never reset-hard, use whole-tree checkout, git clean, stash owner work or hand-reverse accepted-spec patches. If scoped recovery cannot be proved safe, return BLOCKED before destructive action.
-
-Return the restored active change to Architect for correction. Respect author ownership, reopen planning/review for semantic changes and retain repair accounting. Run the full gate, create a fresh checkpoint, archive and perform post-checks again. Recovery grants no unlimited retry loop.
+Existing OpenSpec artifacts, code/tests, existing test reports and authorized telemetry retain durable truth after summaries, compaction or session replacement. Conversation summaries provide navigation, not replacement evidence. Introduce no state, capsule or evidence file solely for context management; preserve existing self-contained handoff and lost-session recovery responsibilities.
 
 ## Assignment telemetry
 

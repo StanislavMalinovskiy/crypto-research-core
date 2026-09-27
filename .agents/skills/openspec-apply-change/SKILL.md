@@ -1,6 +1,6 @@
 ---
 name: openspec-apply-change
-description: Implement tasks from an OpenSpec change. Use when the user wants to start implementing, continue implementation, or work through tasks.
+description: Use when implementing or repairing tasks from an approved OpenSpec change.
 allowed-tools: Bash(openspec:*)
 license: MIT
 compatibility: Requires openspec CLI.
@@ -10,7 +10,7 @@ metadata:
   generatedBy: "1.13.0"
 ---
 
-Implement tasks from an OpenSpec change.
+Implement tasks from an OpenSpec change under the selected project workflow. In MULTIAGENT, stay within the assigned phase: Builder reports verified completion evidence without changing OpenSpec or documentation; Architect updates verified task checkboxes only in DOCS_CLOSE after APPROVE. In DEFAULT, Developer owns implementation and its complete local gate, while Control owns the contract, final documentation, review and completion gate under docs/AGENT_WORKFLOW.md; specialized MULTIAGENT phases/statuses do not apply. Partial, deferred or unverified behavior is never complete.
 
 **Store selection:** If the user names a store (a store is a standalone OpenSpec repo registered on this machine) or the work lives in one, run `openspec store list --json` to discover registered store ids, then pass `--store <id>` on the commands that read or write specs and changes (`new change`, `status`, `instructions`, `list`, `show`, `validate`, `archive`, `doctor`, `context`, `schemas`, `view`). Once selected, treat `--store <id>` as sticky for the rest of the workflow. Every unscoped example of those commands below is shorthand: before running it, append the flag. For example, run `openspec status --change "<name>" --json --store "<id>"`, not the unscoped form shown below. Other commands do not take the flag. Hints printed by commands already carry the flag; keep it on follow-ups. Without a store, commands act on the nearest local `openspec/` root.
 
@@ -52,8 +52,8 @@ Implement tasks from an OpenSpec change.
 
    **Handle states:**
    - If `state: "blocked"` (missing artifacts): show message, suggest using `$openspec-continue-change (Codex) or /openspec-continue-change (other agents)` (if it is not installed, run `openspec status --change "<name>" --json` to see the next artifact and `openspec instructions <artifact-id> --change "<name>" --json` for how to create it)
-   - If `state: "all_done"`: congratulate, suggest archive
-   - Otherwise: proceed to implementation
+   - If `state: "all_done"`: report task status and route to the selected project review/closure; this state is not archive authorization
+   - Otherwise: proceed within the authorized implementation assignment and selected workflow (assigned phase in MULTIAGENT)
 
    Treat `context` as a required prompt-level input. Read and consider it, and
    apply relevant project facts, conventions, and constraints while implementing.
@@ -94,7 +94,7 @@ Implement tasks from an OpenSpec change.
    - Show which task is being worked on
    - Make the code changes required
    - Keep changes minimal and focused
-   - Mark task complete in the tasks file: `- [ ]` → `- [x]`
+   - Record verified completion evidence; apply the project checkbox ownership above
    - Continue to next task
 
    **Pause if:**
@@ -109,7 +109,7 @@ Implement tasks from an OpenSpec change.
    Display:
    - Tasks completed this session
    - Overall progress: "N/M tasks complete"
-   - If all done: suggest archive
+   - If all done: in MULTIAGENT return the assigned status and review route; in DEFAULT return Developer's evidence handoff to Control without specialized statuses
    - If paused: explain why and wait for guidance
 
 **Output During Implementation**
@@ -136,11 +136,11 @@ Working on task 4/7: <task description>
 **Progress:** 7/7 tasks complete ✓
 
 ### Completed This Session
-- [x] Task 1
-- [x] Task 2
+- Verified: Task 1
+- Verified: Task 2
 ...
 
-All tasks complete! You can archive this change with `$openspec-archive-change (Codex) or /openspec-archive-change (other agents)`.
+Implementation evidence is ready for the selected project review. DEFAULT Control follows its own review, documentation and complete gate. MULTIAGENT retains APPROVE, DOCS_CLOSE, Main's full gate and checkpoint before archive.
 ```
 
 **Output On Pause (Issue Encountered)**
@@ -169,7 +169,7 @@ What would you like to do?
 - If task is ambiguous, pause and ask before implementing
 - If implementation reveals issues, pause and suggest artifact updates
 - Keep code changes minimal and scoped to each task
-- Update task checkbox immediately after completing each task
+- Report each task's verification evidence; in MULTIAGENT never let Builder update task checkboxes or documentation, and in DEFAULT leave final documentation to Control
 - Pause on errors, blockers, or unclear requirements - don't guess
 - When a task needs work beyond what the spec describes, surface the added scope and pause - never silently narrow, defer, or simplify away specified behavior
 - Only mark a task `- [x]` when its specified behavior is fully implemented, not when it is partially done or deferred
@@ -184,5 +184,5 @@ What would you like to do?
 
 This skill supports the "actions on a change" model:
 
-- **Can be invoked anytime**: Before all artifacts are done (if tasks exist), after partial implementation, interleaved with other actions
-- **Allows artifact updates**: If implementation reveals design issues, suggest updating artifacts - not phase-locked, work fluidly
+- **Resume within the assignment**: Partial implementation or interleaved work respects CLI blocked state and selected workflow ownership. MULTIAGENT follows Main's assigned phase; DEFAULT follows Control/Developer responsibilities without that phase protocol.
+- **Contract issues return to planning**: Report design conflicts before dependent implementation. In MULTIAGENT, Main routes semantic changes to Architect PLAN and Builder does not edit artifacts. In DEFAULT, Developer returns the conflict to Control, which owns the active contract and any planning revision.

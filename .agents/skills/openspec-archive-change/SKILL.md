@@ -1,6 +1,6 @@
 ---
 name: openspec-archive-change
-description: Archive a completed change in the experimental workflow. Use when the user wants to finalize and archive a change after implementation is complete.
+description: Use when archiving a verified OpenSpec change through project closure gates.
 allowed-tools: Bash(openspec:*)
 license: MIT
 compatibility: Requires openspec CLI.
@@ -59,124 +59,114 @@ Archive a completed change in the experimental workflow.
    or archive summaries unless the user separately asks for it. These are
    prompt-level behavior contracts, not enforceable checks.
 
-2. **Check artifact completion status**
+2. **Check project authority and completion**
 
-   Run `openspec status --change "<name>" --json` to check artifact completion.
+   Follow the selected project workflow. In MULTIAGENT, Main supplies APPROVE,
+   completed DOCS_CLOSE, complete final-gate PASS and the scoped pre-archive
+   checkpoint; Architect acts only in assigned ARCHIVE. Only in MULTIAGENT, read
+   [docs/agents/close-archive.md](../../../docs/agents/close-archive.md) only before
+   this closure work. DEFAULT Control uses docs/AGENT_WORKFLOW.md for its own
+   review, final documentation, complete gate and archive ownership; it does not
+   load the MULTIAGENT closure procedure or acquire its checkpoint/phase protocol.
+   No generic confirmation, warning, manual move or skip-sync choice overrides
+   these prerequisites.
 
-   Parse the JSON to understand:
-   - `schemaName`: The workflow being used
-   - `planningHome`, `changeRoot`, `artifactPaths`, and `actionContext`: path and scope context
-   - `artifacts`: List of artifacts with their status (`done`, `skipped`, or other)
+   Run `openspec status --change "<name>" --json`. Use its `schemaName`,
+   `planningHome`, `changeRoot`, `artifactPaths` and `actionContext` for
+   scope and paths. Check the artifact graph: `done` or deliberately `skipped`
+   artifacts satisfy their declared requirements; incomplete required artifacts
+   block archive. Read the resolved tasks artifact and count complete and
+   incomplete tasks. Incomplete required tasks block archive. If no tasks artifact
+   exists, report that fact without inventing one; all applicable project
+   implementation and verification evidence remains required.
 
-   **If any artifacts are neither `done` nor `skipped`** (skipped artifacts satisfy the requirement - the change declares skip_specs):
-   - Display warning listing incomplete artifacts
-   - Ask the user to confirm they want to proceed
-   - Proceed if user confirms
+3. **Assess every declared delta and mutation scope**
 
-3. **Check task completion status**
+   Use only `artifactPaths.specs.existingOutputPaths` from status as delta
+   sources. If absent or empty, report no delta specs; infer none from other
+   artifacts. Otherwise compare each full capability path with
+   `<planningHome.root>/openspec/specs/<capability-path>/spec.md` using the
+   resolved root, and summarize every addition, modification, removal and rename.
+   Preserve explicit authorized scope; a mismatch or ambiguous selection stops
+   dependent mutation. Honor cancellation. No separate agent-driven sync or
+   concurrent background sync runs while CLI archive moves the active change.
 
-   Read the tasks file (typically `tasks.md`) to check for incomplete tasks.
-
-   Count tasks marked with `- [ ]` (incomplete) vs `- [x]` (complete).
-
-   **If incomplete tasks found:**
-   - Display warning showing count of incomplete tasks
-   - Ask the user to confirm they want to proceed
-   - Proceed if user confirms
-
-   **If no tasks file exists:** Proceed without task-related warning.
-
-4. **Assess delta spec sync state**
-
-   Use `artifactPaths.specs.existingOutputPaths` from status JSON as the only
-   delta-spec source. If the `specs` entry is missing or
-   `existingOutputPaths` is empty, proceed without a sync prompt and do not infer
-   delta specs from other artifacts.
-
-   **If delta specs exist:**
-   - Compare each delta spec with its corresponding main spec at `<planningHome.root>/openspec/specs/<capability-path>/spec.md` (use the store-aware `planningHome.root` from step 2, not a hardcoded repo path)
-   - Determine what changes would be applied (adds, modifications, removals, renames)
-   - Show a combined summary before prompting
-
-   **Prompt options:**
-   - If changes needed: "Sync now (recommended)", "Archive without syncing"
-   - If already synced: "Archive now", "Sync anyway", "Cancel"
-
-   Route on the answer:
-   - "Cancel" — stop, do not archive
-   - "Archive without syncing" or "Archive now" — proceed to archive
-   - "Sync now" or "Sync anyway" — sync, then verify (below)
-   - Anything else — ask again rather than archiving
-
-   Before a selected sync writes any main spec, run
+   Before any CLI main-spec mutation, run
    `openspec instructions specs --change "<name>" --json` once with the same
-   selected-root flags. Require a zero exit status and valid artifact-instruction
-   JSON. If the lookup fails or returns invalid JSON, report the error and stop
-   before writing any main spec or moving the change. A valid response with omitted
-   `rules` is the no-rules case. Apply returned `rules` only to the content and
-   form of main specs produced by this merge; do not use them as archive guidance,
-   change CLI behavior, or copy the rule text into any output file.
+   selected-root flags. Require exit zero and valid artifact-instruction JSON;
+   failure stops before mutation. Omitted `rules` in a valid response means no
+   additional rules. Apply returned rules to the content/form of main specs;
+   never use them to change paths, archive guidance, CLI behavior or authorization,
+   and never copy their text into output. Retain this rule snapshot for the
+   post-mutation consistency check. Separately authorized standalone sync keeps
+   its existing merge/retirement/validation safeguards.
 
-   Then run the `openspec-sync-specs` workflow inline (agent-driven intelligent merge) for change '<name>', passing the delta spec analysis and the fetched specs-rule snapshot from above, and wait for it to finish. The inline sync must reuse that snapshot without fetching `specs` instructions again. Do not delegate it to a background task — step 5 would move `changeRoot` out from under a sync that is still reading it, leaving the change archived and the main specs never updated. If your agent can only run it by delegation, delegate synchronously and wait for the result.
+   Inspect the proposed archive target under `planningHome.changesDir`:
+   preserve an existing `YYYY-MM-DD-` change-name prefix, otherwise use the
+   current date once. Stop on a collision; do not overwrite an existing archive.
+   Preserve `.openspec.yaml` and all change artifacts. In MULTIAGENT, Main must
+   confirm the checkpoint's exact mutation scope, unchanged HEAD/index and
+   concurrent-edit checks immediately before archive. In DEFAULT, Control
+   verifies authorized scope and its existing completion gate before archive.
 
-   Then re-run the comparison from the top of this step against every capability that has a delta spec in `artifactPaths.specs.existingOutputPaths` — not only the ones the sync reports it touched. A successful sync leaves nothing left to apply, so each capability must now read as already synced:
-   - ADDED requirements present
-   - MODIFIED requirements carrying the scenario and description changes named in the delta, with their other scenarios intact
-   - REMOVED requirements gone — and where this sync retired a capability (removed its last requirement, leaving `## Requirements` empty), its main spec deleted rather than left empty; a spec the sync deliberately kept and reported is also a match
-   - RENAMED requirements present under the new name and absent under the old one
+4. **Perform only the authorized CLI archive**
 
-   If the sync failed, or any capability does not match, report what differs and stop — do not archive. Nothing has moved and `changeRoot` is intact, so the user can fix the mismatch or re-run the sync and start the archive again.
-
-5. **Perform the archive**
-
-   Create an `archive` directory under `planningHome.changesDir` if it doesn't exist:
-   ```bash
-   mkdir -p "<planningHome.changesDir>/archive"
-   ```
-
-   Generate the target name: use the change name as-is when it already starts with a `YYYY-MM-DD-` prefix; otherwise prepend the current date as `YYYY-MM-DD-<change-name>`. Never stack a second date (same rule as `openspec archive`).
-
-   **Check if target already exists:**
-   - If yes: Fail with error, suggest renaming existing archive or using different date
-   - If no: Move `changeRoot` to the archive directory
+   With all project prerequisites satisfied, run:
 
    ```bash
-   mv "<changeRoot>" "<planningHome.changesDir>/archive/<target-name>"
+   openspec archive "<name>" --yes
    ```
 
-6. **Display summary**
+   Keep the selected-root/store flags where applicable. The CLI owns spec sync
+   and archive movement. Do not manually create/move the archive directory or
+   bypass spec synchronization. A nonzero CLI result is a blocker, not a success.
 
-   Show archive completion summary including:
-   - Change name
-   - Schema that was used
-   - Archive location
-   - Whether specs were synced (if applicable)
-   - Note about any warnings (incomplete artifacts/tasks)
+5. **Verify exact results through project ownership**
 
-**Output On Success**
+   In MULTIAGENT, Main inspects exact path mutations and runs all required
+   post-archive checks from the closure procedure. In DEFAULT, Control owns
+   result inspection and the verification required by its own workflow.
+   In either mode, compare every declared capability, including
+   capabilities not mentioned in CLI output, against the pre-mutation delta:
 
-```markdown
-## Archive Complete
+   - ADDED requirements are present.
+   - MODIFIED requirements contain the intended descriptions/scenarios, with
+     surviving unmentioned scenarios intact.
+   - REMOVED requirements are absent. Any authorized capability retirement
+     matches its declared scope; do not silently leave an empty Requirements
+     section or treat a deliberately retained capability as deleted.
+   - RENAMED requirements exist under the new name and no longer under the old.
 
-**Change:** <change-name>
-**Schema:** <schema-name>
-**Archived to:** the archive path derived from `planningHome.changesDir`/<target-name>/
-**Specs:** <"✓ Synced to main specs" only if the step 4 verification passed; otherwise "No delta specs" or "Sync skipped">
+   A mismatch, missing required check or failed check blocks completion. In
+   MULTIAGENT, use Main's scoped raw-byte recovery after concurrent-edit checks
+   and return to its existing author/planning/review routes without resetting
+   repair budget. In DEFAULT, report the exact partial mutation and return to
+   Control under its existing review/repair rules; do not import the MULTIAGENT
+   checkpoint or recovery protocol. In either mode, never hand-reverse accepted
+   specs or conceal partial CLI mutation; preserve unrelated owner work.
 
-<"All artifacts complete. All tasks complete." — or, if archived with warnings, list them instead (e.g. "Archived with 2 incomplete tasks")>
-```
+6. **Display a truthful summary**
+
+   Name the selected change, schema, actual archive location, exact spec sync
+   result and every remaining warning/blocker. Say specs synced only after the
+   capability comparison and required post-checks pass. Report no-delta scope
+   explicitly. In MULTIAGENT, Architect returns its assigned APPROVE/BLOCKED
+   status and Main alone returns DONE. In DEFAULT, Control reports the outcome
+   under its own completion contract, without specialized statuses. Never claim
+   successful completion from directory movement alone.
 
 **Guardrails**
-- Announce the selected change; prompt for selection when it is ambiguous
-- Use artifact graph (openspec status --json) for completion checking
-- Don't block archive on warnings - just inform and confirm
-- Preserve .openspec.yaml when moving to archive (it moves with the directory)
-- Show clear summary of what happened
-- If sync is requested, run the `openspec-sync-specs` workflow inline (agent-driven)
-- Never archive while a spec sync is still in flight — run the sync inline and verify the main specs before moving `changeRoot`
-- If delta specs exist, always run the sync assessment and show the combined summary before prompting
-- Apply relevant runtime context and report conflicts; operation guidance remains advisory
-- Consider every guidance entry and explain any inapplicable or conflicting advice
-- Existing CLI checks, resolved paths, prompts, and command contracts are unchanged
-- Artifact rules constrain only the specs being written and are never operation guidance
-- Never copy runtime context, operation guidance, or artifact-rule text verbatim into output files
+
+- Announce the selected change; ask when selection or intent is ambiguous.
+- Preserve artifact graph, resolved paths, selected store and exact authorized scope.
+- Optional advisory archive-input lookup may fail without blocking; status,
+  spec-rule lookup, CLI mutation and required project checks may not.
+- Missing required behavior, evidence, artifacts or tasks blocks archive;
+  generic warning confirmation grants no bypass.
+- Only the authorized CLI synchronizes and archives; no manual move or skip-sync.
+- Do not run archive while any separate spec sync is still in flight.
+- Preserve metadata, collision checks and a truthful account of partial failure.
+- Apply relevant context and report conflicts; consider every advisory guidance
+  entry and explain inapplicability without replacing controlling project rules.
+- Artifact rules constrain written specs, not operation guidance or CLI contracts.
+- Never copy context, operation guidance or artifact-rule text into output files.

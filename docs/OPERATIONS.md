@@ -97,4 +97,4 @@ This slice has no HTTP/CLI/scheduled trigger, live provider connection or produc
 
 ## Verification
 
-Operational changes must pass the Maven and OpenSpec commands in [AGENTS.md](../AGENTS.md). PostgreSQL behavior is verified against the exact Testcontainers image documented in [Tech Stack](TECH_STACK.md).
+Operational changes must pass the selected workflow's complete gate: [DEFAULT](AGENT_WORKFLOW.md#complete-local-gate), or, in MULTIAGENT, read [the closure procedure](agents/close-archive.md) only before approved DOCS_CLOSE, full-gate, archive, recovery or post-archive work. Ordinary configuration work does not load closure. PostgreSQL behavior is verified against the exact Testcontainers image documented in [Tech Stack](TECH_STACK.md).

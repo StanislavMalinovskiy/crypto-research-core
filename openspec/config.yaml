@@ -7,9 +7,13 @@ context: |
   It remains one repository, one Maven module, one deployable JAR and one database.
   Package root: io.cryptoresearch. Modules: kernel, marketdata, risk, wallet,
   signal and evaluation.
-  Read AGENTS.md and these project sources before planning or applying work:
-  docs/PROJECT_SUMMARY.md, docs/ROADMAP.md, docs/ARCHITECTURE.md,
-  docs/TECH_STACK.md and docs/modules/.
+  Read AGENTS.md and the selected workflow before planning or applying work.
+  Read the affected change and accepted specs, affected module documents and
+  nearest module guides, applicable ADRs, and relevant code/tests before editing.
+  Follow AGENTS.md task-impact triggers for Architecture, Tech Stack, Testing,
+  Operations and Reproducibility; resolve missing or ambiguous references first.
+  Read docs/PROJECT_SUMMARY.md only for onboarding, product orientation or task
+  relevance, and Roadmap/Delivery Plan when product direction/stage work needs them.
 
 rules:
   proposal:
@@ -28,7 +32,7 @@ rules:
 operations:
   apply:
     guidance:
-      - Preserve unrelated user changes and update task checkboxes only after verification.
+      - Preserve unrelated user changes. In MULTIAGENT Builder reports verification evidence without editing OpenSpec or documentation; Architect updates verified task checkboxes in DOCS_CLOSE after APPROVE. DEFAULT Control retains its workflow ownership. Never mark partial, deferred or unverified behavior complete.
   archive:
     guidance:
-      - Archive only after strict validation and Maven verification succeed.
+      - Archive only through the authorized OpenSpec CLI after strict validation, Maven verification and the selected workflow's approval and closure requirements; in MULTIAGENT the scoped checkpoint, post-checks and recovery remain mandatory. DEFAULT retains its independent gate and ownership. No manual move or skip-sync bypass.
