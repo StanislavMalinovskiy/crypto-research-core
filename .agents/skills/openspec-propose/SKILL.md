@@ -12,6 +12,8 @@ metadata:
 
 Propose a new change - create the change and generate all artifacts in one step.
 
+**Project routing:** In MULTIAGENT, TRIVIAL and Architect-classified NORMAL use their existing Main or Architect/Builder route without OpenSpec. Do not create a dummy change or select an unrelated active change for them; this skill's change-creation procedure applies only when the selected route requires OpenSpec. DEFAULT retains its existing OpenSpec policy and Control ownership.
+
 **Planning boundary**: This workflow creates planning artifacts only and never edits project code. Existing explicit owner authorization for a bounded later action or transition survives this workflow; do not demand duplicate permission merely because planning was invoked. In MULTIAGENT, a PLAN-only request stops at PLAN_READY and Main controls later authorized phase transitions after a valid plan. In DEFAULT, Control owns planning and coordinates the authorized Developer implementation under docs/AGENT_WORKFLOW.md, without specialized phases or statuses. A planning-only request ends after presenting the artifacts in either mode. Unresolved intent, expanded scope, silence and discovery answers are not new authorization.
 
 I'll create a change with the artifacts your schema defines. With the default spec-driven schema that is:

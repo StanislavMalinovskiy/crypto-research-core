@@ -402,8 +402,7 @@ class RepositoryConventionsTest {
 			violations.add("ordinary phases must not eagerly load closure");
 		}
 		violations.addAll(missingClauses(closure, CLOSURE_POLICY_CLAUSES));
-		var flowStart = workflow.indexOf("## End-to-end flow");
-		if (!orderedClosure(flowStart < 0 ? workflow : workflow.substring(flowStart),
+		if (!orderedClosure(archiveFlow(workflow),
 				List.of("APPROVE", "DOCS_CLOSE", "complete final gate", "checkpoint", "archive", "post-checks", "DONE"))) {
 			violations.add("closure order must preserve approval, documentation, gate, checkpoint, archive and post-checks");
 		}
@@ -430,25 +429,53 @@ class RepositoryConventionsTest {
 			"Risk remains fixed during implementation, review and repairs",
 			"Only explicit owner direction may lower risk",
 			"reason = CONTRACT_CHANGED", "subreason = RISK_CHANGED",
-			"ROUTINE / STANDARD implementation or non-normative docs → same Architect thread.",
+			"NORMAL / CONTRACT → same Architect thread.",
 			"Any CORE_RISK change → fresh Reviewer (new thread).",
-			"Any change to an accepted normative OpenSpec spec → fresh Reviewer, regardless of risk.",
-			"Either fresh-review condition takes precedence",
+			"CORE_RISK takes precedence",
 			"Implementation or test repairs return to the same Builder",
 			"Documentation repairs return to the same Architect",
 			"The current reviewer authorizes the third repair",
-			"requires_new_red = true", "new behavioral RED", "new hash",
+			"requires_new_red = true", "new behavioral RED", "tests_changed_after_red",
 			"Replanning and escalation never reset the repair budget",
 			"verdict = REPAIR | REPLAN | APPROVE | OWNER_DECISION",
 			"REPLAN → ESCALATE", "OWNER_DECISION → BLOCKED",
 			"Only Architect may issue a new PLAN_READY",
-			"Owner intent or scope ambiguity goes directly to the owner");
+			"Owner intent or scope ambiguity goes directly to the owner",
+			"Main decides only strictly TRIVIAL or not TRIVIAL",
+			"no source code, configuration, scripts, OpenSpec, ADRs, workflow/skills or normative docs",
+			"no API/path/code rename or behavioral meaning change",
+			"preserve factual claims and link/path targets",
+			"Any exclusion or uncertainty goes to Architect",
+			"all TR triggers before NORMAL or CONTRACT",
+			"unresolved credible trigger uncertainty selects CORE_RISK",
+			"mixed scope takes the highest applicable tier",
+			"NORMAL preserves accepted observable behavior",
+			"CONTRACT changes observable/public or accepted behavior",
+			"uncertainty between NORMAL and CONTRACT selects CONTRACT",
+			"Builder risk routing is independent of NORMAL versus CONTRACT",
+			"NORMAL contract uses the existing handoff",
+			"NORMAL skips OpenSpec, overlap checks, DOCS_CLOSE and archive",
+			"CONTRACT and CORE_RISK require OpenSpec",
+			"CORE_RISK and every bugfix require RED_REQUIRED",
+			"other CONTRACT work uses Architect-selected test mode with a concrete reason",
+			"other NORMAL work uses useful appropriate tests",
+			"documentation-only CORE_RISK has no RED waiver",
+			"NORMAL/CONTRACT review reports only touched CI",
+			"CORE_RISK review reports the full CI-01..CI-15 matrix",
+			"accepted normative-spec change alone does not require fresh review",
+			"NORMAL runs Main's complete final gate",
+			"TRIVIAL runs git diff --check and mvnw.cmd -Dtest=RepositoryConventionsTest test",
+			"TRIVIAL has no subagents, OpenSpec, review, overlap check, DOCS_CLOSE or archive",
+			"log-agent-activity.ps1 only for benchmark, debug or explicitly requested measurement");
 	private static final List<String> CLOSURE_POLICY_CLAUSES = List.of(
 			"Any nonzero required check blocks completion", "never narrow or skip it",
 			"pre-archive", "temporary Git index", "raw-byte", "hash-object -w --no-filters",
 			"post-archive", "exact paths", "unchanged real index",
 			"Never reset-hard", "whole-tree checkout", "git clean", "stash owner work",
 			"BLOCKED before destructive action");
+	private static final List<String> GATE_OUTPUT_CLAUSES = List.of(
+			"full output", "exit code", "PASS", "FAIL", "failures", "errors", "skipped",
+			"unrun", "required skipped", "exact command", "redirection");
 
 	@Test
 	void leanWorkflowPolicyCoversRiskReviewRepairEscalationAndRecovery() throws IOException {
@@ -468,10 +495,60 @@ class RepositoryConventionsTest {
 	}
 
 	@Test
-	void planningRequiresActiveChangeOverlapEvidence() throws IOException {
+	void planningRequiresActiveChangeOverlapEvidenceOnlyForContractAndCoreRisk() throws IOException {
 		assertPolicyTokens(List.of("docs/AGENT_WORKFLOW_MULTIAGENT.md", ".codex/agents/architect.toml"),
 				List.of("Before PLAN_READY", "openspec list", "same specs", "handoff", "none",
-						"resolve first", "safe to proceed", "blocked"));
+						"resolve first", "safe to proceed", "blocked", "CONTRACT and CORE_RISK",
+						"NORMAL", "TRIVIAL"));
+	}
+
+	@Test
+	void conditionalChangeRoutingDoesNotInventLowRiskArtifacts() throws IOException {
+		assertPolicyTokens(List.of("AGENTS.md", "openspec/config.yaml"),
+				List.of("MULTIAGENT", "TRIVIAL", "NORMAL", "DEFAULT", "when the selected route requires"));
+		assertPolicyTokens(List.of(".agents/skills/openspec-propose/SKILL.md",
+				".agents/skills/openspec-apply-change/SKILL.md"),
+				List.of("MULTIAGENT", "TRIVIAL", "NORMAL", "DEFAULT", "dummy", "unrelated active change"));
+	}
+
+	@Test
+	void reviewAndSemanticFreezeAreConsistentAcrossActiveGuidance() throws IOException {
+		assertPolicyTokens(List.of("docs/TESTING.md", "docs/CORE_INVARIANTS.md", ".codex/agents/architect.toml"),
+				List.of("NORMAL", "CONTRACT", "CORE_RISK", "touched CI", "full", "same Architect", "fresh Reviewer"));
+		assertPolicyTokens(List.of("docs/TESTING.md", ".codex/agents/builder_sol.toml",
+				".codex/agents/builder_luna_xhigh.toml", ".codex/agents/builder_luna_max.toml",
+				".codex/agents/reviewer.toml"),
+				List.of("semantic freeze", "tests_changed_after_red", "requires_new_red", "TEST_SPEC_ERROR"));
+		for (var path : List.of("docs/AGENT_WORKFLOW_MULTIAGENT.md", "docs/TESTING.md",
+				".codex/agents/architect.toml", ".codex/agents/builder_sol.toml",
+				".codex/agents/builder_luna_xhigh.toml", ".codex/agents/builder_luna_max.toml",
+				".codex/agents/reviewer.toml", "docs/CORE_INVARIANTS.md")) {
+			assertThat(Files.readString(repositoryRoot.resolve(path))).as(path)
+					.doesNotContain("new hash", "unchanged establishing-test hash", "verifies the frozen hash",
+							"a content hash", "content hash after RED", "Git diff captured before implementation",
+							"Any change to an accepted normative OpenSpec spec → fresh Reviewer, regardless of risk.");
+		}
+	}
+
+	@Test
+	void tieredClosureAndGateOutputKeepCompleteTruthfulVerification() throws IOException {
+		assertPolicyTokens(List.of("docs/agents/close-archive.md"),
+				List.of("NORMAL", "CONTRACT", "CORE_RISK", "TRIVIAL", "without DOCS_CLOSE", "without archive"));
+		assertPolicyTokens(List.of("docs/AGENT_WORKFLOW_MULTIAGENT.md", "docs/agents/close-archive.md"),
+				GATE_OUTPUT_CLAUSES);
+		assertPolicyTokens(List.of("AGENTS.md", "docs/TESTING.md"),
+				List.of("TRIVIAL", "git diff --check", "mvnw.cmd -Dtest=RepositoryConventionsTest test",
+						"DEFAULT", "complete", "preflight"));
+	}
+
+	@Test
+	void gateOutputGuardRejectsOmittedExecutionAndFailureEvidence() {
+		var valid = String.join("\n", GATE_OUTPUT_CLAUSES);
+		assertThat(missingClauses(valid, GATE_OUTPUT_CLAUSES)).isEmpty();
+		for (var clause : GATE_OUTPUT_CLAUSES) {
+			assertThat(missingClauses(valid.replace(clause, "omitted"), GATE_OUTPUT_CLAUSES))
+					.as("missing gate evidence: %s", clause).contains(clause);
+		}
 	}
 
 	@Test
@@ -516,8 +593,13 @@ class RepositoryConventionsTest {
 			assertThat(orderedClosure(String.join(" → ", reordered), stages)).isFalse();
 		}
 		var workflow = Files.readString(repositoryRoot.resolve("docs/AGENT_WORKFLOW_MULTIAGENT.md"));
-		var start = workflow.indexOf("## End-to-end flow");
-		assertThat(orderedClosure(start < 0 ? workflow : workflow.substring(start), stages)).isTrue();
+		assertThat(orderedClosure(archiveFlow(workflow), stages)).isTrue();
+	}
+
+	private String archiveFlow(String workflow) {
+		return workflow.lines().filter(line -> line.contains("APPROVE") && line.contains("DOCS_CLOSE"))
+				.filter(line -> line.contains("checkpoint") && line.contains("archive"))
+				.findFirst().orElse("");
 	}
 
 	private boolean orderedClosure(String guidance, List<String> stages) {
@@ -1064,8 +1146,8 @@ class RepositoryConventionsTest {
 			}
 		}
 		var reviewer = roleConfigurations.getOrDefault("reviewer", "");
-		if (!containsAll(reviewer, "CORE_RISK", "accepted normative OpenSpec spec", "fresh thread")) {
-			violations.add("reviewer must independently review core risk and normative specifications");
+		if (!containsAll(reviewer, "CORE_RISK", "fresh thread", "semantic freeze", "full CI-01..CI-15 matrix")) {
+			violations.add("reviewer must independently review CORE_RISK with semantic freeze and the full invariant matrix");
 		}
 		if (!Pattern.compile("(?m)^\\s*sandbox_mode\\s*=\\s*\"read-only\"\\s*$").matcher(reviewer).find()) {
 			violations.add("reviewer must set sandbox_mode = \"read-only\"");

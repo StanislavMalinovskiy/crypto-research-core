@@ -8,8 +8,10 @@ context: |
   Package root: io.cryptoresearch. Modules: kernel, marketdata, risk, wallet,
   signal and evaluation.
   Read AGENTS.md and the selected workflow before planning or applying work.
-  Read the affected change and accepted specs, affected module documents and
+  Read the affected change when the selected route requires one, and accepted specs, affected module documents and
   nearest module guides, applicable ADRs, and relevant code/tests before editing.
+  MULTIAGENT TRIVIAL and NORMAL require no OpenSpec change; DEFAULT retains its
+  existing OpenSpec policy. Follow the selected workflow's tier boundaries.
   Follow AGENTS.md task-impact triggers for Architecture, Tech Stack, Testing,
   Operations and Reproducibility; resolve missing or ambiguous references first.
   Read docs/PROJECT_SUMMARY.md only for onboarding, product orientation or task

@@ -2,6 +2,8 @@
 
 Read this procedure only before approved DOCS_CLOSE, complete final gate, archive, archive recovery or post-archive work. Ordinary PLAN, BUILD and REVIEW remain in [the MULTIAGENT workflow](../AGENT_WORKFLOW_MULTIAGENT.md); DEFAULT uses its independent [workflow](../AGENT_WORKFLOW.md).
 
+CONTRACT and CORE_RISK use the full procedure. NORMAL uses the complete final gate below after APPROVE, without DOCS_CLOSE and without archive, then Main returns DONE. Checkpoint, archive, post-archive and recovery sections apply only when archiving CONTRACT/CORE_RISK. TRIVIAL does not load this procedure and uses its two-check gate in the common workflow.
+
 ## DOCS_CLOSE
 
 In DOCS_CLOSE after APPROVE, update only completion status, task checkboxes, evidence links, and non-semantic documentation; return APPROVE. If semantics must change, return ESCALATE with reason=CONTRACT_CHANGED to reopen PLAN; only the completed new PLAN may return PLAN_READY. Do not archive during DOCS_CLOSE.
@@ -10,7 +12,7 @@ In ARCHIVE, require Main's full-gate PASS and scoped pre-archive checkpoint. Use
 
 ## Complete final gate
 
-Main runs from the repository root after DOCS_CLOSE. The independent test-integrity preflight must pass before Maven; on Unix, `./mvnw clean verify` is equivalent to the Windows wrapper command:
+Main runs from the repository root after DOCS_CLOSE for CONTRACT/CORE_RISK, or after same-Architect APPROVE for NORMAL. The independent test-integrity preflight must pass before Maven; on Unix, `./mvnw clean verify` is equivalent to the Windows wrapper command:
 
 
 ```powershell
@@ -28,6 +30,15 @@ On Windows, first run `docker version` in the same escalated host access context
 - infrastructure issue or unrelated pre-existing failure → BLOCKED with exact command and cause.
 
 A Builder-attributable gate failure consumes the next existing repair round. The current reviewer must authorize round three; substantive blockers after it go to technical escalation. Infrastructure retries do not consume implementation repairs. The gate starts no new budget.
+
+### Compact truthful output
+
+Capture full output through plain shell redirection or an existing gate mechanism, outside a Maven-cleaned directory. Save the exact command's exit code immediately before formatting or searching logs; no new wrapper or state/evidence file is needed.
+
+- PASS: exact command/check, exit code zero, compact available counts and PASS. Test counts include failures, errors and skipped; unavailable counts are stated, never invented.
+- FAIL: exact command, captured exit code, failed test/check/plugin, bounded relevant error excerpt and path to full output. List remaining unrun checks.
+
+A required skipped or missing check is not PASS even with exit code zero. Successful command exit alone does not prove required tests ran. Never hide failure or skipped checks behind quiet output, replace the command's status with a formatter's, or narrow the complete Maven gate.
 
 ## Checkpoint and archive
 

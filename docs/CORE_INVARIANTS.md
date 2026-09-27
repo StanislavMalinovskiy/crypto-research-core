@@ -8,13 +8,16 @@ requirements. Those sources remain authoritative for their stated responsibiliti
 checklist and a controlling source is a documentation defect that must be resolved before approval.
 
 Architects, builders, and reviewers apply only the invariants affected by a change, but they must not silently
-omit an applicable invariant. Before approval, the reviewing role reports:
+omit an applicable invariant. In MULTIAGENT, NORMAL/CONTRACT review reports only touched CI; CORE_RISK review
+reports the full CI-01..CI-15 matrix. Use:
 
 ```text
 Invariant | Applicable | Evidence | Verdict
 ```
 
-`Not applicable` requires a short reason. A blanket statement that all invariants were checked is not evidence.
+In the full matrix, `Not applicable` requires a short reason. NORMAL/CONTRACT need not list untouched CI.
+A blanket statement that all invariants were checked is not evidence. DEFAULT retains its existing review
+responsibilities; these MULTIAGENT reporting tiers do not add its protocol to DEFAULT.
 
 ## Workflow classification and review
 
@@ -36,12 +39,13 @@ or narrowing the controlling sources.
 
 The current reviewing role follows this rule:
 
-- ROUTINE / STANDARD implementation or non-normative docs → same Architect thread.
+- NORMAL / CONTRACT → same Architect thread.
 - Any CORE_RISK change → fresh Reviewer (new thread).
-- Any change to an accepted normative OpenSpec spec → fresh Reviewer, regardless of risk.
 
-Either fresh-review condition takes precedence. Architect fixes risk and matched trigger evidence at
-PLAN_READY. New risk or scope evidence reopens Architect planning; ordinary repairs retain fixed risk.
+CORE_RISK takes precedence; an accepted normative-spec change alone does not require fresh review when no TR
+trigger exists. Architect assesses all TR triggers before choosing NORMAL/CONTRACT and fixes tier, risk and
+matched trigger evidence at PLAN_READY. New risk or scope evidence reopens Architect planning; ordinary repairs
+retain fixed risk. CI definitions and the mapping above do not change the trigger authority or Builder routing.
 
 ## Integrity and durability
 
