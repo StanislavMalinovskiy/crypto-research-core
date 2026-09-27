@@ -1,6 +1,6 @@
 # План исправлений по результатам внешних аудитов
 
-**Обновлено:** 20 сентября 2026 года
+**Обновлено:** 27 сентября 2026 года
 **Статус:** рабочий companion plan к [основному Delivery Plan](DELIVERY_PLAN.md)
 
 ## Назначение
@@ -12,7 +12,7 @@
 
 Он отвечает на вопрос: какие исправления и дополнительные рабочие пакеты нужны, чтобы пройти путь от recorded research skeleton до корректной системы реальных Solana-данных, Evidence Report и полезного владельцу decision-support инструмента.
 
-Это не OpenSpec change и не замена подробным требованиям. Каждый пакет, который меняет поведение, схему, dependency или архитектурное решение, реализуется только через отдельный approved OpenSpec change. После принятия последовательности актуальные статусы должны быть перенесены в [Delivery Plan](DELIVERY_PLAN.md), а этот файл должен оставаться картой remediation и traceability.
+Это не OpenSpec change и не замена подробным требованиям. Применимость OpenSpec и порядок реализации определяют [DEFAULT](AGENT_WORKFLOW.md) и [MULTIAGENT](AGENT_WORKFLOW_MULTIAGENT.md); этот план не вводит отдельные workflow rules. После принятия последовательности актуальные статусы должны быть перенесены в [Delivery Plan](DELIVERY_PLAN.md), а этот файл должен оставаться картой remediation и traceability.
 
 ## Главный вывод
 
@@ -46,7 +46,7 @@
 - Не вводить signing, order submission или real-money execution в рамках этих исправлений.
 - Не требовать Grafana, Redis, Kafka, ClickHouse или новую базу без измеренной необходимости.
 - Сохранять один репозиторий, один Maven-модуль, один JAR и одну PostgreSQL database, пока ADR не докажет обратное.
-- Выполнять изменения небольшими зависимостными OpenSpec changes; не объединять весь план в одну реализацию.
+- Выполнять изменения небольшими зависимостными пакетами по выбранному workflow, с OpenSpec там, где он требуется; не объединять весь план в одну реализацию.
 
 ## Сводка рабочих пакетов
 
@@ -55,10 +55,10 @@
 | F0 | Immediate | Синхронизировать документы и устранить противоречия | До следующего implementation change | Done (2026-09-20) |
 | F1 | Blocking | Определить Solana data contract и provider requirements | До завершения Stage 3.1 | Design done (4/10); spikes и выбор провайдера — owner-action |
 | F2 | Blocking | Подготовить schema/storage к реальным данным | До первой массовой real-data записи | Core implemented; live-readiness pending F3 forward migrations |
-| F3 | Blocking | Реализовать bounded ingestion, backfill, gaps и monitoring | Для выхода из Stage 3 | Not started |
+| F3 | Blocking | Реализовать bounded ingestion, backfill, gaps и monitoring | Для выхода из Stage 3 | Partial: recorded-replay telemetry done; live ingestion/monitoring pending |
 | F4 | Required | Реализовать point-in-time risk и wallet evidence | До production signal families | Not started |
 | F5 | Required | Пререгистрировать research protocol | До просмотра и настройки performance outcomes | Not started |
-| F6 | Required | Исправить production signal/evaluation semantics | До Stage 6 Evidence Report | Not started |
+| F6 | Required | Исправить production signal/evaluation semantics | До Stage 6 Evidence Report | Partial: bounded F6.2 slice and first-slice report retry hardening done; production scope pending |
 | F7 | Required | Построить статистически честный Evidence Report | Для research decision | Not started |
 | F8 | Product gap | Добавить decision support и forward shadow | После положительного/перспективного research decision | Not started |
 | F9 | Deferred | PAPER/MANUAL/LIVE safety and execution | Только после F8 и отдельных gates | Deferred |
@@ -253,6 +253,8 @@ Helius Free разрешено использовать только для пр
 
 ### F3.4 Минимальный monitoring
 
+**Статус:** Partial (2026-09-27). Принят и [архивирован recorded-replay telemetry slice](../openspec/changes/archive/2026-09-27-add-recorded-replay-operational-telemetry/tasks.md): process-local counters попыток normalization/replay и bounded structured summary с изоляцией отказов diagnostic sinks. [Принятый контракт](../openspec/specs/recorded-market-replay/spec.md) не превращает эти counters в durable research evidence, unique-observation counts или доказательство completeness. Live freshness, quota monitoring, gaps, data-quality report и actionable notifications ниже ещё не реализованы; F3 целиком не закрыт.
+
 Без обязательной Grafana обеспечить:
 
 - last successful ingest и lag/freshness;
@@ -344,6 +346,8 @@ Risk и wallet APIs возвращают воспроизводимые point-in
 
 ## F6 — Production signal и evaluation semantics
 
+**Статус:** Partial (2026-09-27). Завершён bounded recorded-data срез F6.2 ниже. Отдельно принято и [архивировано first-slice evaluation-report retry hardening](../openspec/changes/archive/2026-09-27-harden-evaluation-report-retry-semantics/tasks.md): полное immutable equality для run/outcome/report aggregate, explicit conflict и atomic rollback при несовпадении; equal/concurrent retries покрыты PostgreSQL tests. [Принятая спецификация](../openspec/specs/signal-evaluation/spec.md) сохраняет узкий one-family `1h` report; это не завершение production F6 или Evidence Report F7.
+
 **Цель:** заменить first-slice constants полноценными, но всё ещё research-only правилами.
 
 ### F6.1 Trigger и dedup
@@ -352,7 +356,9 @@ Risk и wallet APIs возвращают воспроизводимые point-in
 
 ### F6.2 LIQUIDITY_SPIKE baseline
 
-Определить target instant, bounded baseline window, maximum age, minimum coverage, gap behavior и deterministic selection. Старое наблюдение за несколько дней не может считаться one-hour baseline.
+**Статус:** Bounded recorded-data slice done (2026-09-27); full production coverage/gap work pending. [Архивированный change](../openspec/changes/archive/2026-09-27-bound-liquidity-spike-observation-windows/verification.md) реализует `liquidity-spike-v2`: при decision cutoff `C` baseline выбирается по `observedAt` из `[C - 65 minutes, C - 60 minutes]`, current — из `[C - 1 minute, C]`, с deterministic selection и двумя различными endpoints. Missing/stale evidence не создаёт signal effects. Исторические v1 snapshots остаются читаемыми.
+
+Это endpoint comparison, а не доказательство continuous hourly coverage, source-event freshness, sustained growth или отсутствия provider gaps. Полный production контракт ещё должен закрыть coverage/gap work вместе с F1/F3; точные принятые границы и ограничения описаны в [signal module](modules/signal.md). Старое наблюдение за несколько дней уже не допускается как one-hour baseline.
 
 ### F6.3 Signal quality и confidence
 

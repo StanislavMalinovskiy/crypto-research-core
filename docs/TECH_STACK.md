@@ -1,6 +1,6 @@
 # Tech stack and decision status
 
-**Updated:** 20 September 2026
+**Updated:** 27 September 2026
 
 This document records allowed technologies and their decision state. Product sequencing belongs to [Roadmap](ROADMAP.md), current architecture to [Architecture](ARCHITECTURE.md), and accepted architectural rationale to [ADRs](adr/README.md).
 
@@ -18,6 +18,7 @@ This document records allowed technologies and their decision state. Product seq
 - **Migrations:** Flyway managed by Spring Boot dependency management.
 - **Build:** Maven Wrapper with checksum-verified Maven 3.9.16, one Maven module and one deployable JAR.
 - **Health:** Spring Boot Actuator health endpoint.
+- **Recorded-replay telemetry:** existing Micrometer counters and SLF4J structured summaries are implemented through the baseline dependencies; they are process-local diagnostics, not research evidence. No exporter or additional endpoint is selected; see [Operations](OPERATIONS.md#logging-and-telemetry).
 - **Tests:** JUnit, Spring Modulith Test and PostgreSQL Testcontainers managed by the existing BOMs.
 - **Database test isolation:** Testcontainers remains the isolated PostgreSQL mechanism for Maven verification and never uses the persistent developer Compose volume.
 - **Specification workflow:** OpenSpec 1.13.0 in CI; generated skills remain owned by the installed CLI.
@@ -57,7 +58,7 @@ The following are planned directions, not installed bootstrap components:
 - provider-backed market-data ingestion on top of the implemented idempotent raw/normalized replay and immutable dataset snapshots;
 - Solana provider adapters, normalization and replay;
 - table-specific partitioning where the owning change demonstrates volume, retention and query-pattern need;
-- structured logging, correlation metadata and workload-specific operational metrics;
+- live-ingestion logging, correlation metadata and workload-specific operational metrics beyond the implemented recorded-replay diagnostics;
 - a dedicated gate design before any future PAPER/LIVE execution; execution is absent from the MVP topology.
 
 A concrete provider requires coverage, rate-limit and commercial-terms validation, an OpenSpec design and explicit approval for any new production dependency. An ADR is required only when its introduction changes the provider boundary or general architecture.

@@ -89,6 +89,8 @@ This slice has no HTTP/CLI/scheduled trigger, live provider connection or produc
 
 ## Logging and telemetry
 
+Recorded replay now has the accepted [process-local attempt counters and bounded structured summary](../openspec/specs/recorded-market-replay/spec.md). `crypto.research.marketdata.replay.items` uses only `status=normalized|normalization_failed`; `crypto.research.marketdata.replay.invocations` uses only `outcome=completed|aborted` as application-defined tags. With an operational enabled INFO sink, each non-null call that returns normally or aborts with a runtime exception emits one `Recorded replay summary` with fixed operation/outcome fields and attempted/result/unclassified counts. Diagnostic runtime failures are contained without changing replay results or exceptions. These diagnostics are not unique durable-observation counts, research evidence or completeness guarantees. This is the completed recorded-data slice of F3.4; live freshness, quota, gap monitoring and actionable notifications remain future work. No exporter or additional Actuator endpoint is introduced.
+
 - Use the Spring Boot and SLF4J baseline; no exporter is currently selected.
 - Never log secrets or complete sensitive provider payloads. Redact credentials before constructing log or exception messages.
 - Where applicable, correlation fields identify workload, research run, provider, chain and operation.

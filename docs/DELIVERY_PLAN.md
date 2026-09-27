@@ -1,6 +1,6 @@
 # План реализации
 
-**Обновлено:** 20 сентября 2026 года
+**Обновлено:** 27 сентября 2026 года
 
 ## Назначение
 
@@ -11,12 +11,12 @@
 - [Roadmap](ROADMAP.md) определяет продуктовые гипотезы, долгосрочные возможности и направление.
 - Этот Delivery Plan определяет этапы, порядок крупных рабочих пакетов и их статус.
 - [DELIVERY_PLAN_FIXES](DELIVERY_PLAN_FIXES.md) — companion remediation-карта и traceability по итогам двух внешних аудитов 2026-09-20; определяет пакеты F0–F9 до реальных данных и decision support.
-- [OpenSpec changes](../openspec/changes/) содержат требования, дизайн и подробные чекбоксы активной работы.
+- [OpenSpec changes](../openspec/changes) содержат требования, дизайн и подробные чекбоксы работы, для которой выбранный workflow требует change; применимость определяют [DEFAULT](AGENT_WORKFLOW.md) и [MULTIAGENT](AGENT_WORKFLOW_MULTIAGENT.md).
 - [ADRs](adr/README.md) фиксируют принятые архитектурные решения.
-- [Main specs](../openspec/specs/) описывают принятое проверяемое поведение.
+- [Main specs](../openspec/specs) описывают принятое проверяемое поведение.
 - Код и тесты подтверждают фактически работающую реализацию.
 
-Задачи ниже являются направляющей картой, а не неизменным обязательством или железным расписанием. По мере реализации, исследования провайдеров, получения данных и обнаружения новых зависимостей задачи могут добавляться, разделяться, объединяться, переставляться или откладываться. Такое изменение должно быть внесено в план явно; детали активной реализации остаются в соответствующем OpenSpec change, а принятые ADR и main specs не переписываются планом молча.
+Задачи ниже являются направляющей картой, а не неизменным обязательством или железным расписанием. По мере реализации, исследования провайдеров, получения данных и обнаружения новых зависимостей задачи могут добавляться, разделяться, объединяться, переставляться или откладываться. Такое изменение должно быть внесено в план явно; детали активной реализации ведутся по выбранному workflow, а принятые ADR и main specs не переписываются планом молча.
 
 Допустимые статусы: `Done`, `Current`, `Next`, `Planned`, `Deferred`.
 
@@ -25,6 +25,8 @@
 - **Текущий этап:** Этап 3 — Реальные данные Solana (исполняется через remediation-пакеты [DELIVERY_PLAN_FIXES](DELIVERY_PLAN_FIXES.md)).
 - **Текущая работа:** завершить F1 — провести owner-run capability-specific provider spikes 3.1–3.6 и выбрать primary live transport, historical source и необходимые specialized sources; design-контракт готов, но change остаётся активным на 4/10 задач.
 - **Завершённая подготовка:** F0 синхронизировал документы; F2 core storage принят и архивирован — Flyway V5–V9, immutable raw/price/liquidity/USD/universe storage, lineage constraints и bounded batch paths реализованы.
+- **Завершённые срезы 27 сентября:** приняты и архивированы [bounded LIQUIDITY_SPIKE windows](../openspec/changes/archive/2026-09-27-bound-liquidity-spike-observation-windows/verification.md), [recorded-replay telemetry](../openspec/changes/archive/2026-09-27-add-recorded-replay-operational-telemetry/tasks.md) и [evaluation-report retry hardening](../openspec/changes/archive/2026-09-27-harden-evaluation-report-retry-semantics/tasks.md). Это завершённые изменения первого среза; production F6.2 и live monitoring F3.4 остаются частично открытыми.
+- **Агентная разработка:** приняты instruction diet, workflow safety rules и workflow simplification; актуальные роли, tiers, review и gates определяет [выбранный workflow](../AGENTS.md#agent-workflow-mode). Исторические benchmark findings не являются текущими правилами routing.
 - **Следующая операционная работа:** F3 — bounded ingestion выбранного transport с явными timeout, rate, concurrency, finite retry policies, gap recovery и минимальной operational visibility. До допуска live data F3 также добавляет forward migrations для token decimals, provider-visible/modeled availability и явного quality provenance.
 - **Условие перехода к этапу 4:** реальные текущие и исторические Solana observations воспроизводятся с raw lineage, trusted observation time, parser identity и видимыми gaps без повторных доменных эффектов (F3.6).
 
@@ -179,4 +181,4 @@
 
 ## Правило сопровождения
 
-План пересматривается при архивировании change, завершении этапа, явной смене приоритета или появлении доказанной новой необходимости. Короткие рабочие пакеты и их статусы обновляются здесь; подробные требования и чекбоксы живут только в OpenSpec. Новая задача добавляется тогда, когда без неё нельзя достичь результата этапа или сохранить корректность измерений, а не для фиксации каждой технической подзадачи.
+План пересматривается при архивировании change, завершении этапа, явной смене приоритета или появлении доказанной новой необходимости. Короткие рабочие пакеты и их статусы обновляются здесь; подробный контракт и evidence ведутся по выбранному workflow, а требования и чекбоксы OpenSpec — в change, когда он требуется. Новая задача добавляется тогда, когда без неё нельзя достичь результата этапа или сохранить корректность измерений, а не для фиксации каждой технической подзадачи.
