@@ -7,7 +7,7 @@ model_post_turn_compact_threshold_percent = 60
 # Orca is outside this project workflow unless the user explicitly requests it.
 [agents]
   enabled = true
-  max_concurrent_threads_per_session = 3
+  max_concurrent_threads_per_session = 4
   max_depth = 1
   default_subagent_model = "gpt-6-sol"
   default_subagent_reasoning_effort = "medium"

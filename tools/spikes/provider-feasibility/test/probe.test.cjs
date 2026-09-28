@@ -125,6 +125,7 @@ test('evidence write ceiling and actual storage failure terminate before further
     used: dir => path.basename(dir) === 'provider-feasibility' ? 49999999 : 0 });
   assert.equal(capped.reason, 'EVIDENCE_LIMIT'); assert.equal(other.state.starts.length, 0);
 });
+
 for (const termination of ['timeout', 'connection termination']) test(`production send retains short partial body on ${termination}`, { timeout: 5000 }, async t => {
   const body = Buffer.from('{"partial":12345'), io = setup(t); let serverResponse, expire, calls = 0, closed;
   const server = http.createServer((req, res) => { serverResponse = res; res.writeHead(200); res.write(body); });
@@ -187,4 +188,163 @@ for (const [name, fragments, reason] of [
   assert.equal(record.complete, reason === 'LIST_EXHAUSTED');
   assert.equal(record.reason, reason === 'LIST_EXHAUSTED' ? 'COMPLETE_RESPONSE' : reason);
   assert.equal(result.attempts, 1); assert.equal(calls, 1);
+});
+
+const profilePlan = () => ({ profile: 's2-rpc-c-m-v1', referenceEnd: '2026-09-27T18:44:00.000Z',
+  requests: [410100000, 429644639].map((position, i) => ({ ...rpc, body: { jsonrpc: '2.0', id: 16 + i, method: 'getBlock',
+    params: [position, { commitment: 'finalized', encoding: 'json', transactionDetails: 'full', rewards: false, maxSupportedTransactionVersion: 1 }] } })) });
+const sizedJson = length => {
+  const prefix = '{"quantity":900719925474099312345,"pad":"', suffix = '"}';
+  return Buffer.from(prefix + 'x'.repeat(length - prefix.length - suffix.length) + suffix);
+};
+for (const [name, mutate] of [
+  ['third request', p => p.requests.push(p.requests[1])], ['missing request', p => p.requests.pop()],
+  ['non-RPC request', p => p.requests[0] = metadata], ['wrong slot', p => p.requests[0].body.params[0]++],
+  ['wrong second slot', p => p.requests[1].body.params[0]++], ['order', p => p.requests.reverse()],
+  ['wrong ID', p => p.requests[0].body.id++], ['reference', p => p.referenceEnd = plan().referenceEnd],
+  ['unknown profile', p => p.profile = 'other'], ['null profile', p => p.profile = null],
+  ['encoding', p => p.requests[0].body.params[1].encoding = 'base64'], ['version', p => p.requests[0].body.params[1].maxSupportedTransactionVersion = 0],
+  ['finality', p => p.requests[0].body.params[1].commitment = 'confirmed'], ['details', p => p.requests[0].body.params[1].transactionDetails = 'accounts'],
+  ['rewards', p => p.requests[0].body.params[1].rewards = true], ['method', p => p.requests[0].body.method = 'getBlockTime'],
+  ['cap', p => p.responseLimit = 9000000], ['debit', p => p.sunkDebits = { attempts: 0, received: 0 }]
+]) test(`fixed RPC profile rejects ${name} before network or output`, async t => {
+  const input = profilePlan(); mutate(input); const io = setup(t);
+  assert.throws(() => validate(input)); const result = await run({ enabled: true, plan: input, ...io });
+  assert.equal(result.reason, 'REQUEST_INVALID'); assert.equal(io.state.starts.length, 0); assert.deepEqual(fs.readdirSync(io.root), []);
+});
+for (const [name, profiled, length, termination, reason] of [
+  ['complete above 2 MB', true, 3000000, 'end', 'LIST_EXHAUSTED'],
+  ['two near-cap responses', true, 7999999, 'end', 'LIST_EXHAUSTED'],
+  ['ordinary 2 MB stop', false, 3000000, 'end', 'RESPONSE_LIMIT'],
+  ['8 MB boundary', true, 8000000, 'end', 'RESPONSE_LIMIT'],
+  ['8 MB oversize', true, 8000001, 'end', 'RESPONSE_LIMIT'],
+  ['timeout partial above 2 MB', true, 3000000, 'timeout', 'REQUEST_DEADLINE'],
+  ['connection termination above 2 MB', true, 3000000, 'close', 'NETWORK_ERROR']
+]) test(`production send fixed RPC profile: ${name}`, { timeout: 10000 }, async t => {
+  const io = setup(t), body = sizedJson(length), input = profilePlan(); if (!profiled) delete input.profile;
+  let calls = 0, expire, serverResponse; const closures = [];
+  const server = http.createServer((req, res) => { serverResponse = res; res.writeHead(200); if (termination === 'end') res.end(body); else res.write(body); });
+  server.listen(0, '127.0.0.1'); await once(server, 'listening'); t.after(() => { server.closeAllConnections(); server.close(); });
+  t.mock.method(require('node:https'), 'request', (url, options, callback) => {
+    calls++; assert.equal(url, rpc.url);
+    const request = http.request(`http://127.0.0.1:${server.address().port}`, options, response => {
+      callback(response);
+      if (termination !== 'end') response.on('readable', () => setImmediate(() => {
+        const raw = path.join(io.root, 'provider-feasibility', '001.raw');
+        if (fs.existsSync(raw) && fs.statSync(raw).size === body.length) {
+          if (termination === 'timeout') expire(); else serverResponse.destroy();
+        }
+      }));
+    });
+    closures.push(new Promise(resolve => request.once('close', resolve))); return request;
+  });
+  const clock = { ...io.clock, setTimeout: fn => { if (termination !== 'end') { expire = fn; return 1; } return setTimeout(fn, 5000); },
+    clearTimeout: timer => { if (termination === 'end') clearTimeout(timer); } };
+  const result = await run({ enabled: true, plan: input, ...io, clock, transport: undefined }); await Promise.all(closures);
+  assert.equal(result.reason, reason, 'profile transport must apply its exact response ceiling and finish at EOF');
+  const expectedCalls = reason === 'LIST_EXHAUSTED' ? 2 : 1, retained = body.subarray(0, profiled ? 8000000 : 2000000);
+  assert.equal(calls, expectedCalls); assert.equal(result.attempts, expectedCalls); assert.equal(result.received, retained.length * expectedCalls);
+  for (const record of result.records) {
+    assert.equal(record.bytes, retained.length); assert.equal(record.retainedBytes, retained.length);
+    assert.deepEqual(fs.readFileSync(path.join(io.root, 'provider-feasibility', record.raw)), retained);
+    assert.equal(record.sha256, crypto.createHash('sha256').update(retained).digest('hex'));
+    assert.equal(record.complete, reason === 'LIST_EXHAUSTED'); assert.equal(record.reason, record.complete ? 'COMPLETE_RESPONSE' : reason);
+  }
+  if (profiled) {
+    assert.deepEqual(result.sunkDebits, { attempts: 25, received: 6995480 });
+    assert.equal(result.cumulativeAttempts, 25 + expectedCalls); assert.equal(result.cumulativeReceived, 6995480 + result.received);
+    const dir = path.join(io.root, 'provider-feasibility'), manifest = JSON.parse(fs.readFileSync(path.join(dir, 'manifest.json')));
+    assert.equal(manifest.profile, input.profile); assert.deepEqual(manifest.sunkDebits, result.sunkDebits);
+    assert.equal(manifest.effectiveCaps.response, 8000000); assert.equal(manifest.effectiveCaps.evidence, 17000000);
+    assert.equal(manifest.caps.received, 25000000); assert.equal(manifest.caps.requests, 80); assert.equal(manifest.evidenceReservation, 50000000);
+    for (let i = 1; i <= expectedCalls; i++) {
+      const reservation = JSON.parse(fs.readFileSync(path.join(dir, String(i).padStart(3, '0') + '.request.json')));
+      assert.equal(reservation.reservedResponse, 8000000); assert.equal(reservation.cumulativeAttempts, 25 + i);
+      assert.equal(reservation.cumulativeReceived, 6995480 + (i - 1) * retained.length);
+      assert.ok(reservation.cumulativeReceived + reservation.reservedResponse <= 25000000);
+    }
+    const summary = JSON.parse(fs.readFileSync(path.join(dir, 'summary.json'))); assert.deepEqual(summary, result);
+    assert.ok(fs.readdirSync(dir).reduce((total, file) => total + fs.statSync(path.join(dir, file)).size, 0) <= 17000000);
+  }
+});
+test('fixed RPC profile keeps timeout abort, output exclusivity and the 17 MB output bound', async t => {
+  const io = setup(t), partial = Buffer.from('{"partial":'), clock = { ...io.clock, setTimeout: fn => setTimeout(fn, 20) };
+  const transport = async (request, hooks) => {
+    io.state.starts.push(0); hooks.onHeaders(200); hooks.onChunk(partial);
+    await new Promise(resolve => hooks.signal.addEventListener('abort', () => { io.state.aborted = true; resolve(); }, { once: true }));
+    return { ended: false };
+  };
+  const result = await run({ enabled: true, plan: profilePlan(), ...io, clock, transport });
+  assert.equal(result.reason, 'REQUEST_DEADLINE'); assert.equal(io.state.aborted, true); assert.equal(io.state.starts.length, 1);
+  const raw = path.join(io.root, 'provider-feasibility', '001.raw'); assert.deepEqual(fs.readFileSync(raw), partial);
+  const retry = await run({ enabled: true, plan: profilePlan(), ...io }); assert.equal(retry.reason, 'OUTPUT_REUSE');
+  assert.equal(io.state.starts.length, 1); assert.deepEqual(fs.readFileSync(raw), partial);
+  const other = setup(t), capped = await run({ enabled: true, plan: profilePlan(), ...other,
+    used: dir => path.basename(dir) === 'provider-feasibility' ? 16999999 : 0 });
+  assert.equal(capped.reason, 'EVIDENCE_LIMIT'); assert.equal(other.state.starts.length, 0);
+});
+
+const profileV2Plan = () => ({ ...profilePlan(), profile: 's2-rpc-c-m-v2' });
+for (const [name, mutate] of [
+  ['third', p => p.requests.push(p.requests[1])], ['non-RPC', p => p.requests[0] = metadata], ['slot', p => p.requests[0].body.params[0]++],
+  ['order', p => p.requests.reverse()], ['ID', p => p.requests[1].body.id++], ['reference', p => p.referenceEnd = plan().referenceEnd],
+  ['encoding', p => p.requests[0].body.params[1].encoding = 'base64'], ['version', p => p.requests[0].body.params[1].maxSupportedTransactionVersion = 0],
+  ['method', p => p.requests[0].body.method = 'getBlockTime'], ['cap', p => p.responseLimit = 64000000], ['debit', p => p.sunkDebits = { attempts: 0, received: 0 }]
+]) test(`V2 rejects ${name} with zero IO`, async t => {
+  const input = profileV2Plan(), io = setup(t); mutate(input); assert.throws(() => validate(input));
+  assert.equal((await run({ enabled: true, plan: input, ...io })).reason, 'REQUEST_INVALID');
+  assert.equal(io.state.starts.length, 0); assert.deepEqual(fs.readdirSync(io.root), []);
+});
+for (const [name, length, timeout, reason] of [
+  ['complete above 8 MB after 20 seconds', 9000000, false, 'LIST_EXHAUSTED'], ['two near-32 MB bodies', 31999999, false, 'LIST_EXHAUSTED'],
+  ['32 MB boundary', 32000000, false, 'RESPONSE_LIMIT'], ['32 MB oversize', 32000001, false, 'RESPONSE_LIMIT'],
+  ['120-second timeout', 9000000, true, 'REQUEST_DEADLINE']
+]) test(`production send V2: ${name}`, { timeout: 15000 }, async t => {
+  const io = setup(t), body = sizedJson(length), dir = path.join(io.root, 'provider-feasibility'); let calls = 0, now = 100000, expire;
+  const closures = [], timers = [], server = http.createServer((req, res) => { res.writeHead(200); if (timeout) res.write(body); else res.end(body); });
+  server.listen(0, '127.0.0.1'); await once(server, 'listening'); t.after(() => { server.closeAllConnections(); server.close(); });
+  t.mock.method(require('node:https'), 'request', (url, options, callback) => {
+    calls++; assert.equal(url, rpc.url);
+    const request = http.request(`http://127.0.0.1:${server.address().port}`, options, response => {
+      now += 20000; callback(response);
+      if (timeout) response.on('readable', () => setImmediate(() => {
+        if (fs.statSync(path.join(dir, '001.raw')).size === body.length) { now += 100000; expire(); }
+      }));
+    }); closures.push(new Promise(resolve => request.once('close', resolve))); return request;
+  });
+  const clock = { now: () => now, sleep: async ms => { now += ms; }, setTimeout: (fn, ms) => { timers.push(ms); if (timeout) { expire = fn; return 1; } return setTimeout(fn, 8000); },
+    clearTimeout: timer => { if (!timeout) clearTimeout(timer); } };
+  const result = await run({ enabled: true, plan: profileV2Plan(), ...io, clock, transport: undefined }); await Promise.all(closures);
+  assert.equal(result.reason, reason, 'V2 must use its enlarged response and deadline limits'); const count = reason === 'LIST_EXHAUSTED' ? 2 : 1, retained = body.subarray(0, 32000000);
+  assert.equal(calls, count); assert.equal(result.attempts, count); assert.deepEqual(timers, Array(count).fill(120000));
+  assert.equal(result.received, retained.length * count); assert.deepEqual(result.sunkDebits, { attempts: 26, received: 14995480 });
+  assert.deepEqual(result.newRun, { attempts: count, received: retained.length * count }); assert.equal(result.cumulativeAttempts, 26 + count);
+  assert.equal(result.cumulativeReceived, 14995480 + result.received); assert.equal(result.evidenceReservation, 200000000); assert.equal(result.aggregateEvidenceLimit, 200000000);
+  const manifest = JSON.parse(fs.readFileSync(path.join(dir, 'manifest.json')));
+  assert.equal(manifest.profile, 's2-rpc-c-m-v2'); assert.deepEqual(manifest.sunkDebits, result.sunkDebits); assert.deepEqual(manifest.newRun, { attempts: 0, received: 0 });
+  assert.equal(manifest.caps.response, 2000000); assert.equal(manifest.caps.received, 25000000); assert.equal(manifest.evidenceReservation, 200000000);
+  for (const container of [manifest, result]) {
+    assert.equal(container.effectiveCaps.response, 32000000); assert.equal(container.effectiveCaps.received, 100000000);
+    assert.equal(container.effectiveCaps.evidence, 65000000); assert.equal(container.effectiveCaps.requestMs, 120000); assert.equal(container.effectiveCaps.requests, 80);
+  }
+  for (const record of result.records) {
+    assert.equal(record.bytes, retained.length); assert.equal(record.retainedBytes, retained.length); assert.equal(record.status, 200);
+    assert.equal(record.sha256, crypto.createHash('sha256').update(retained).digest('hex')); assert.deepEqual(fs.readFileSync(path.join(dir, record.raw)), retained);
+    assert.equal(record.complete, reason === 'LIST_EXHAUSTED'); assert.equal(record.reason, record.complete ? 'COMPLETE_RESPONSE' : reason);
+    const reservation = JSON.parse(fs.readFileSync(path.join(dir, String(record.index).padStart(3, '0') + '.request.json')));
+    assert.equal(reservation.reservedResponse, 32000000); assert.equal(reservation.requestDeadline - Date.parse(record.sentAt), 120000);
+    assert.equal(reservation.cumulativeAttempts, 26 + record.index); assert.equal(reservation.cumulativeReceived, 14995480 + (record.index - 1) * retained.length);
+    assert.equal(reservation.evidenceReservation, 200000000); assert.ok(reservation.cumulativeReceived + reservation.reservedResponse <= 100000000);
+  }
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(dir, 'summary.json'))), result);
+  assert.ok(fs.readdirSync(dir).reduce((sum, file) => sum + fs.statSync(path.join(dir, file)).size, 0) <= 65000000);
+  assert.equal((await run({ enabled: true, plan: profileV2Plan(), ...io })).reason, 'OUTPUT_REUSE'); assert.equal(calls, count);
+  assert.deepEqual(fs.readFileSync(path.join(dir, '001.raw')), retained);
+});
+for (const [name, free, used, reason] of [
+  ['65 MB output', 1e12, dir => path.basename(dir) === 'provider-feasibility' ? 64999999 : 0, 'EVIDENCE_LIMIT'],
+  ['200 MB free reservation', 30199999999, () => 0, 'FREE_SPACE_LIMIT'], ['200 MB disk reservation', 1e12, () => 9800000001, 'DISK_LIMIT']
+]) test(`V2 ${name} refuses before traffic`, async t => {
+  const io = setup(t); io.state.free = free; const result = await run({ enabled: true, plan: profileV2Plan(), ...io, used });
+  assert.equal(result.reason, reason); assert.equal(io.state.starts.length, 0);
 });

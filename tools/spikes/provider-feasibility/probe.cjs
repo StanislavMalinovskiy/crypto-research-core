@@ -4,16 +4,21 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const https = require('node:https');
 const caps = Object.freeze({ requests: 80, response: 2000000, received: 25000000, evidence: 50000000, disk: 10000000000, free: 30000000000, requestMs: 15000, batchMs: 1800000, spacingMs: 2000 });
+const rpcProfile = Object.freeze({ name: 's2-rpc-c-m-v1', response: 8000000, evidence: 17000000, attempts: 25, received: 6995480 });
+const rpcProfileV2 = Object.freeze({ name: 's2-rpc-c-m-v2', response: 32000000, evidence: 65000000, attempts: 26, received: 14995480, traffic: 100000000, aggregateEvidence: 200000000, requestMs: 120000 });
+const profileFor = name => name === rpcProfile.name ? rpcProfile : name === rpcProfileV2.name ? rpcProfileV2 : undefined;
 const fail = code => { const error = new Error(code); error.safeCode = code; throw error; };
 const keys = (object, allowed) => { if (!object || typeof object !== 'object' || Array.isArray(object) || Object.keys(object).some(k => !allowed.includes(k))) fail('REQUEST_INVALID'); };
 const slot = n => { if (!Number.isSafeInteger(n) || n < 0) fail('REQUEST_INVALID'); };
 const address = value => { if (typeof value !== 'string' || !/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(value)) fail('REQUEST_INVALID'); };
 const finality = (value, allowed = ['commitment']) => { keys(value, allowed); if (value.commitment !== 'finalized') fail('REQUEST_INVALID'); };
 function validate(plan) {
-  keys(plan, ['referenceEnd', 'requests']);
+  keys(plan, ['referenceEnd', 'requests', 'profile']);
   if (typeof plan.referenceEnd !== 'string' || !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/.test(plan.referenceEnd)
     || !Number.isFinite(Date.parse(plan.referenceEnd)) || new Date(plan.referenceEnd).toISOString() !== plan.referenceEnd || !Array.isArray(plan.requests) || !plan.requests.length || plan.requests.length > caps.requests
     || Buffer.byteLength(JSON.stringify(plan)) > 256000) fail('REQUEST_INVALID');
+  const profiled = Object.hasOwn(plan, 'profile');
+  if (profiled && (!profileFor(plan.profile) || plan.referenceEnd !== '2026-09-27T18:44:00.000Z' || plan.requests.length !== 2)) fail('REQUEST_INVALID');
   const mints = new Map();
   for (const request of plan.requests) {
     keys(request, ['url', 'method', 'body']); let url;
@@ -62,6 +67,10 @@ function validate(plan) {
       }
     } else fail('REQUEST_INVALID');
   }
+  if (profiled) plan.requests.forEach((request, i) => {
+    if (request.url !== 'https://api.mainnet-beta.solana.com/' || request.body.method !== 'getBlock'
+      || request.body.id !== 16 + i || request.body.params[0] !== [410100000, 429644639][i]) fail('REQUEST_INVALID');
+  });
   return plan;
 }
 function used(dir) {
@@ -83,9 +92,9 @@ function durable(file, bytes, flags) {
   try { let at = 0; while (at < bytes.length) { const count = fs.writeSync(fd, bytes, at, bytes.length - at); if (!count) fail('STORAGE_ERROR'); at += count; } fs.fsyncSync(fd); }
   finally { fs.closeSync(fd); }
 }
-function send(spec, { signal, onChunk, onHeaders }) {
+function send(spec, { signal, onChunk, onHeaders, responseLimit = caps.response }) {
   return new Promise((resolve, reject) => {
-    let response, done = false, remaining = caps.response;
+    let response, done = false, remaining = responseLimit;
     const finish = (error, value) => { if (done) return; done = true; signal.removeEventListener('abort', abort); if (error) { req.destroy(); reject(error); } else resolve(value); };
     const abort = () => finish(Object.assign(Error('CANCELLED'), { safeCode: 'CANCELLED' }));
     const req = https.request(spec.url, { method: spec.method, agent: false, headers: { Accept: 'application/json', ...(spec.body ? { 'Content-Type': 'application/json' } : {}) } }, res => {
@@ -112,45 +121,56 @@ async function run(options) {
   const result = { reason: 'DISABLED', attempts: 0, received: 0, records: [] }; if (!options.enabled) return result;
   const clock = options.clock || { now: Date.now, sleep: ms => new Promise(resolve => setTimeout(resolve, ms)), setTimeout, clearTimeout };
   const space = options.free || (dir => { const s = fs.statfsSync(dir, { bigint: true }); return Number(s.bavail * s.bsize); });
-  const bytesUsed = options.used || used, write = options.write || durable; let root, dir, started, deadline, lastStart;
+  const bytesUsed = options.used || used, write = options.write || durable; let root, dir, started, deadline, lastStart, limits = caps, sunkAttempts = 0, sunkReceived = 0, profile, evidenceReservation = caps.evidence;
+  const accounting = () => profile ? { profile: profile.name, ...(profile.aggregateEvidence ? { aggregateEvidenceLimit: evidenceReservation, evidenceReservation } : {}),
+    sunkDebits: { attempts: sunkAttempts, received: sunkReceived }, effectiveCaps: limits,
+    newRun: { attempts: result.attempts, received: result.received },
+    cumulativeAttempts: sunkAttempts + result.attempts, cumulativeReceived: sunkReceived + result.received } : {};
   const code = error => error?.safeCode || 'STORAGE_ERROR';
-  const guard = bytes => {
+  const guard = (bytes, sharedOnly = false) => {
     if (space(root) - bytes < caps.free) fail('FREE_SPACE_LIMIT');
     if (bytesUsed(root) + bytes > caps.disk) fail('DISK_LIMIT');
-    if (dir && bytesUsed(dir) + bytes > caps.evidence) fail('EVIDENCE_LIMIT');
+    if (dir && !sharedOnly && bytesUsed(dir) + bytes > limits.evidence) fail('EVIDENCE_LIMIT');
   };
   const save = (name, bytes, flags = 'wx') => { guard(bytes.length); try { write(path.join(dir, name), bytes, flags); } catch (e) { fail(code(e)); } };
   const json = (name, value) => save(name, Buffer.from(JSON.stringify(value)));
   try {
     try { validate(options.plan); } catch { fail('REQUEST_INVALID'); }
+    profile = profileFor(options.plan.profile);
+    if (profile) {
+      limits = { ...caps, response: profile.response, evidence: profile.evidence, received: profile.traffic || caps.received, requestMs: profile.requestMs || caps.requestMs };
+      sunkAttempts = profile.attempts; sunkReceived = profile.received; evidenceReservation = profile.aggregateEvidence || caps.evidence;
+      Object.assign(result, accounting());
+    }
     root = canonical(options.root || 'C:/crypto-research-evidence'); dir = path.join(root, 'provider-feasibility');
     if (fs.existsSync(dir)) fail('OUTPUT_REUSE');
     if (fs.existsSync(path.join(root, 'alchemy-s1', 'active.lock'))) fail('S1_ACTIVE');
-    fs.mkdirSync(root, { recursive: true }); guard(caps.evidence); fs.mkdirSync(dir);
+    fs.mkdirSync(root, { recursive: true }); guard(evidenceReservation, sunkAttempts > 0); fs.mkdirSync(dir);
     started = clock.now(); deadline = started + caps.batchMs;
-    json('manifest.json', { incomplete: true, referenceEnd: options.plan.referenceEnd, requests: options.plan.requests, caps, startedAt: new Date(started).toISOString(),
-      deadline: new Date(deadline).toISOString(), evidenceReservation: caps.evidence, sourceSha256: crypto.createHash('sha256').update(fs.readFileSync(__filename)).digest('hex'), node: process.version,
+    json('manifest.json', { incomplete: true, referenceEnd: options.plan.referenceEnd, requests: options.plan.requests, caps, ...accounting(), startedAt: new Date(started).toISOString(),
+      deadline: new Date(deadline).toISOString(), evidenceReservation, sourceSha256: crypto.createHash('sha256').update(fs.readFileSync(__filename)).digest('hex'), node: process.version,
       interpretation: 'Completion describes response transport/syntax only, not dataset coverage. Raw quantities retained unchanged. No historical correctness or provider-selection verdict.' });
     for (const spec of options.plan.requests) {
       if (clock.now() >= deadline) fail('BATCH_DEADLINE');
       if (lastStart !== undefined) await clock.sleep(Math.max(0, Math.min(caps.spacingMs - (clock.now() - lastStart), deadline - clock.now())));
       if (clock.now() >= deadline) fail('BATCH_DEADLINE');
-      if (result.received + caps.response > caps.received) fail('RECEIVED_LIMIT'); guard(caps.response + 65536);
+      if (sunkAttempts + result.attempts + 1 > caps.requests) fail('REQUEST_LIMIT');
+      if (sunkReceived + result.received + limits.response > limits.received) fail('RECEIVED_LIMIT'); guard(limits.response + 65536);
       const index = result.attempts + 1, name = String(index).padStart(3, '0'), raw = name + '.raw'; save(raw, Buffer.alloc(0));
-      const sent = clock.now(), requestDeadline = Math.min(deadline, sent + caps.requestMs);
+      const sent = clock.now(), requestDeadline = Math.min(deadline, sent + limits.requestMs);
       const record = { index, request: spec, raw, sentAt: new Date(sent).toISOString(), receivedAt: null, bytes: 0, complete: false, reason: 'IN_PROGRESS' };
-      json(name + '.request.json', { ...record, reservedResponse: caps.response, requestDeadline });
+      json(name + '.request.json', { ...record, ...accounting(), ...(sunkAttempts ? { cumulativeAttempts: sunkAttempts + index } : {}), reservedResponse: limits.response, requestDeadline });
       result.attempts++; lastStart = sent; const controller = new AbortController(), digest = crypto.createHash('sha256'), chunks = []; let timer, failure, ended = false;
       const expired = () => clock.now() >= deadline ? 'BATCH_DEADLINE' : 'REQUEST_DEADLINE';
       try {
         const timed = new Promise((resolve, reject) => { timer = clock.setTimeout(() => { failure = expired(); controller.abort(); reject(Object.assign(Error(failure), { safeCode: failure })); }, Math.max(0, requestDeadline - clock.now())); });
-        const response = await Promise.race([timed, (options.transport || send)(spec, { signal: controller.signal,
+        const response = await Promise.race([timed, (options.transport || send)(spec, { signal: controller.signal, responseLimit: limits.response,
           onHeaders: status => { record.status = status; }, onChunk: chunk => {
             if (controller.signal.aborted) fail(failure || 'CANCELLED');
             if (clock.now() >= requestDeadline) fail(expired());
-            const bytes = chunk.subarray(0, caps.response - record.bytes); record.bytes += bytes.length; result.received += bytes.length;
+            const bytes = chunk.subarray(0, limits.response - record.bytes); record.bytes += bytes.length; result.received += bytes.length;
             save(raw, bytes, 'a'); digest.update(bytes); chunks.push(bytes);
-            if (record.bytes >= caps.response) fail('RESPONSE_LIMIT'); return caps.response - record.bytes;
+            if (record.bytes >= limits.response) fail('RESPONSE_LIMIT'); return limits.response - record.bytes;
           } })]); ended = response.ended === true;
       } catch (error) { failure ||= error.safeCode || 'NETWORK_ERROR'; controller.abort(); }
       finally { clock.clearTimeout(timer); }
@@ -178,6 +198,7 @@ async function run(options) {
     }
     result.reason = 'LIST_EXHAUSTED';
   } catch (error) { result.reason = code(error); }
+  if (sunkAttempts) Object.assign(result, accounting());
   if (started !== undefined) {
     result.endedAt = new Date(clock.now()).toISOString();
     try { json('summary.json', result); } catch (error) { result.reason = code(error); }
