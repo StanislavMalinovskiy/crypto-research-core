@@ -1,0 +1,10 @@
+{
+  "name": "alchemy-s1-experiment",
+  "version": "0.0.0",
+  "private": true,
+  "engines": { "node": ">=20.18.0" },
+  "dependencies": {
+    "@grpc/grpc-js": "1.14.5",
+    "@grpc/proto-loader": "0.8.1"
+  }
+}
