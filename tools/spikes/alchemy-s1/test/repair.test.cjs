@@ -322,3 +322,111 @@ test('full and inspection select retry, reject old/changed receipts and retain s
   assert.equal(run.initial.rpc, 5); assert.equal(run.initial.received, 0);
   assert.deepEqual(JSON.parse(fs.readFileSync(path.join(root, 'shared-budget.json'))).smoke, smoke);
 });
+
+const stateRoot = 'C:/crypto-research-evidence/provider-s3-archive-1', debitRoot = 'C:/crypto-research-evidence/alchemy-s1';
+const stateAccounts = ['9rPogiERgqQPCYJ5hbXu7LsUjXA5G9DcA3d9pX1bvUox', 'BWquordxHk39m9d7LRyQeg5tGmu1z19ismnJTTiWHJ7F', 'CUhM4HepHThb6zcTj4BSiA7RovTokQwgQCvQLWQpqz7e'];
+const stateSeed = { rpc: 14, received: 75861230, grpcBytes: 47638937, rpcBytes: 28222293, streamStarts: 2 };
+const stateArgs = ['--enable-live', '--mode', 'state-probe', '--root', stateRoot, '--debit-root', debitRoot];
+function stateFixture(t) {
+  const parent = temp(t), root = path.join(parent, 'provider-s3-archive-1'), debit = path.join(parent, 'alchemy-s1');
+  const first = { rpc: 2, received: 10967, grpcBytes: 10881, rpcBytes: 86, streamStarts: 1 };
+  for (const [name, counters, delta, reason] of [['smoke', first, first, 'SCHEMA_INVALID'], ['smoke-retry-1', stateSeed, { rpc: 12, received: 75850263, grpcBytes: 47628056, rpcBytes: 28222207, streamStarts: 1 }, 'RECEIVED_LIMIT']]) {
+    const dir = path.join(debit, name), j = new Journal(dir, { anchor: '451080926' });
+    for (const source of ['grpc', 'rpc']) for (let left = delta[source + 'Bytes']; left > 0;) { const count = Math.min(left, 8 * 1024 * 1024); j.append(Buffer.alloc(count, 1), { source }); left -= count; }
+    const budget = { ...counters, stopped: reason }, summary = { mode: 'smoke', abrupt: false, outcome: 'INCONCLUSIVE', reason, budget, attempt: delta };
+    j.state.unresolved = [{ from: '451080926', to: '451080934' }]; j.state.budget = budget; j.state.summary = summary; j.checkpoint(); atomic(path.join(dir, 'summary.json'), summary);
+  }
+  atomic(path.join(debit, 'shared-budget.json'), { rpc: 14, activeRun: 'smoke-retry-1', stopped: 'RECEIVED_LIMIT', receivedReserved: 75861230, grpcBytes: 47638937, rpcBytes: 28222293, smoke: stateSeed });
+  return { parent, root, debit };
+}
+function stateLauncher(fixture, settings = true, processes = false) {
+  const state = { launched: 0 }, props = syntheticProperties(template.replace('${ALCHEMY_API_KEY}', syntheticKey));
+  const api = loadFake(cliFile, (name, actual) => {
+    if (name === 'node:path') return { ...path, resolve(...args) { return path.resolve(...args.map(a => a === stateRoot ? fixture.root : a === debitRoot ? fixture.debit : a)); } };
+    if (name === './journal.cjs') return { ...actual(name), free: () => 1e12 };
+    if (name === './watchdog.cjs') return { supervise(child, options) { state.watch = options; return { connected: false }; } };
+    if (name === 'node:child_process') return { execFileSync: () => processes ? '999' : '', fork() { state.launched++; const child = new EventEmitter(); child.send = options => { state.options = options; state.atSpawn = JSON.parse(fs.readFileSync(path.join(fixture.root, 'shared-budget.json'))); setImmediate(() => child.emit('exit', 0)); }; return child; } };
+  }, { process: { env: settings ? Object.fromEntries(props.split('\n').map(s => s.split('='))) : {}, pid: process.pid } });
+  return { ...api, state };
+}
+test('state probe admits only the fixed independent mode and durably seeds verified stopped predecessors before spawn', async t => {
+  const f = stateFixture(t), before = fileHashes(f.debit), launch = stateLauncher(f); let code;
+  try { await launch.main(stateArgs); } catch (e) { code = e.safeCode; }
+  assert.equal(code, undefined, 'D12 fixed state-probe command must be accepted'); assert.equal(launch.state.launched, 1);
+  assert.deepEqual(launch.state.atSpawn.inherited.counters, stateSeed); assert.equal(launch.state.atSpawn.budget.rpc, 14); assert.equal(launch.state.atSpawn.budget.stopped, null);
+  assert.equal(launch.state.options.mode, 'state-probe'); assert.equal(launch.state.watch.deadline, clockAt + 1800000); assert.deepEqual(fileHashes(f.debit), before);
+  await assert.rejects(launch.main(stateArgs), /PATH_REUSE/); assert.equal(launch.state.launched, 1);
+});
+test('state probe disabled, missing config and forbidden options make zero collector calls', async t => {
+  const f = stateFixture(t), launch = stateLauncher(f); await launch.main(stateArgs.slice(1)); assert.equal(launch.state.launched, 0); assert.equal(fs.existsSync(f.root), false);
+  await assert.rejects(stateLauncher(f, false).main(stateArgs), /CONFIG_INVALID/);
+  for (const args of [stateArgs.concat('--retry-smoke'), stateArgs.concat('--inspect', 'state-probe'), stateArgs.concat('--cap', '1'), stateArgs.map(x => x === stateRoot ? stateRoot + '-other' : x), ['--enable-live', '--mode', 'smoke', '--debit-root', debitRoot]]) await assert.rejects(launch.main(args), /ARGUMENT_INVALID/);
+  assert.equal(launch.state.launched, 0);
+});
+test('state probe predecessor corruption, source totals, ledger mismatch, active locks and other processes refuse before spawn', async t => {
+  const f = stateFixture(t), launch = stateLauncher(f), rawFile = path.join(f.debit, 'smoke-retry-1/raw.bin'), ledgerFile = path.join(f.debit, 'shared-budget.json'), bytes = fs.readFileSync(rawFile), ledger = fs.readFileSync(ledgerFile);
+  fs.appendFileSync(rawFile, Buffer.from([0])); await assert.rejects(launch.main(stateArgs), /STATE_DEBIT_INVALID/); fs.writeFileSync(rawFile, bytes);
+  const broken = Buffer.from(bytes); broken[broken.length - 1] ^= 1; fs.writeFileSync(rawFile, broken); await assert.rejects(launch.main(stateArgs), /STATE_DEBIT_INVALID/); fs.writeFileSync(rawFile, bytes);
+  atomic(ledgerFile, { ...JSON.parse(ledger), rpc: 13 }); await assert.rejects(launch.main(stateArgs), /STATE_DEBIT_INVALID/); fs.writeFileSync(ledgerFile, ledger);
+  fs.writeFileSync(path.join(f.debit, 'active.lock'), ''); await assert.rejects(launch.main(stateArgs), /STATE_ACTIVE/); fs.unlinkSync(path.join(f.debit, 'active.lock'));
+  await assert.rejects(stateLauncher(f, true, true).main(stateArgs), /STATE_ACTIVE/); assert.equal(launch.state.launched, 0);
+});
+async function stateRun(t, options = {}) {
+  const f = stateFixture(t), dir = path.join(f.root, 'state-probe'); fs.mkdirSync(dir, { recursive: true }); atomic(path.join(f.root, 'shared-budget.json'), { rpc: 14, inherited: { counters: stateSeed } });
+  const http = require('node:http'), { once } = require('node:events'), requests = [], reservations = [], bodies = [], starts = []; let at = clockAt, streams = 0;
+  const normal = Buffer.from('{"jsonrpc":"2.0","id":15,"result":{"context":{"slot":429644638},"value":{"lamports":900719925474099312345,"data":["AA==","base64"]}}}');
+  const server = http.createServer((req, res) => { let chunks = []; req.on('data', c => chunks.push(c)); req.on('end', () => { requests.push(JSON.parse(Buffer.concat(chunks))); starts.push(at); const index = requests.length;
+    let body = options.body || normal; if (options.retry && index % 3 !== 0) { res.writeHead(503); body = Buffer.from('unavailable'); } else res.writeHead(options.status || 200);
+    if (options.error) body = Buffer.from('{"jsonrpc":"2.0","id":15,"error":{"code":-32020,"message":"historical coverage unavailable"}}'); body = Buffer.from(body.toString().replace('"id":15', `"id":${requests[index - 1].id}`)); bodies.push(body);
+    if (options.partial) { res.write(body.subarray(0, 31)); setImmediate(() => res.destroy()); } else res.end(body);
+  }); }); server.listen(0, '127.0.0.1'); await once(server, 'listening'); t.after(() => { server.closeAllConnections(); server.close(); });
+  const wire = loadFake(path.resolve(__dirname, '../transport.cjs'), (name, actual) => name === 'node:https' ? { request(url, ...args) { return http.request(`http://127.0.0.1:${server.address().port}`, ...args); } } : null, { URL, setTimeout, clearTimeout, AbortController });
+  const collector = loadFake(path.resolve(__dirname, '../collector.cjs'), (name, actual) => {
+    if (name === './journal.cjs') return { ...actual(name), free: () => options.lowFree ? 29999999999 : 1e12, size: dir => options.diskFull && dir === f.parent ? 9999000000 : options.outputFull && dir === f.root ? 4999999 : actual(name).size(dir) };
+    if (name === './transport.cjs') return { ...transport, stream: async () => { streams++; fail('STREAM_FORBIDDEN'); }, rpc: opts => { const reserve = opts.budget.reserve.bind(opts.budget); opts.budget.reserve = (...args) => { reservations.push(args[0]); return reserve(...args); }; return wire.rpc({ ...opts, now: () => at, sleep: async ms => { at += ms; } }); } };
+  }, { process: { env: Object.fromEntries(syntheticProperties(template.replace('${ALCHEMY_API_KEY}', syntheticKey)).split('\n').map(s => s.split('='))), once() {}, version: process.version }, AbortController });
+  const before = fileHashes(f.debit); let error; try { await collector.collect({ root: f.root, dir, debitRoot: f.debit, mode: 'state-probe', deadline: clockAt + 1800000 }); } catch (e) { error = e.safeCode; } assert.deepEqual(fileHashes(f.debit), before);
+  return { ...f, requests, reservations, bodies, starts, streams, normal, error, summary: fs.existsSync(path.join(dir, 'summary.json')) ? JSON.parse(fs.readFileSync(path.join(dir, 'summary.json'))) : null, journal: fs.existsSync(path.join(dir, 'checkpoint.json')) ? new Journal(dir, { resume: true, readOnly: true }) : null };
+}
+test('state probe actual sends the ordered twelve historical reads with seeded counters bounded reservations and untouched unsafe raw lexemes', async t => {
+  const r = await stateRun(t); assert.equal(r.summary.reason, 'MATRIX_COMPLETE'); assert.equal(r.streams, 0); assert.equal(r.requests.length, 12);
+  let index = 0; for (const repeat of [1, 2]) for (const slot of [429644638, 429644639]) for (const address of stateAccounts) { const request = r.requests[index]; assert.equal(request.id, 15 + index++); assert.equal(request.method, 'getAccountInfo'); assert.deepEqual(request.params, [address, { encoding: 'base64', commitment: 'finalized', slot }]); }
+  assert.ok(r.starts.slice(1).every((at, i) => at - r.starts[i] >= 500)); assert.ok(r.reservations.every(n => n === 196608));
+  assert.equal(r.summary.newRun.rpc, 12); assert.equal(r.summary.newRun.received, r.normal.length * 12); assert.equal(r.summary.publishedCU, 120);
+  assert.equal(r.summary.budget.rpc, 26); assert.equal(r.summary.budget.received, 75861230 + r.normal.length * 12); assert.equal(r.summary.budget.streamStarts, 2); assert.equal(r.summary.liveMs, 0);
+  assert.equal(r.summary.matrix.filter(x => x.status === 'COLLECTED').length, 12); const retained = fs.readFileSync(r.journal.raw); assert.ok(retained.includes(r.normal)); assert.equal(retained.includes(Buffer.from('900719925474099300000')), false);
+  const manifest = JSON.parse(fs.readFileSync(path.join(r.root, 'state-probe/manifest.json'))); assert.deepEqual(manifest.inherited.counters, stateSeed); assert.equal(manifest.limits.rpc, 26); assert.equal(manifest.limits.received, 79861230); assert.equal(manifest.maxBody, 131072); assert.equal(JSON.stringify(manifest).includes(syntheticKey), false);
+});
+for (const bytes of [131072, 131073]) test(`state probe actual ${bytes}-byte response retains bounded exact bytes and stops oversize suffix`, async t => {
+  const prefix = '{"jsonrpc":"2.0","id":15,"result":"', body = Buffer.from(prefix + 'x'.repeat(bytes - prefix.length - 2) + '"}'), r = await stateRun(t, { body });
+  assert.equal(r.summary.reason, bytes === 131072 ? 'MATRIX_COMPLETE' : 'RPC_BODY_LIMIT'); assert.equal(r.requests.length, bytes === 131072 ? 12 : 1);
+  const raw = fs.readFileSync(r.journal.raw); let offset = 0, kept = []; while (offset < raw.length) { const meta = raw.readUInt32BE(offset), count = raw.readUInt32BE(offset + 4), info = JSON.parse(raw.subarray(offset + 8, offset + 8 + meta)); if (info.request === 15) kept.push(raw.subarray(offset + 8 + meta, offset + 8 + meta + count)); offset += 8 + meta + count; }
+  assert.deepEqual(Buffer.concat(kept), body.subarray(0, 131072)); assert.equal(r.summary.newRun.received >= Math.min(bytes, 131072), true); assert.equal(r.journal.state.incomplete, false);
+});
+test('state probe actual retries consume the twelve-attempt ceiling without executing a thirteenth call', async t => {
+  const r = await stateRun(t, { retry: true }); assert.equal(r.summary.reason, 'RPC_LIMIT'); assert.equal(r.requests.length, 12); assert.equal(r.summary.budget.rpc, 26); assert.equal(r.summary.newRun.rpc, 12); assert.equal(r.summary.matrix.filter(x => x.status === 'COLLECTED').length, 4);
+});
+for (const [name, options, reason] of [['coverage', { error: true }, 'RPC_RESPONSE_ERROR'], ['auth', { status: 401 }, 'AUTH_FAILED'], ['partial', { partial: true }, 'RPC_UNAVAILABLE'], ['free-space', { lowFree: true }, 'FREE_SPACE_LIMIT'], ['parent-disk', { diskFull: true }, 'DISK_LIMIT'], ['output', { outputFull: true }, 'EVIDENCE_LIMIT']]) test(`state probe ${name} stops its matrix and preserves explicit unexecuted suffix`, async t => {
+  const r = await stateRun(t, options); assert.equal(r.error || r.summary?.reason, reason); if (r.summary) { assert.ok(Array.isArray(r.summary.matrix), 'D12 matrix statuses remain explicit'); assert.equal(r.summary.matrix.some(x => x.status === 'UNEXECUTED'), true); assert.equal(r.summary.liveMs, 0); } assert.equal(r.streams, 0); assert.ok(r.requests.length <= 3);
+  if (name === 'coverage') assert.ok(fs.readFileSync(r.journal.raw).includes(r.bodies[0])); if (name === 'partial') assert.ok(fs.readFileSync(r.journal.raw).includes(r.normal.subarray(0, 31)));
+});
+
+for (const name of ['smoke', 'smoke-retry-1']) test(`state probe missing ${name} refuses without recreating any predecessor directory`, async t => {
+  const f = stateFixture(t), missing = path.join(f.debit, name); fs.renameSync(missing, missing + '-retained');
+  const before = fileHashes(f.debit), names = fs.readdirSync(f.debit); await assert.rejects(stateLauncher(f).main(stateArgs), /STATE_DEBIT_INVALID/);
+  assert.equal(fs.existsSync(missing), false, 'read-only debit validation must not create missing predecessor');
+  assert.deepEqual(fs.readdirSync(f.debit), names); assert.deepEqual(fileHashes(f.debit), before); assert.equal(fs.existsSync(f.root), false);
+});
+for (const [caseName, code, signal, message, expected] of [['reported', 1, null, 'RPC_BODY_LIMIT', 'RPC_BODY_LIMIT'], ['unsafe', 1, null, template + syntheticKey, 'INTERNAL_ERROR'], ['unreported', 2, null, null, 'STATE_CHILD_FAILED'], ['abrupt', null, 'SIGKILL', null, 'STATE_CHILD_ABRUPT']]) test(`state probe ${caseName} child failure rejects parent success and preserves partial raw receipt`, async t => {
+  const f = stateFixture(t), before = fileHashes(f.debit), props = syntheticProperties(template.replace('${ALCHEMY_API_KEY}', syntheticKey)), raw = Buffer.from('partial historical raw receipt'); let launched = 0;
+  const api = loadFake(cliFile, (name, actual) => {
+    if (name === 'node:path') return { ...path, resolve(...args) { return path.resolve(...args.map(a => a === stateRoot ? f.root : a === debitRoot ? f.debit : a)); } };
+    if (name === './journal.cjs') return { ...actual(name), free: () => 1e12 };
+    if (name === './watchdog.cjs') return { supervise: () => ({ connected: false }) };
+    if (name === 'node:child_process') return { execFileSync: () => '', fork() { launched++; const child = new EventEmitter(); child.send = () => { fs.writeFileSync(path.join(f.root, 'state-probe/raw.bin'), raw); setImmediate(() => { if (message) child.emit('message', { reason: message }); child.emit('exit', code, signal); }); }; return child; } };
+  }, { process: { env: Object.fromEntries(props.split('\n').map(s => s.split('='))), pid: process.pid } });
+  let error; try { await api.main(stateArgs); } catch (e) { error = e; }
+  assert.equal(error?.safeCode, expected, 'failed child must make CLI top-level catch select nonzero exit status'); assert.equal(launched, 1);
+  assert.equal(String(error).includes(syntheticKey), false); assert.deepEqual(fs.readFileSync(path.join(f.root, 'state-probe/raw.bin')), raw);
+  assert.deepEqual(fileHashes(f.debit), before); assert.equal(fs.existsSync(path.join(f.root, 'active.lock')), false);
+});

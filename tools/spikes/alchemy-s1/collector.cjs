@@ -49,6 +49,7 @@ async function finalComparison({ line, elapsed, upper, stats, budget, journal, c
   } finally { active = false; }
 }
 async function collect(options) {
+  if (options.mode === 'state-probe') return collectState(options);
   const { root, dir, mode, deadline } = options; const now = Date.now, elapsed = () => performance.now();
   const properties = options.secretsFile ? fs.readFileSync(options.secretsFile, 'utf8') : '';
   const settings = config(process.env, properties); // No settings enter diagnostics or manifests.
@@ -206,6 +207,79 @@ async function collect(options) {
     // Terminal writes use reserved headroom, never restart work or reset a stop.
     if (journal) { journal.guard = () => {}; journal.state.summary = summary; journal.state.budget = budget.state; journal.checkpoint(); }
     atomic(path.join(dir, 'summary.json'), summary); budget.persist();
+  }
+}
+async function collectState(options) {
+  const { root, dir, debitRoot, deadline } = options, { stateDebit } = require('./cli.cjs');
+  if (path.basename(root) !== 'provider-s3-archive-1' || path.basename(debitRoot) !== 'alchemy-s1' || path.dirname(root) !== path.dirname(debitRoot)
+    || dir !== path.join(root, 'state-probe') || !Number.isSafeInteger(deadline)) fail('ARGUMENT_INVALID');
+  const inherited = stateDebit(debitRoot), settings = config(process.env, options.secretsFile ? fs.readFileSync(options.secretsFile, 'utf8') : '');
+  const limits = { received: 79861230, rpc: 26, disk: 10000000000, floor: 30000000000, deadline }, parent = path.dirname(root), ledgerPath = path.join(root, 'shared-budget.json');
+  if ([root, debitRoot, parent].some(p => fs.realpathSync(p).toLowerCase() !== path.resolve(p).toLowerCase())) fail('UNSAFE_PATH');
+  if (free(parent) - 5065536 < limits.floor) fail('FREE_SPACE_LIMIT');
+  if (size(parent) + 5065536 > limits.disk) fail('DISK_LIMIT');
+  const budget = new Budget(limits, { ...inherited.counters, streamStarts: 2, disk: size(parent) });
+  const matrix = [], addresses = ['9rPogiERgqQPCYJ5hbXu7LsUjXA5G9DcA3d9pX1bvUox', 'BWquordxHk39m9d7LRyQeg5tGmu1z19ismnJTTiWHJ7F', 'CUhM4HepHThb6zcTj4BSiA7RovTokQwgQCvQLWQpqz7e'];
+  for (const repeat of [1, 2]) for (const slot of [429644638, 429644639]) for (const address of addresses) matrix.push({ repeat, slot, address, status: 'UNEXECUTED', attempts: 0 });
+  let terminal = false, journal, tick, reason = 'MATRIX_COMPLETE', current, bodyParts = new Map(); const startedAt = new Date().toISOString();
+  const guard = bytes => {
+    const reserve = terminal ? 0 : 65536;
+    if (free(parent) - bytes - reserve < limits.floor) fail('FREE_SPACE_LIMIT');
+    if (size(parent) + bytes + reserve > limits.disk) fail('DISK_LIMIT');
+    if (size(root) + bytes + reserve > 5000000) fail('EVIDENCE_LIMIT');
+    budget.state.disk = size(parent) + bytes;
+  };
+  // The output ceiling is separate from transport's cumulative received-byte reservation.
+  guard(0);
+  budget.persist = () => atomic(ledgerPath, { inherited, rpc: budget.state.rpc, activeRun: 'state-probe', stopped: budget.state.stopped,
+    receivedReserved: budget.state.received, grpcBytes: budget.state.grpcBytes, rpcBytes: budget.state.rpcBytes, budget: { ...budget.state } });
+  const snapshot = () => { journal.state.budget = { ...budget.state }; journal.state.matrix = matrix; journal.checkpoint(); };
+  const stop = code => { reason = code; budget.stop(code); };
+  try {
+    guard(8192); atomic(path.join(dir, 'manifest.json'), { ...provenance('state-probe'), inherited, limits, maxBody: 131072,
+      newLimits: { rpc: 12, received: 4000000, output: 5000000, publishedCU: 120 }, matrix, startedAt, scope: 'Raw historical collection only; no LIVE or recovery proof' });
+    journal = new Journal(dir, { guard }); budget.persist(); snapshot();
+    tick = setInterval(() => { try { guard(0); if (Date.now() >= deadline) stop('WALL_LIMIT'); } catch (e) { stop(diagnostic(e)); } }, 1000);
+    process.once('SIGINT', () => stop('INTERRUPTED')); process.once('SIGTERM', () => stop('INTERRUPTED'));
+    for (const entry of matrix) {
+      budget.check(); guard(196608); current = entry; const before = budget.state.rpc; entry.status = 'INCOMPLETE'; bodyParts = new Map();
+      try {
+        await rpc({ endpoint: settings.rpcEndpoint, method: 'getAccountInfo', params: [entry.address, { encoding: 'base64', commitment: 'finalized', slot: entry.slot }], budget, maxBody: 131072,
+          onRaw(raw, meta) {
+            const kept = raw.subarray(0, Math.max(0, 131072 - meta.bodyOffset));
+            if (kept.length) { journal.append(kept, { ...meta, repeat: entry.repeat, slot: entry.slot, address: entry.address,
+              admittedChunkBytes: raw.length, truncated: kept.length !== raw.length });
+              const parts = bodyParts.get(meta.request) || []; parts.push(kept); bodyParts.set(meta.request, parts); }
+            if (meta.bodyOffset + raw.length > 131072) fail('RPC_BODY_LIMIT');
+          } });
+        // Validate only the protocol envelope. Financial values are never reserialized or used.
+        const text = Buffer.concat(bodyParts.get(budget.state.rpc) || []).toString('utf8');
+        const tokens = text.match(/"(?:\\.|[^"\\])*"|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?|[{}\[\]:,]|true|false|null/g) || []; let depth = 0, ids = 0;
+        for (let i = 0; i < tokens.length; i++) {
+          const token = tokens[i];
+          if (depth === 1 && token.startsWith('"') && JSON.parse(token) === 'id' && tokens[i + 1] === ':') {
+            ids++; if (!/^-?\d/.test(tokens[i + 2]) || Number(tokens[i + 2]) !== budget.state.rpc) fail('RPC_INVALID'); }
+          if (token === '{' || token === '[') depth++; if (token === '}' || token === ']') depth--;
+        }
+        let envelope; try { envelope = JSON.parse(text.replace(/("(?:\\.|[^"\\])*")|(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)/g,
+          (match, string, number) => string || `"${number}"`)); } catch { fail('RPC_INVALID'); }
+        if (ids !== 1 || envelope.jsonrpc !== '2.0' || !Object.hasOwn(envelope, 'result') || Object.hasOwn(envelope, 'error')) fail('RPC_INVALID');
+        entry.status = 'COLLECTED';
+      } finally { entry.attempts = budget.state.rpc - before; }
+      snapshot(); current = null;
+    }
+    stop('MATRIX_COMPLETE');
+  } catch (e) { stop(diagnostic(e)); }
+  finally {
+    terminal = true; clearInterval(tick);
+    if (current && !current.attempts) current.status = 'UNEXECUTED';
+    const newRun = Object.fromEntries(Object.keys(inherited.counters).map(k => [k, budget.state[k] - inherited.counters[k]]));
+    const summary = { mode: 'state-probe', outcome: 'INCONCLUSIVE', abrupt: false, reason, startedAt, endedAt: new Date().toISOString(), liveMs: 0,
+      inherited, newRun, budget: { ...budget.state }, matrix, publishedCU: newRun.rpc * 10, complete: reason === 'MATRIX_COMPLETE',
+      rawIncomplete: reason !== 'MATRIX_COMPLETE', scope: 'Raw collection only; slot echo is not historical-state proof' };
+    if (journal) { journal.state.summary = summary; journal.state.budget = { ...budget.state }; snapshot(); }
+    guard(8192); atomic(path.join(dir, 'summary.json'), summary); budget.persist();
+    if (JSON.stringify(stateDebit(debitRoot)) !== JSON.stringify(inherited)) fail('STATE_DEBIT_INVALID');
   }
 }
 if (require.main === module) process.once('message', options => collect(options).then(() => process.exit(0)).catch(error => {

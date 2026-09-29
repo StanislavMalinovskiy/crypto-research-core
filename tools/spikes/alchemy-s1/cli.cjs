@@ -1,10 +1,10 @@
 'use strict';
 const fs = require('node:fs');
 const path = require('node:path');
-const { fork } = require('node:child_process');
+const { fork, execFileSync } = require('node:child_process');
 const { createHash } = require('node:crypto');
 const { Buffer } = require('node:buffer');
-const { diagnostic, fail } = require('./core.cjs');
+const { diagnostic, fail, config, hash } = require('./core.cjs');
 const { Journal, atomic, free, size } = require('./journal.cjs');
 const { supervise } = require('./watchdog.cjs');
 function canonicalRoot(value, repository) {
@@ -78,6 +78,7 @@ function retryDebit(root) {
 }
 async function main(args) {
   if (!args.includes('--enable-live') && !args.includes('--inspect')) { console.log('LIVE_DISABLED'); return; }
+  if (args.includes('state-probe')) return stateMain(args);
   const value = key => { const i = args.indexOf(key); return i < 0 ? undefined : args[i + 1]; };
   const allowed = new Set(['--enable-live', '--mode', '--root', '--secrets-file', '--inspect', '--retry-smoke']);
   for (let i = 0; i < args.length; i++) { if (!allowed.has(args[i])) fail('ARGUMENT_INVALID'); if (!['--enable-live', '--retry-smoke'].includes(args[i])) i++; }
@@ -129,4 +130,85 @@ async function main(args) {
   } finally { fs.unlinkSync(lock); }
 }
 if (require.main === module) main(process.argv.slice(2)).catch(error => { console.error(diagnostic(error)); process.exitCode = 1; });
-module.exports = { main };
+const STATE_SEED = { rpc: 14, received: 75861230, grpcBytes: 47638937, rpcBytes: 28222293, streamStarts: 2 };
+function stateDebit(root) {
+  try {
+    if (fs.existsSync(path.join(root, 'active.lock'))) fail('STATE_ACTIVE');
+    const names = ['smoke', 'smoke-retry-1'], fingerprints = {}, prior = { rpc: 0, received: 0, grpcBytes: 0, rpcBytes: 0, streamStarts: 0 };
+    for (const name of names) {
+      const dir = path.join(root, name);
+      if (!fs.existsSync(dir) || !fs.lstatSync(dir).isDirectory()) fail('STATE_DEBIT_INVALID');
+      for (const file of ['raw.bin', 'checkpoint.json', 'summary.json']) {
+        const required = path.join(dir, file); if (!fs.existsSync(required) || !fs.lstatSync(required).isFile()) fail('STATE_DEBIT_INVALID');
+      }
+      const e = smokeEvidence(dir, true), s = e.summary, b = s?.budget;
+      if (e.incomplete || s.mode !== 'smoke' || s.outcome !== 'INCONCLUSIVE' || s.reason !== (name === 'smoke' ? 'SCHEMA_INVALID' : 'RECEIVED_LIMIT')
+        || b.stopped !== s.reason || JSON.stringify(b) !== JSON.stringify(e.journal.state.budget)) fail('STATE_DEBIT_INVALID');
+      const totals = { grpc: 0, rpc: 0 }, fd = fs.openSync(e.journal.raw, 'r'); let offset = 0;
+      try { while (offset < e.journal.state.offset) {
+        const h = Buffer.alloc(8); fs.readSync(fd, h, 0, 8, offset); const n = h.readUInt32BE(0), count = h.readUInt32BE(4), meta = Buffer.alloc(n);
+        fs.readSync(fd, meta, 0, n, offset + 8); const source = JSON.parse(meta).source;
+        if (!Object.hasOwn(totals, source)) fail('STATE_DEBIT_INVALID'); totals[source] += count; offset += 8 + n + count;
+      } } finally { fs.closeSync(fd); }
+      for (const field of Object.keys(STATE_SEED)) {
+        if (!Number.isSafeInteger(b[field]) || b[field] < prior[field] || s.attempt?.[field] !== b[field] - prior[field]) fail('STATE_DEBIT_INVALID');
+      }
+      if (name === 'smoke' && Object.entries({ rpc: 2, received: 10967, grpcBytes: 10881, rpcBytes: 86, streamStarts: 1 }).some(([k, v]) => b[k] !== v)) fail('STATE_DEBIT_INVALID');
+      if (totals.grpc !== b.grpcBytes - prior.grpcBytes || totals.rpc !== b.rpcBytes - prior.rpcBytes || b.received !== b.grpcBytes + b.rpcBytes) fail('STATE_DEBIT_INVALID');
+      Object.assign(prior, Object.fromEntries(Object.keys(STATE_SEED).map(k => [k, b[k]])));
+      fingerprints[name] = { evidence: e.fingerprint, unresolved: e.journal.state.unresolved,
+        inspection: fs.existsSync(path.join(dir, 'inspection.json')) ? hash(fs.readFileSync(path.join(dir, 'inspection.json'))) : null };
+    }
+    const bytes = fs.readFileSync(path.join(root, 'shared-budget.json')), ledger = JSON.parse(bytes);
+    if (ledger.activeRun !== 'smoke-retry-1' || ledger.stopped !== 'RECEIVED_LIMIT') fail('STATE_DEBIT_INVALID');
+    for (const [key, value] of Object.entries(STATE_SEED)) {
+      if (prior[key] !== value || ledger.smoke?.[key] !== value || (key !== 'streamStarts' && ledger[key === 'received' ? 'receivedReserved' : key] !== value)) fail('STATE_DEBIT_INVALID');
+    }
+    return { counters: { ...STATE_SEED }, fingerprints, ledger: hash(bytes) };
+  } catch (e) { if (e.safeCode === 'STATE_ACTIVE') throw e; fail('STATE_DEBIT_INVALID'); }
+}
+async function stateMain(args) {
+  const values = {}, flags = new Set(['--mode', '--root', '--debit-root', '--secrets-file']);
+  for (let i = 0; i < args.length; i++) {
+    const key = args[i]; if (Object.hasOwn(values, key)) fail('ARGUMENT_INVALID');
+    if (key === '--enable-live') values[key] = true;
+    else { if (!flags.has(key) || !args[i + 1] || args[i + 1].startsWith('--')) fail('ARGUMENT_INVALID'); values[key] = args[++i]; }
+  }
+  if (!values['--enable-live'] || values['--mode'] !== 'state-probe' || values['--root'] !== 'C:/crypto-research-evidence/provider-s3-archive-1'
+    || values['--debit-root'] !== 'C:/crypto-research-evidence/alchemy-s1') fail('ARGUMENT_INVALID');
+  const repo = path.resolve(__dirname, '../../..'), root = canonicalRoot(values['--root'], repo), debitRoot = canonicalRoot(values['--debit-root'], repo);
+  if (path.dirname(root) !== path.dirname(debitRoot)) fail('UNSAFE_PATH');
+  if (fs.existsSync(root)) fail('PATH_REUSE');
+  const secretsFile = values['--secrets-file'] ? path.resolve(values['--secrets-file']) : null;
+  if (secretsFile && secretsFile.toLowerCase() !== path.join(repo, 'config/application-managed-secrets.properties').toLowerCase()) fail('CONFIG_INVALID');
+  config(process.env, secretsFile ? fs.readFileSync(secretsFile, 'utf8') : '');
+  const pids = execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
+    `Get-CimInstance Win32_Process | Where-Object { $_.ProcessId -ne ${process.pid} -and $_.Name -match '^node(?:\\.exe)?$' -and $_.CommandLine -match '(alchemy-s1[\\\\/](cli|collector|watchdog)\\.cjs|provider-feasibility[\\\\/](cli|probe)\\.cjs)' } | ForEach-Object { $_.ProcessId }`],
+  { encoding: 'utf8', windowsHide: true, timeout: 10000 }).trim();
+  if (pids) fail('STATE_ACTIVE');
+  const inherited = stateDebit(debitRoot), parent = path.dirname(root);
+  if (root.toLowerCase() !== path.resolve(values['--root']).toLowerCase() || debitRoot.toLowerCase() !== path.resolve(values['--debit-root']).toLowerCase()) fail('UNSAFE_PATH');
+  if (free(parent) - 5065536 < 30000000000) fail('FREE_SPACE_LIMIT');
+  if (size(parent) + 5065536 > 10000000000) fail('DISK_LIMIT');
+  fs.mkdirSync(root); const lock = path.join(root, 'active.lock'); fs.closeSync(fs.openSync(lock, 'wx'));
+  try {
+    const dir = path.join(root, 'state-probe'), launchedAt = Date.now(), deadline = launchedAt + 1800000; fs.mkdirSync(dir);
+    atomic(path.join(root, 'shared-budget.json'), { inherited, budget: { ...inherited.counters, stopped: null }, rpc: 14, activeRun: 'state-probe' });
+    atomic(path.join(dir, 'launch.json'), { mode: 'state-probe', launchedAt, deadline, inherited });
+    const child = fork(path.join(__dirname, 'collector.cjs'), [], { stdio: ['ignore', 'ignore', 'ignore', 'ipc'], windowsHide: true });
+    let childReason;
+    child.on('message', message => { if (message && Object.hasOwn(message, 'reason')) childReason = diagnostic({ safeCode: message.reason }); });
+    const completion = new Promise(resolve => {
+      child.once('error', () => resolve({ code: 1, signal: null }));
+      child.once('exit', (code, signal) => resolve({ code, signal }));
+    });
+    const watch = supervise(child, { dir, deadline, floor: 30000000000 });
+    child.send({ root, dir, mode: 'state-probe', debitRoot, deadline, launchedAt, secretsFile }); const status = await completion;
+    if (watch.connected) watch.send({ finished: true });
+    if (JSON.stringify(stateDebit(debitRoot)) !== JSON.stringify(inherited)) fail('STATE_DEBIT_INVALID');
+    if (status.signal || status.code === null) fail(childReason || 'STATE_CHILD_ABRUPT');
+    if (status.code !== 0 || childReason) fail(childReason || 'STATE_CHILD_FAILED');
+    console.log('S3_STOPPED state-probe');
+  } finally { fs.unlinkSync(lock); }
+}
+module.exports = { main, stateDebit };

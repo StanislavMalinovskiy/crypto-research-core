@@ -114,6 +114,8 @@ The system SHALL document a measured or estimated capacity envelope (events per 
 
 The system SHALL select a primary Solana transport and history source only after the provider-consumer capability matrix is complete and capability-specific spikes verify the required capabilities on real samples. Documentation claims and tiers without the required capability SHALL NOT count as verification, and a missing capability SHALL never be compensated with fabricated data.
 
+Provider-selection research MAY conclude with a provisional candidate recommendation before all required capabilities are verified, but SHALL distinguish that research disposition from a selected or verified production primary. Such a conclusion SHALL record each capability's evidence scope, available tier, measured limitations, unsupported or unverified status, deferred validation and prerequisites for any future implementation. It SHALL NOT authorize mass real-data recording, complete F1/F3 readiness or admit an unverified capability through fallback.
+
 #### Scenario: Selection requires spike evidence
 - **WHEN** a provider is proposed as the primary transport or history source
 - **THEN** the proposal SHALL reference spike results covering the required capabilities on real samples
@@ -122,3 +124,9 @@ The system SHALL select a primary Solana transport and history source only after
 - **WHEN** a candidate cannot demonstrate a required capability within its available tier
 - **THEN** the capability SHALL be marked unverified for that tier
 - **AND** the selection SHALL either use another source for that capability or leave the capability unimplemented
+
+#### Scenario: Research concludes with deferred validation
+- **WHEN** the bounded provider investigation cannot safely or feasibly verify all required capabilities and the owner authorizes a provisional research conclusion
+- **THEN** the conclusion SHALL identify provisional candidates separately from verified capabilities and retain the original incomplete validation targets as deferred, not passed
+- **AND** each deferred target SHALL name its missing evidence, limiting access or resource condition and the new authorization or approved follow-on contract needed to resume
+- **AND** no selected-production-primary, F1/F3 readiness or mass-recording claim SHALL follow from research closure alone
