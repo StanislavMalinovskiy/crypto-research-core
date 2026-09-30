@@ -5,28 +5,40 @@ const PROGRAMS = ['6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P',
 const fail = code => { const e = new Error(code); e.safeCode = code; throw e; };
 const hash = value => crypto.createHash('sha256').update(value).digest('hex');
 const exact = value => { const s = String(value); if (!/^\d+$/.test(s) || (typeof value === 'number' && !Number.isSafeInteger(value))) fail('UNSUPPORTED_INTEGER'); return BigInt(s).toString(); };
+const slotOffset = (tip, offset) => {
+  const value = BigInt(exact(tip)) - BigInt(exact(offset));
+  if (value < 0n) fail('SLOT_UNDERFLOW'); return value.toString();
+};
 class Budget {
   constructor(limits, state = {}) {
     this.limits = limits; this.state = { received: 0, disk: 0, rpc: 0, stopped: null, grpcBytes: 0, rpcBytes: 0, ...state };
+    if (limits.spendPicoUsd !== undefined) this.state.spendPicoUsd = state.spendPicoUsd || 0;
     this.controller = new AbortController(); this.persist = () => {};
     if (this.state.stopped) this.controller.abort();
   }
   stop(reason) { if (!this.state.stopped) { this.state.stopped = reason; this.controller.abort(); this.persist(); } return false; }
-  reserve(bytes, disk, now, free) {
+  reserve(bytes, disk, now, free, source) {
     if (this.state.stopped) return false;
     if (now >= this.limits.deadline) return this.stop('WALL_LIMIT');
     if (this.state.received + bytes > this.limits.received) return this.stop('RECEIVED_LIMIT');
     if (this.state.disk + disk > this.limits.disk) return this.stop('DISK_LIMIT');
     if (free - disk < this.limits.floor) return this.stop('FREE_SPACE_LIMIT');
+    const spend = source === 'grpc' ? bytes * (this.limits.picoUsdPerGrpcByte || 0) : 0;
+    if (this.limits.spendPicoUsd !== undefined && this.state.spendPicoUsd + spend > this.limits.spendPicoUsd) return this.stop('SPEND_LIMIT');
+    if (this.limits.spendPicoUsd !== undefined) this.state.spendPicoUsd += spend;
     this.state.received += bytes; this.state.disk += disk; this.persist(); return true;
   }
-  rpc() {
+  rpc(cu = 0) {
     if (this.state.stopped) return false;
     if (this.state.rpc >= this.limits.rpc) return this.stop('RPC_LIMIT');
+    const spend = cu * (this.limits.picoUsdPerCu || 0);
+    if (this.limits.spendPicoUsd !== undefined && this.state.spendPicoUsd + spend > this.limits.spendPicoUsd) return this.stop('SPEND_LIMIT');
+    if (this.limits.spendPicoUsd !== undefined) this.state.spendPicoUsd += spend;
     this.state.rpc++; this.persist(); return true;
   }
   settle(reserved, received, source) {
     this.state.received -= reserved - received;
+    if (this.limits.spendPicoUsd !== undefined && source === 'grpc') this.state.spendPicoUsd -= (reserved - received) * (this.limits.picoUsdPerGrpcByte || 0);
     this.state[source === 'grpc' ? 'grpcBytes' : 'rpcBytes'] += received; this.persist();
   }
   check() { if (this.state.stopped) fail(this.state.stopped); }
@@ -135,7 +147,7 @@ async function reconcile({ from, to, journal, call, sampled = false }) {
     return { complete: true, from: initial, to };
   } catch (e) { return { complete: false, outcome: 'INCONCLUSIVE', reason: diagnostic(e) }; }
 }
-module.exports = { Budget, Queue, Timeline, config, diagnostic, launch, filterBlock, reconcile, PROGRAMS, fail, hash, exact };
+module.exports = { Budget, Queue, Timeline, config, diagnostic, launch, filterBlock, reconcile, PROGRAMS, fail, hash, exact, slotOffset };
 Object.defineProperties(module.exports, {
   Journal: { get: () => require('./journal.cjs').Journal },
   rpc: { get: () => require('./transport.cjs').rpc }, stream: { get: () => require('./transport.cjs').stream },

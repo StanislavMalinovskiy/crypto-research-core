@@ -2,16 +2,23 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const { Budget, Timeline, config, diagnostic, PROGRAMS, reconcile, fail, hash, exact } = require('./core.cjs');
+const { Budget, Timeline, config, diagnostic, PROGRAMS, reconcile, fail, hash, exact, slotOffset } = require('./core.cjs');
 const { Journal, atomic, free, size } = require('./journal.cjs');
 const { rpc, stream, decode, definitions, sleep } = require('./transport.cjs');
 const TERMINAL_RESERVE = 1024 * 1024, INFLIGHT_DISK = 48 * 1024 * 1024;
+// Match the transport's inactivity stop so an unobserved interval is never credited.
+const LIVE_RECEIPT_GAP_MS = 30000;
 const supportedVersions = { versions: ['legacy', 0, 1], maxSupportedTransactionVersion: 1, detection: 'config-first', v1Addresses: 'inline', config: 'opaque-uint64-string' };
 function base58(bytes) {
   const alphabet = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
   let n = BigInt(`0x${Buffer.from(bytes).toString('hex') || '0'}`), value = '';
   while (n) { value = alphabet[Number(n % 58n)] + value; n /= 58n; }
   for (const b of bytes) { if (b) break; value = '1' + value; } return value;
+}
+function tokenAccount(bytes) {
+  if (!Buffer.isBuffer(bytes) || bytes.length !== 165) return null;
+  return { layout: 'SPL_TOKEN_ACCOUNT_165', mint: base58(bytes.subarray(0, 32)), authority: base58(bytes.subarray(32, 64)),
+    amount: bytes.readBigUInt64LE(64).toString() };
 }
 function provenance(mode) {
   const files = ['package-lock.json', 'proto/geyser.proto', 'proto/solana-storage.proto', 'core.cjs', 'journal.cjs', 'transport.cjs', 'collector.cjs', 'watchdog.cjs', 'cli.cjs'];
@@ -50,6 +57,8 @@ async function finalComparison({ line, elapsed, upper, stats, budget, journal, c
 }
 async function collect(options) {
   if (options.mode === 'state-probe') return collectState(options);
+  if (options.mode === 'b-history') return collectState(options);
+  if (options.mode === 'a-live-replay') return collectProviderA(options);
   const { root, dir, mode, deadline } = options; const now = Date.now, elapsed = () => performance.now();
   const properties = options.secretsFile ? fs.readFileSync(options.secretsFile, 'utf8') : '';
   const settings = config(process.env, properties); // No settings enter diagnostics or manifests.
@@ -69,6 +78,7 @@ async function collect(options) {
   const stats = { messages: 0, transactions: 0, unique: 0, duplicates: 0, outOfOrder: 0, unknown: 0, highest: null,
     finalized: null, live: { chain: histogram(), provider: histogram() }, replay: { chain: histogram(), provider: histogram() },
     gaps: [], recoveries: [], sampledRanges: [], providerQuota: 'UNVERIFIED', dashboard: 'MISSING' };
+  if (mode === 'a-live-replay') Object.assign(stats, { successful: 0, failed: 0 });
   let reservedDisk = INFLIGHT_DISK + TERMINAL_RESERVE;
   const guard = bytes => {
     // Writes already admitted by transport reservations may finish after cancellation.
@@ -110,7 +120,8 @@ async function collect(options) {
       }
       if (update.transaction) {
         const tx = update.transaction.transaction;
-        if (!tx || !tx.transaction?.message || !tx.meta || tx.is_vote || tx.meta.err || !Buffer.isBuffer(tx.signature) || tx.signature.length !== 64) fail('SCHEMA_INVALID');
+        const abMode = mode === 'a-live-replay', failed = tx?.meta?.err !== undefined && tx?.meta?.err !== null;
+        if (!tx || !tx.transaction?.message || !tx.meta || tx.is_vote || (!abMode && failed) || !Buffer.isBuffer(tx.signature) || tx.signature.length !== 64) fail('SCHEMA_INVALID');
         const message = tx.transaction.message;
         const version = message.config != null ? 1 : message.versioned ? 0 : 'legacy';
         if (version === 1 && ((message.address_table_lookups || []).length || (tx.meta.loaded_writable_addresses || []).length || (tx.meta.loaded_readonly_addresses || []).length)) fail('SCHEMA_INVALID');
@@ -118,7 +129,9 @@ async function collect(options) {
         if (!keys.some(key => PROGRAMS.includes(key))) fail('FILTER_MISMATCH');
         const result = journal.transaction({ slot, signature: base58(tx.signature), index: exact(tx.index || '0'),
           hash: hash(definitions['geyser.SubscribeUpdateTransactionInfo'].serialize(tx)) });
-        stats.transactions++; if (result === 'duplicate') stats.duplicates++; else stats.unique++;
+        stats.transactions++; if (result === 'duplicate') stats.duplicates++; else {
+          stats.unique++; if (abMode) stats[failed ? 'failed' : 'successful']++;
+        }
       }
       if (update.block_meta) sample(latency.chain, received, update.block_meta.block_time?.timestamp);
     } else if (update.ping) { if (handle) handle.ping(); }
@@ -209,16 +222,192 @@ async function collect(options) {
     atomic(path.join(dir, 'summary.json'), summary); budget.persist();
   }
 }
+async function collectProviderA(options) {
+  const { root, dir, deadline } = options, abLedgerPath = path.join(root, 'shared-budget.json');
+  if (!Number.isSafeInteger(deadline)) fail('ARGUMENT_INVALID');
+  if (options.sourceDebit) {
+    const expectedRoot = path.resolve('C:/crypto-research-evidence/provider-a-final-1'), expectedParent = path.dirname(expectedRoot);
+    const expectedDebit = path.resolve('C:/crypto-research-evidence/alchemy-s1');
+    let rootInfo, debitInfo, rootReal, debitReal, parentReal;
+    try {
+      rootInfo = fs.lstatSync(root); debitInfo = fs.lstatSync(options.debitRoot);
+      rootReal = fs.realpathSync(root); debitReal = fs.realpathSync(options.debitRoot); parentReal = fs.realpathSync(path.dirname(root));
+    } catch { fail('STATE_DEBIT_INVALID'); }
+    if (root !== expectedRoot || dir !== path.join(expectedRoot, 'a-live-replay') || options.debitRoot !== expectedDebit
+      || path.dirname(root) !== expectedParent || path.dirname(options.debitRoot) !== expectedParent || parentReal !== expectedParent
+      || rootReal !== expectedRoot || debitReal !== expectedDebit || !rootInfo.isDirectory() || rootInfo.isSymbolicLink()
+      || !debitInfo.isDirectory() || debitInfo.isSymbolicLink()
+      || JSON.stringify(require('./cli.cjs').stateDebit(options.debitRoot)) !== JSON.stringify(options.sourceDebit)) fail('STATE_DEBIT_INVALID');
+  }
+  const settings = config(process.env, options.secretsFile ? fs.readFileSync(options.secretsFile, 'utf8') : '');
+  const inheritedLedger = fs.existsSync(abLedgerPath) ? JSON.parse(fs.readFileSync(abLedgerPath)) : { budget: {} };
+  const previous = inheritedLedger.budget || {}, initial = { received: 0, disk: 0, rpc: 0, stopped: null, grpcBytes: 0,
+    rpcBytes: 0, streamStarts: 0, spendPicoUsd: 0, ...previous };
+  if (initial.stopped && !['MATRIX_COMPLETE', 'A_COMPLETE', 'A_INCOMPLETE'].includes(initial.stopped)) fail('BUDGET_STOP');
+  initial.stopped = null;
+  const limits = { received: initial.received + 15000000000, disk: 16000000000, rpc: initial.rpc + 15,
+    floor: 30000000000, deadline, spendPicoUsd: 3000000000000, picoUsdPerGrpcByte: 75, picoUsdPerCu: 525000 };
+  const budget = new Budget(limits, { ...initial, disk: size(root) });
+  const startedAt = new Date().toISOString(), elapsed = () => performance.now(), line = new Timeline(elapsed());
+  const observed = { messages: 0, bytes: 0, transactions: 0, unique: 0, successful: 0, failed: 0, perProgram: Object.fromEntries(PROGRAMS.map(x => [x, 0])), overlaps: 0 };
+  const stats = { observed, live: { messages: 0, bytes: 0, transactions: 0, unique: 0, successful: 0, failed: 0, perProgram: Object.fromEntries(PROGRAMS.map(x => [x, 0])), overlaps: 0 },
+    replay: [], lagMs: [], lagSamplesOmitted: 0, missingLag: 0, highestFinalized: null, liveStarted: false, streamStopReason: null, reconnects: 0, stalls: 0, gaps: 0 };
+  const probes = [];
+  const guard = bytes => {
+    if (free(root) - bytes - 1048576 < limits.floor) fail('FREE_SPACE_LIMIT');
+    if (size(root) + bytes + 1048576 > limits.disk) fail('DISK_LIMIT');
+    budget.state.disk = size(root) + bytes;
+  };
+  let journal, handle, tick, phase = 'CATCHUP', lastLiveEvidenceAt = null;
+  const interrupt = () => budget.stop('INTERRUPTED');
+  const persist = () => {
+    inheritedLedger.activeRun = 'a-live-replay'; inheritedLedger.budget = { ...budget.state };
+    inheritedLedger.updatedAt = new Date().toISOString(); atomic(abLedgerPath, inheritedLedger);
+  };
+  budget.persist = persist;
+  process.once('SIGINT', interrupt); process.once('SIGTERM', interrupt);
+  const liveFilter = { transactions: { watched: { vote: false, account_include: PROGRAMS } }, slots: { finalized: { filter_by_commitment: true } },
+    blocks_meta: { finalized: {} }, commitment: 2 };
+  const replayFilter = { slots: { finalized: { filter_by_commitment: true } }, commitment: 2 };
+  const onRaw = (raw, meta = {}) => {
+    const receivedAtMono = elapsed(), receivedAt = Date.parse(meta.receivedAt || new Date().toISOString());
+    journal.append(raw, { ...meta, session: phase, phase });
+    const update = decode(raw); let enteredLive = false;
+    if (phase === 'CATCHUP' || phase === 'LIVE') { observed.messages++; observed.bytes += raw.length; }
+    if (phase === 'LIVE') { stats.live.messages++; stats.live.bytes += raw.length; }
+    else if (phase.startsWith('REPLAY_')) {
+      const probe = probes[probes.length - 1]; probe.bytes += raw.length; probe.messages++;
+      const slotUpdate = update.slot && (update.slot.status === 2 || update.slot.status === 'SLOT_FINALIZED');
+      if (slotUpdate && probe.firstSlot === null) probe.firstSlot = exact(update.slot.slot);
+    }
+    const slotEvent = update.slot || update.block_meta;
+    if (slotEvent && (update.slot?.status === 2 || update.slot?.status === 'SLOT_FINALIZED' || update.block_meta)) {
+      const slot = exact(slotEvent.slot); if (stats.highestFinalized === null || BigInt(slot) > BigInt(stats.highestFinalized)) stats.highestFinalized = slot;
+      if (phase === 'CATCHUP' && BigInt(slot) >= BigInt(journal.state.anchor)) {
+        stats.liveStarted = true; phase = 'LIVE'; enteredLive = true;
+        line.transition('LIVE', receivedAtMono); lastLiveEvidenceAt = receivedAtMono;
+      }
+    }
+    if (update.transaction) {
+      const info = update.transaction.transaction, tx = info;
+      if (!tx || !tx.transaction?.message || !tx.meta || tx.is_vote || !Buffer.isBuffer(tx.signature) || tx.signature.length !== 64) fail('SCHEMA_INVALID');
+      const message = tx.transaction.message, keys = [...(message.account_keys || []), ...(tx.meta.loaded_writable_addresses || []), ...(tx.meta.loaded_readonly_addresses || [])].map(base58);
+      const matched = PROGRAMS.filter(program => keys.includes(program)); if (!matched.length) fail('FILTER_MISMATCH');
+      const slot = exact(update.transaction.slot || slotEvent?.slot || '0'), signature = base58(tx.signature), index = exact(tx.index || '0');
+      const failed = tx.meta.err !== undefined && tx.meta.err !== null;
+      const result = journal.transaction({ slot, signature, index, hash: hash(definitions['geyser.SubscribeUpdateTransactionInfo'].serialize(info)) });
+      if (phase === 'CATCHUP' || phase === 'LIVE') observed.transactions++;
+      if (phase === 'LIVE') stats.live.transactions++;
+      if (result !== 'duplicate') {
+        if (phase === 'CATCHUP' || phase === 'LIVE') {
+          observed.unique++; observed[failed ? 'failed' : 'successful']++;
+          for (const program of matched) observed.perProgram[program]++;
+          if (matched.length > 1) observed.overlaps++;
+        }
+        if (phase === 'LIVE') {
+          stats.live.unique++; stats.live[failed ? 'failed' : 'successful']++;
+          for (const program of matched) stats.live.perProgram[program]++;
+          if (matched.length > 1) stats.live.overlaps++;
+        }
+      }
+    }
+    if (phase === 'LIVE') {
+      const seconds = update.created_at?.seconds;
+      if (seconds === undefined || !Number.isSafeInteger(Number(seconds))) stats.missingLag++;
+      else if (stats.lagMs.length < 100000) stats.lagMs.push(receivedAt - Number(seconds) * 1000 - Number(update.created_at?.nanos || 0) / 1e6);
+      else stats.lagSamplesOmitted++;
+    }
+    const finalizedReceipt = (update.slot && (update.slot.status === 2 || update.slot.status === 'SLOT_FINALIZED'))
+      || !!update.block_meta || !!update.transaction;
+    if (phase === 'LIVE' && finalizedReceipt && !enteredLive) {
+      if (lastLiveEvidenceAt === null) lastLiveEvidenceAt = receivedAtMono;
+      else {
+        const gap = receivedAtMono - lastLiveEvidenceAt;
+        if (budget.streamBusy && gap >= 0 && gap < LIVE_RECEIPT_GAP_MS) line.tick(receivedAtMono);
+        else {
+          line.mode = 'GAP'; line.at = receivedAtMono; line.transition('LIVE', receivedAtMono); stats.gaps++;
+        }
+        lastLiveEvidenceAt = receivedAtMono;
+      }
+    }
+    if (stats.live.messages % 100 === 0) { journal.state.stats = stats; journal.checkpoint(); }
+  };
+  const getSlot = () => rpc({ endpoint: settings.rpcEndpoint, method: 'getSlot', params: [{ commitment: 'finalized' }], budget,
+    maxAttempts: 1, cuPerAttempt: 20, maxBody: 1048576, onRaw: (raw, meta) => journal.append(raw, { ...meta, session: 'rpc', phase }) });
+  try {
+    guard(65536);
+    journal = new Journal(dir, { guard, anchor: '0' });
+    const anchor = exact(await getSlot()); journal.state.anchor = anchor; journal.checkpoint();
+    atomic(path.join(dir, 'manifest.json'), { ...provenance('a-live-replay'), mode: 'a-live-replay', startedAt, limits,
+      filter: { live: { ...liveFilter, from_slot: anchor }, replay: { ...replayFilter, from_slot: '<fresh-tip-minus-offset>' } },
+      sourceDebit: inheritedLedger.sourceDebit || null, intervalRecovery: 'NOT_CLAIMED' });
+    const streamOptions = { endpoint: settings.grpcEndpoint, key: settings.key, from: anchor, budget, onRaw, maxStreamStarts: initial.streamStarts + 3 };
+    handle = await stream({ ...streamOptions, subscription: { ...liveFilter, from_slot: anchor } });
+    let ended; handle.done.then(value => { ended = value; });
+    tick = setInterval(() => { try { budget.check(); if (Date.now() >= deadline) budget.stop('WALL_LIMIT'); } catch {} }, 250);
+    while (line.liveMs < 3600000 && !ended && !budget.state.stopped) {
+      await sleep(250);
+      if (Date.now() >= deadline) { budget.stop('WALL_LIMIT'); break; }
+    }
+    stats.streamStopReason = line.liveMs >= 3600000 ? 'A_LIVE_COMPLETE' : ended?.reason || budget.state.stopped || 'A_LIVE_INCOMPLETE';
+    if (stats.streamStopReason === 'STREAM_STALLED') stats.stalls++;
+    if (ended && line.liveMs < 3600000) stats.gaps++;
+    if (handle) handle.cancel(stats.streamStopReason);
+    if (line.mode === 'LIVE') line.transition('REPLAY', lastLiveEvidenceAt ?? line.at);
+    if (!budget.state.stopped) for (const offset of [9000, 60000]) {
+      const probe = { tip: null, offset, fromSlot: null, firstSlot: null, bytes: 0, messages: 0, elapsedMs: 0, result: 'EMPTY_OR_TIMEOUT' };
+      probes.push(probe); phase = `REPLAY_${offset}`; const began = Date.now(); probe.tip = exact(await getSlot()); probe.fromSlot = slotOffset(probe.tip, offset);
+      const replay = await stream({ endpoint: settings.grpcEndpoint, key: settings.key, from: probe.fromSlot, budget, onRaw,
+        subscription: { ...replayFilter, from_slot: probe.fromSlot }, stopOnFirstFinalizedSlot: true, timeoutMs: 60000,
+        maxReceivedBytes: 10000000, maxStreamStarts: initial.streamStarts + 3 });
+      const result = await replay.done; probe.elapsedMs = Date.now() - began;
+      probe.result = probe.firstSlot !== null && result.reason === 'FIRST_FINALIZED_SLOT' ? 'SAMPLE_RECEIVED'
+        : result.reason === 'STREAM_TIMEOUT' || result.reason === 'STREAM_STALLED' ? 'EMPTY_OR_TIMEOUT'
+          : budget.state.stopped || result.reason === 'SESSION_RECEIVED_LIMIT' ? 'BUDGET_STOP' : 'PROVIDER_ERROR';
+      stats.replay.push({ ...probe }); phase = 'REPLAY';
+      if (budget.state.stopped) break;
+    }
+  } catch (e) { stats.reason = diagnostic(e); }
+  finally {
+    clearInterval(tick); process.removeListener?.('SIGINT', interrupt); process.removeListener?.('SIGTERM', interrupt); if (handle) handle.cancel();
+    const ordered = [...stats.lagMs].sort((a, b) => a - b), percentile = p => ordered.length ? ordered[Math.max(0, Math.ceil(p * ordered.length) - 1)] : null;
+    const liveHours = line.liveMs / 3600000, bytesPerHour = liveHours > 0 ? stats.live.bytes / liveHours : null;
+    const modeBudget = { received: budget.state.received - initial.received, grpcBytes: budget.state.grpcBytes - initial.grpcBytes,
+      rpcBytes: budget.state.rpcBytes - initial.rpcBytes, rpc: budget.state.rpc - initial.rpc, spendPicoUsd: budget.state.spendPicoUsd - initial.spendPicoUsd };
+    const summary = { mode: 'a-live-replay', outcome: 'INCONCLUSIVE', reason: stats.reason || budget.state.stopped || (line.liveMs >= 3600000 ? 'A_COMPLETE' : 'A_INCOMPLETE'),
+      abrupt: false, startedAt, endedAt: new Date().toISOString(), cleanLiveMs: line.liveMs, budget: { ...budget.state }, modeBudget,
+      rawJournalBytes: journal ? journal.state.offset : 0, stats: { ...stats.observed },
+      live: { ...stats.live, failureShare: stats.live.unique ? stats.live.failed / stats.live.unique : null, p50LagMs: percentile(.5), p95LagMs: percentile(.95),
+        lagSource: 'provider created_at', lagSamples: ordered.length, lagSamplesOmitted: stats.lagSamplesOmitted, missingLag: stats.missingLag, eventsPerHour: liveHours ? stats.live.messages / liveHours : null,
+        uniqueTransactionsPerHour: liveHours ? stats.live.unique / liveHours : null, bytesPerHour,
+        projectedGbPerDay: bytesPerHour === null ? null : bytesPerHour * 24 / 1e9,
+        projectedTbPer30Days: bytesPerHour === null ? null : bytesPerHour * 24 * 30 / 1e12,
+        projectionLowConfidence: line.liveMs < 3600000, streamStopReason: stats.streamStopReason, reconnects: 0, stalls: stats.stalls, gaps: stats.gaps, dbGrowth: 'N/A' },
+      replay: probes, intervalRecovery: 'NOT_CLAIMED', scope: 'First-slot samples only; no interval transaction recovery or completeness claim' };
+    if (journal) { journal.state.summary = summary; journal.state.budget = budget.state; journal.state.stats = { ...stats, lagMs: undefined }; journal.checkpoint(); }
+    guard(8192); atomic(path.join(dir, 'summary.json'), summary); persist();
+  }
+}
 async function collectState(options) {
-  const { root, dir, debitRoot, deadline } = options, { stateDebit } = require('./cli.cjs');
-  if (path.basename(root) !== 'provider-s3-archive-1' || path.basename(debitRoot) !== 'alchemy-s1' || path.dirname(root) !== path.dirname(debitRoot)
-    || dir !== path.join(root, 'state-probe') || !Number.isSafeInteger(deadline)) fail('ARGUMENT_INVALID');
+  const { root, dir, debitRoot, deadline } = options, mode = options.mode || 'state-probe', isAb = mode === 'b-history', { stateDebit } = require('./cli.cjs');
+  if ((!isAb && path.basename(root) !== 'provider-s3-archive-1') || (isAb && path.basename(root) !== 'provider-ab-1')
+    || path.basename(debitRoot) !== 'alchemy-s1' || path.dirname(root) !== path.dirname(debitRoot)
+    || dir !== path.join(root, isAb ? 'b-history' : 'state-probe') || !Number.isSafeInteger(deadline)) fail('ARGUMENT_INVALID');
   const inherited = stateDebit(debitRoot), settings = config(process.env, options.secretsFile ? fs.readFileSync(options.secretsFile, 'utf8') : '');
-  const limits = { received: 79861230, rpc: 26, disk: 10000000000, floor: 30000000000, deadline }, parent = path.dirname(root), ledgerPath = path.join(root, 'shared-budget.json');
+  if (isAb && JSON.stringify(inherited) !== JSON.stringify(options.sourceDebit)) fail('STATE_DEBIT_INVALID');
+  const parent = path.dirname(root), ledgerPath = path.join(root, 'shared-budget.json');
+  const shared = isAb ? JSON.parse(fs.readFileSync(ledgerPath)) : null;
+  const initial = isAb ? { received: 0, disk: 0, rpc: 0, stopped: null, grpcBytes: 0, rpcBytes: 0, streamStarts: 0,
+    spendPicoUsd: 0, ...shared.budget } : { ...inherited.counters, streamStarts: 2 };
+  if (isAb && initial.stopped && !['MATRIX_COMPLETE', 'A_COMPLETE', 'A_INCOMPLETE'].includes(initial.stopped)) fail('BUDGET_STOP');
+  initial.stopped = null;
+  const limits = isAb ? { received: initial.received + 4000000, rpc: initial.rpc + 12, disk: 16000000000, floor: 30000000000,
+    deadline, spendPicoUsd: 3000000000000, picoUsdPerGrpcByte: 75, picoUsdPerCu: 525000 }
+    : { received: 79861230, rpc: 26, disk: 10000000000, floor: 30000000000, deadline };
   if ([root, debitRoot, parent].some(p => fs.realpathSync(p).toLowerCase() !== path.resolve(p).toLowerCase())) fail('UNSAFE_PATH');
   if (free(parent) - 5065536 < limits.floor) fail('FREE_SPACE_LIMIT');
   if (size(parent) + 5065536 > limits.disk) fail('DISK_LIMIT');
-  const budget = new Budget(limits, { ...inherited.counters, streamStarts: 2, disk: size(parent) });
+  const budget = new Budget(limits, { ...initial, disk: isAb ? size(root) : size(parent) });
   const matrix = [], addresses = ['9rPogiERgqQPCYJ5hbXu7LsUjXA5G9DcA3d9pX1bvUox', 'BWquordxHk39m9d7LRyQeg5tGmu1z19ismnJTTiWHJ7F', 'CUhM4HepHThb6zcTj4BSiA7RovTokQwgQCvQLWQpqz7e'];
   for (const repeat of [1, 2]) for (const slot of [429644638, 429644639]) for (const address of addresses) matrix.push({ repeat, slot, address, status: 'UNEXECUTED', attempts: 0 });
   let terminal = false, journal, tick, reason = 'MATRIX_COMPLETE', current, bodyParts = new Map(); const startedAt = new Date().toISOString();
@@ -226,17 +415,19 @@ async function collectState(options) {
     const reserve = terminal ? 0 : 65536;
     if (free(parent) - bytes - reserve < limits.floor) fail('FREE_SPACE_LIMIT');
     if (size(parent) + bytes + reserve > limits.disk) fail('DISK_LIMIT');
-    if (size(root) + bytes + reserve > 5000000) fail('EVIDENCE_LIMIT');
-    budget.state.disk = size(parent) + bytes;
+    if (size(isAb ? dir : root) + bytes + reserve > 5000000) fail('EVIDENCE_LIMIT');
+    budget.state.disk = isAb ? size(root) + bytes : size(parent) + bytes;
   };
   // The output ceiling is separate from transport's cumulative received-byte reservation.
   guard(0);
-  budget.persist = () => atomic(ledgerPath, { inherited, rpc: budget.state.rpc, activeRun: 'state-probe', stopped: budget.state.stopped,
-    receivedReserved: budget.state.received, grpcBytes: budget.state.grpcBytes, rpcBytes: budget.state.rpcBytes, budget: { ...budget.state } });
+  budget.persist = () => isAb
+    ? atomic(ledgerPath, { ...shared, activeRun: 'b-history', stopped: budget.state.stopped, budget: { ...budget.state } })
+    : atomic(ledgerPath, { inherited, rpc: budget.state.rpc, activeRun: 'state-probe', stopped: budget.state.stopped,
+      receivedReserved: budget.state.received, grpcBytes: budget.state.grpcBytes, rpcBytes: budget.state.rpcBytes, budget: { ...budget.state } });
   const snapshot = () => { journal.state.budget = { ...budget.state }; journal.state.matrix = matrix; journal.checkpoint(); };
   const stop = code => { reason = code; budget.stop(code); };
   try {
-    guard(8192); atomic(path.join(dir, 'manifest.json'), { ...provenance('state-probe'), inherited, limits, maxBody: 131072,
+    guard(8192); atomic(path.join(dir, 'manifest.json'), { ...provenance(mode), mode, inherited, sourceDebit: isAb ? shared.sourceDebit || null : undefined, limits, maxBody: 131072,
       newLimits: { rpc: 12, received: 4000000, output: 5000000, publishedCU: 120 }, matrix, startedAt, scope: 'Raw historical collection only; no LIVE or recovery proof' });
     journal = new Journal(dir, { guard }); budget.persist(); snapshot();
     tick = setInterval(() => { try { guard(0); if (Date.now() >= deadline) stop('WALL_LIMIT'); } catch (e) { stop(diagnostic(e)); } }, 1000);
@@ -245,6 +436,7 @@ async function collectState(options) {
       budget.check(); guard(196608); current = entry; const before = budget.state.rpc; entry.status = 'INCOMPLETE'; bodyParts = new Map();
       try {
         await rpc({ endpoint: settings.rpcEndpoint, method: 'getAccountInfo', params: [entry.address, { encoding: 'base64', commitment: 'finalized', slot: entry.slot }], budget, maxBody: 131072,
+          cuPerAttempt: isAb ? 10 : 0,
           onRaw(raw, meta) {
             const kept = raw.subarray(0, Math.max(0, 131072 - meta.bodyOffset));
             if (kept.length) { journal.append(kept, { ...meta, repeat: entry.repeat, slot: entry.slot, address: entry.address,
@@ -264,6 +456,12 @@ async function collectState(options) {
         let envelope; try { envelope = JSON.parse(text.replace(/("(?:\\.|[^"\\])*")|(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)/g,
           (match, string, number) => string || `"${number}"`)); } catch { fail('RPC_INVALID'); }
         if (ids !== 1 || envelope.jsonrpc !== '2.0' || !Object.hasOwn(envelope, 'result') || Object.hasOwn(envelope, 'error')) fail('RPC_INVALID');
+        if (isAb) {
+          const value = envelope.result?.value, accountData = Array.isArray(value?.data) && value.data[1] === 'base64' ? Buffer.from(value.data[0], 'base64') : null;
+          entry.contextSlot = envelope.result?.context?.slot ?? null; entry.accountOwner = value?.owner ?? null;
+          entry.dataBytes = accountData?.length ?? null; entry.dataHash = accountData ? hash(accountData) : null;
+          entry.tokenAccount = tokenAccount(accountData);
+        }
         entry.status = 'COLLECTED';
       } finally { entry.attempts = budget.state.rpc - before; }
       snapshot(); current = null;
@@ -273,9 +471,29 @@ async function collectState(options) {
   finally {
     terminal = true; clearInterval(tick);
     if (current && !current.attempts) current.status = 'UNEXECUTED';
-    const newRun = Object.fromEntries(Object.keys(inherited.counters).map(k => [k, budget.state[k] - inherited.counters[k]]));
-    const summary = { mode: 'state-probe', outcome: 'INCONCLUSIVE', abrupt: false, reason, startedAt, endedAt: new Date().toISOString(), liveMs: 0,
-      inherited, newRun, budget: { ...budget.state }, matrix, publishedCU: newRun.rpc * 10, complete: reason === 'MATRIX_COMPLETE',
+    const baseline = isAb ? initial : inherited.counters;
+    const newRun = Object.fromEntries(Object.keys(isAb ? initial : inherited.counters).filter(k => k !== 'disk' && k !== 'stopped')
+      .map(k => [k, (budget.state[k] || 0) - (baseline[k] || 0)]));
+    const repeatComparisons = [], parentChildComparisons = [];
+    if (isAb) {
+      for (const address of addresses) for (const slot of [429644638, 429644639]) {
+        const left = matrix.find(x => x.repeat === 1 && x.slot === slot && x.address === address), right = matrix.find(x => x.repeat === 2 && x.slot === slot && x.address === address);
+        repeatComparisons.push({ address, slot, result: !left || !right || left.status !== 'COLLECTED' || right.status !== 'COLLECTED'
+          ? 'INCOMPLETE' : left.dataHash === null || right.dataHash === null ? 'MISSING_ACCOUNT_DATA'
+            : left.dataHash === right.dataHash ? 'MATCH' : 'DIFFERENT' });
+      }
+      for (const repeat of [1, 2]) for (const address of addresses) {
+        const parentCell = matrix.find(x => x.repeat === repeat && x.slot === 429644638 && x.address === address);
+        const childCell = matrix.find(x => x.repeat === repeat && x.slot === 429644639 && x.address === address);
+        const a = parentCell?.tokenAccount, b = childCell?.tokenAccount;
+        parentChildComparisons.push({ repeat, address, result: !a || !b ? 'UNDECODABLE_OR_INCOMPLETE'
+          : JSON.stringify([parentCell.accountOwner, a.layout, a.mint, a.authority, a.amount])
+            === JSON.stringify([childCell.accountOwner, b.layout, b.mint, b.authority, b.amount]) ? 'MATCH' : 'DIFFERENT' });
+      }
+    }
+    const summary = { mode, outcome: 'INCONCLUSIVE', abrupt: false, reason, startedAt, endedAt: new Date().toISOString(), liveMs: 0,
+      inherited, sourceDebit: isAb ? shared.sourceDebit || null : undefined, newRun, budget: { ...budget.state }, matrix,
+      repeatComparisons, parentChildComparisons, publishedCU: newRun.rpc * 10, complete: reason === 'MATRIX_COMPLETE',
       rawIncomplete: reason !== 'MATRIX_COMPLETE', scope: 'Raw collection only; slot echo is not historical-state proof' };
     if (journal) { journal.state.summary = summary; journal.state.budget = { ...budget.state }; snapshot(); }
     guard(8192); atomic(path.join(dir, 'summary.json'), summary); budget.persist();

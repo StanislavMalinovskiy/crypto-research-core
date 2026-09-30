@@ -80,6 +80,7 @@ async function main(args) {
   if (!args.includes('--enable-live') && !args.includes('--inspect')) { console.log('LIVE_DISABLED'); return; }
   if (args.includes('state-probe')) return stateMain(args);
   const value = key => { const i = args.indexOf(key); return i < 0 ? undefined : args[i + 1]; };
+  if (['a-live-replay', 'b-history'].includes(value('--mode'))) return providerMain(args);
   const allowed = new Set(['--enable-live', '--mode', '--root', '--secrets-file', '--inspect', '--retry-smoke']);
   for (let i = 0; i < args.length; i++) { if (!allowed.has(args[i])) fail('ARGUMENT_INVALID'); if (!['--enable-live', '--retry-smoke'].includes(args[i])) i++; }
   const mode = value('--inspect') || value('--mode'); if (!['smoke', 'full'].includes(mode)) fail('ARGUMENT_INVALID');
@@ -129,7 +130,87 @@ async function main(args) {
     console.log(`S1_STOPPED ${mode}`);
   } finally { fs.unlinkSync(lock); }
 }
-if (require.main === module) main(process.argv.slice(2)).catch(error => { console.error(diagnostic(error)); process.exitCode = 1; });
+async function providerMain(args) {
+  const parsed = new Map();
+  for (let i = 0; i < args.length; i++) {
+    const key = args[i]; if (!['--enable-live', '--mode', '--root', '--debit-root', '--secrets-file'].includes(key) || parsed.has(key)) fail('ARGUMENT_INVALID');
+    if (key === '--enable-live') { parsed.set(key, true); continue; }
+    const value = args[++i]; if (!value || value.startsWith('--')) fail('ARGUMENT_INVALID'); parsed.set(key, value);
+  }
+  const value = key => parsed.get(key);
+  const mode = value('--mode'), providerA = mode === 'a-live-replay';
+  const expectedRoot = providerA ? 'C:/crypto-research-evidence/provider-a-final-1' : 'C:/crypto-research-evidence/provider-ab-1';
+  const expectedDebit = 'C:/crypto-research-evidence/alchemy-s1';
+  if (!parsed.has('--enable-live') || !['a-live-replay', 'b-history'].includes(mode)
+    || (providerA ? value('--root') !== expectedRoot : value('--root') && path.resolve(value('--root')).toLowerCase() !== path.resolve(expectedRoot).toLowerCase())
+    || (providerA && value('--debit-root') && value('--debit-root') !== expectedDebit)
+    || (value('--debit-root') && path.resolve(value('--debit-root')).toLowerCase() !== path.resolve(expectedDebit).toLowerCase())) fail('ARGUMENT_INVALID');
+  const repo = path.resolve(__dirname, '../../..'), root = canonicalRoot(expectedRoot, repo), debitRoot = canonicalRoot(expectedDebit, repo);
+  if (path.dirname(root).toLowerCase() !== path.dirname(debitRoot).toLowerCase()
+    || root.toLowerCase() !== path.resolve(expectedRoot).toLowerCase() || debitRoot.toLowerCase() !== path.resolve(expectedDebit).toLowerCase()) fail('UNSAFE_PATH');
+  if (providerA) {
+    const expectedParent = path.resolve('C:/crypto-research-evidence'), parent = path.dirname(root);
+    let parentReal, existingRoot = null;
+    try { parentReal = fs.realpathSync(parent); } catch { fail('UNSAFE_PATH'); }
+    if (parent.toLowerCase() !== expectedParent.toLowerCase() || parentReal.toLowerCase() !== expectedParent.toLowerCase()) fail('UNSAFE_PATH');
+    try { existingRoot = fs.lstatSync(root); } catch (error) { if (error.code !== 'ENOENT') fail('UNSAFE_PATH'); }
+    if (existingRoot) fail(existingRoot.isSymbolicLink() ? 'UNSAFE_PATH' : 'PATH_REUSE');
+  }
+  const secretsFile = value('--secrets-file') ? path.resolve(value('--secrets-file')) : null;
+  if (secretsFile && secretsFile.toLowerCase() !== path.join(repo, 'config/application-managed-secrets.properties').toLowerCase()) fail('CONFIG_INVALID');
+  config(process.env, secretsFile ? fs.readFileSync(secretsFile, 'utf8') : '');
+  const sourceDebit = stateDebit(debitRoot);
+  const pids = execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
+    `Get-CimInstance Win32_Process | Where-Object { $_.ProcessId -ne ${process.pid} -and $_.Name -match '^node(?:\\.exe)?$' -and $_.CommandLine -match '(alchemy-s1[\\\\/](cli|collector|watchdog)\\.cjs|provider-ab-1)' } | ForEach-Object { $_.ProcessId }`],
+  { encoding: 'utf8', windowsHide: true, timeout: 10000 }).trim();
+  if (pids) fail('STATE_ACTIVE');
+  const parent = path.dirname(root);
+  const outputLimit = mode === 'a-live-replay' ? 16000000000 : 5000000;
+  if (free(parent) - outputLimit - 1048576 < 30000000000) fail('FREE_SPACE_LIMIT');
+  if (providerA) fs.mkdirSync(root);
+  else if (!fs.existsSync(root)) fs.mkdirSync(root);
+  if (fs.realpathSync(root).toLowerCase() !== root.toLowerCase() || fs.lstatSync(root).isSymbolicLink()) fail('UNSAFE_PATH');
+  const lock = path.join(root, 'active.lock'); let fd;
+  try { fd = fs.openSync(lock, 'wx'); } catch (e) { if (e.code === 'EEXIST') fail('STATE_ACTIVE'); throw e; }
+  fs.closeSync(fd);
+  try {
+    const verifyTree = directory => {
+      for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+        const item = path.join(directory, entry.name), stat = fs.lstatSync(item);
+        if (stat.isSymbolicLink()) fail('UNSAFE_PATH');
+        if (stat.isDirectory()) verifyTree(item); else if (!stat.isFile()) fail('UNSAFE_PATH');
+      }
+    };
+    verifyTree(root);
+    const ledgerFile = path.join(root, 'shared-budget.json'), name = mode === 'a-live-replay' ? 'a-live-replay' : 'b-history', dir = path.join(root, name);
+    if (fs.existsSync(dir)) fail('PATH_REUSE');
+    if (fs.existsSync(ledgerFile)) {
+      const ledger = JSON.parse(fs.readFileSync(ledgerFile));
+      if (ledger.version !== 1 || JSON.stringify(ledger.sourceDebit) !== JSON.stringify(sourceDebit)
+        || !ledger.budget || ledger.activeRun) fail('ACCOUNTING_INVALID');
+    } else {
+      atomic(ledgerFile, { version: 1, sourceDebit, budget: { received: 0, disk: 0, rpc: 0, stopped: null, grpcBytes: 0,
+        rpcBytes: 0, streamStarts: 0, spendPicoUsd: 0 } });
+    }
+    const ledger = JSON.parse(fs.readFileSync(ledgerFile));
+    if ([root, path.join(root, 'shared-budget.json')].some(p => fs.lstatSync(p).isSymbolicLink())) fail('UNSAFE_PATH');
+    if (ledger.budget.stopped && !['MATRIX_COMPLETE', 'A_COMPLETE', 'A_INCOMPLETE'].includes(ledger.budget.stopped)) fail('BUDGET_STOP');
+    fs.mkdirSync(dir); const launchedAt = Date.now(), deadline = launchedAt + (mode === 'a-live-replay' ? 7200000 : 1800000);
+    atomic(path.join(dir, 'launch.json'), { mode, startedAt: new Date(launchedAt).toISOString(), deadline, sourceDebit });
+    const child = fork(path.join(__dirname, 'collector.cjs'), [], { stdio: ['ignore', 'ignore', 'ignore', 'ipc'], windowsHide: true });
+    const watch = supervise(child, { dir, deadline, floor: 30000000000 }); let childReason;
+    child.on('message', message => { if (/^[A-Z_]+$/.test(message.reason || '')) childReason = message.reason; });
+    const completion = new Promise(resolve => { child.once('error', () => resolve({ code: 1, signal: null })); child.once('exit', (code, signal) => resolve({ code, signal })); });
+    child.send({ root, dir, mode, debitRoot, deadline, launchedAt, secretsFile, sourceDebit }); const result = await completion;
+    if (watch.connected) watch.send({ finished: true });
+    if (JSON.stringify(stateDebit(debitRoot)) !== JSON.stringify(sourceDebit)) fail('STATE_DEBIT_INVALID');
+    if (result.signal || result.code === null) fail(childReason || 'STATE_CHILD_ABRUPT');
+    if (result.code !== 0 || childReason) fail(childReason || 'STATE_CHILD_FAILED');
+    const completedLedger = JSON.parse(fs.readFileSync(ledgerFile)); completedLedger.activeRun = null; completedLedger.lastMode = mode;
+    atomic(ledgerFile, completedLedger);
+    console.log(`AB_STOPPED ${mode}`);
+  } finally { fs.unlinkSync(lock); }
+}
 const STATE_SEED = { rpc: 14, received: 75861230, grpcBytes: 47638937, rpcBytes: 28222293, streamStarts: 2 };
 function stateDebit(root) {
   try {
@@ -151,7 +232,9 @@ function stateDebit(root) {
         if (!Object.hasOwn(totals, source)) fail('STATE_DEBIT_INVALID'); totals[source] += count; offset += 8 + n + count;
       } } finally { fs.closeSync(fd); }
       for (const field of Object.keys(STATE_SEED)) {
-        if (!Number.isSafeInteger(b[field]) || b[field] < prior[field] || s.attempt?.[field] !== b[field] - prior[field]) fail('STATE_DEBIT_INVALID');
+        const legacyFirstSummary = name === 'smoke' && s.attempt === undefined;
+        if (!Number.isSafeInteger(b[field]) || b[field] < prior[field]
+          || (!legacyFirstSummary && s.attempt?.[field] !== b[field] - prior[field])) fail('STATE_DEBIT_INVALID');
       }
       if (name === 'smoke' && Object.entries({ rpc: 2, received: 10967, grpcBytes: 10881, rpcBytes: 86, streamStarts: 1 }).some(([k, v]) => b[k] !== v)) fail('STATE_DEBIT_INVALID');
       if (totals.grpc !== b.grpcBytes - prior.grpcBytes || totals.rpc !== b.rpcBytes - prior.rpcBytes || b.received !== b.grpcBytes + b.rpcBytes) fail('STATE_DEBIT_INVALID');
@@ -212,3 +295,4 @@ async function stateMain(args) {
   } finally { fs.unlinkSync(lock); }
 }
 module.exports = { main, stateDebit };
+if (require.main === module) main(process.argv.slice(2)).catch(error => { console.error(diagnostic(error)); process.exitCode = 1; });

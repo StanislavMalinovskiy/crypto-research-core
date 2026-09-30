@@ -1,6 +1,6 @@
 # План реализации
 
-**Обновлено:** 27 сентября 2026 года
+**Обновлено:** 30 сентября 2026 года
 
 ## Назначение
 
@@ -23,7 +23,7 @@
 ## Текущая позиция
 
 - **Текущий этап:** Этап 3 — Реальные данные Solana (исполняется через remediation-пакеты [DELIVERY_PLAN_FIXES](DELIVERY_PLAN_FIXES.md)).
-- **Текущая работа:** завершить F1 — провести owner-run capability-specific provider spikes 3.1–3.6 и выбрать primary live transport, historical source и необходимые specialized sources; design-контракт готов, но change остаётся активным на 4/10 задач.
+- **Текущая работа:** [исследовательский F1 change](../openspec/changes/archive/2026-09-29-define-solana-data-provider-contract/tasks.md) архивирован с provisional shortlist, но исходные S1–S5/3.6 отложены и не верифицированы; primary provider не выбран. [Bounded Alchemy A/B и финальная A-попытка](notes/SOLANA_PROVIDER_SPIKE_RESEARCH_2026-09-27.md) завершены как исследовательские receipts: оба A `INCONCLUSIVE` с нулём чистого LIVE-времени (финальный остановлен локальным `PROCESSING_LIMIT` в catch-up), B `INCONCLUSIVE/MATRIX_COMPLETE` (12/12 исторических чтений; два vault reserve inputs подтверждены для одного child block, pool layout не декодирован). Финальная A-попытка и разрешённое root-only исправление израсходованы; повторов в этом change нет. Решение о провайдере и фактическая gRPC-стоимость отложены: после прогона dashboard/invoice не были доступны для сверки.
 - **Завершённая подготовка:** F0 синхронизировал документы; F2 core storage принят и архивирован — Flyway V5–V9, immutable raw/price/liquidity/USD/universe storage, lineage constraints и bounded batch paths реализованы.
 - **Завершённые срезы 27 сентября:** приняты и архивированы [bounded LIQUIDITY_SPIKE windows](../openspec/changes/archive/2026-09-27-bound-liquidity-spike-observation-windows/verification.md), [recorded-replay telemetry](../openspec/changes/archive/2026-09-27-add-recorded-replay-operational-telemetry/tasks.md) и [evaluation-report retry hardening](../openspec/changes/archive/2026-09-27-harden-evaluation-report-retry-semantics/tasks.md). Это завершённые изменения первого среза; production F6.2 и live monitoring F3.4 остаются частично открытыми.
 - **Агентная разработка:** приняты instruction diet, workflow safety rules и workflow simplification; актуальные роли, tiers, review и gates определяет [выбранный workflow](../AGENTS.md#agent-workflow-mode). Исторические benchmark findings не являются текущими правилами routing.
@@ -82,12 +82,12 @@
 | ID | Статус | Рабочий пакет |
 |---|---|---|
 | 3.0 | Done | Настроить постоянную managed PostgreSQL для работы из нескольких мест и подтвердить профиль, секреты, Flyway, PostgreSQL 18.6, TLS и восстановление свежего backup; сетевая политика остаётся ответственностью оператора. |
-| 3.1 | Current | Через F1: построить provider-consumer matrix, зафиксировать Solana data contract (finality, locator, time, universe, derivation, quality, ranges, capacity) и выбрать primary transport/history sources по результатам capability-specific spikes. |
+| 3.1 | Current | F1 research contract и provisional shortlist архивированы; S1–S5 и выбор primary transport/history sources остаются отложенными/неверифицированными. Bounded Alchemy: первоначальный и единственный финальный A завершились `INCONCLUSIVE` без чистого LIVE; B остаётся `INCONCLUSIVE/MATRIX_COMPLETE` (12/12, узкое vault corroboration). Ни эти receipts, ни их исследовательское закрытие не закрывают исходные acceptance targets или выбор провайдера. |
 | 3.2 | Next | После F1 selection реализовать F3 bounded real-time ingestion с явными timeout, rate, concurrency и finite retry policies; V5–V9 core storage уже готов, недостающие live facts добавляются только forward migrations. |
 | 3.3 | Planned | Добавить provider-specific normalization, parser versioning и replay сохранённых raw payloads. |
 | 3.4 | Planned | Обнаруживать reconnect gaps, восстанавливать пропущенные диапазоны и явно отмечать unresolved windows. |
 | 3.5 | Planned | Сохранять observed price snapshots, source/quality facts и необходимые token discovery observations. |
-| 3.6 | Planned | Выполнить идемпотентный исторический backfill и доказать отсутствие дубликатов и скрытой потери данных. |
+| 3.6 | Planned | Выполнить идемпотентный исторический backfill и доказать отсутствие дубликатов и скрытой потери данных; текущие provider-пробы не реализуют backfill. |
 | 3.7 | Planned | Измерить freshness, parse failures, coverage и gaps на длительном прогоне и закрыть data-quality gate этапа. |
 
 **Условие завершения:** текущие и исторические данные воспроизводятся с raw lineage, parser identity и видимыми gaps без повторных доменных эффектов.

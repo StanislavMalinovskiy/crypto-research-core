@@ -22,9 +22,10 @@ async function rpc(options) {
   try { target = new URL(endpoint); } catch { budget.rpcBusy = false; fail('CONFIG_INVALID'); }
   if (target.protocol !== 'https:' && !(options.allowLocal && target.protocol === 'http:' && local(target))) { budget.rpcBusy = false; fail('CONFIG_INVALID'); }
   try {
-    for (let attempt = 0; attempt < 3; attempt++) {
+    const maxAttempts = options.maxAttempts || 3;
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
       await wait(Math.max(0, (budget.lastRpc || 0) + 500 - now())); budget.check();
-      if (!budget.rpc()) budget.check(); budget.lastRpc = now();
+      if (!budget.rpc(options.cuPerAttempt || 0)) budget.check(); budget.lastRpc = now();
       if (!budget.reserve(reservation, 0, now(), Infinity)) budget.check();
       let received = 0;
       try {
@@ -65,7 +66,7 @@ async function rpc(options) {
         }); return result;
       } catch (e) {
         const code = diagnostic(e);
-        if (budget.state.stopped || !['RPC_UNAVAILABLE', 'RPC_TIMEOUT', 'RPC_QUOTA'].includes(code) || attempt === 2) throw e;
+        if (budget.state.stopped || !['RPC_UNAVAILABLE', 'RPC_TIMEOUT', 'RPC_QUOTA'].includes(code) || attempt + 1 === maxAttempts) throw e;
         await wait(1000 * 2 ** attempt);
       } finally { budget.settle(reservation, received, 'rpc'); }
     }
@@ -73,13 +74,14 @@ async function rpc(options) {
 }
 async function stream(options) {
   const { endpoint, budget, onRaw } = options; budget.check();
+  if (options.maxReceivedBytes !== undefined && (!Number.isSafeInteger(options.maxReceivedBytes) || options.maxReceivedBytes < FRAME)) fail('ARGUMENT_INVALID');
   if (budget.streamBusy) fail('STREAM_CONCURRENCY');
-  if ((budget.state.streamStarts || 0) >= 20) { budget.stop('STREAM_LIMIT'); budget.check(); }
+  if ((budget.state.streamStarts || 0) >= (options.maxStreamStarts || 20)) { budget.stop('STREAM_LIMIT'); budget.check(); }
   if (options.allowLocal && !/^127\.0\.0\.1:\d+$/.test(endpoint)) fail('CONFIG_INVALID');
   if (!options.allowLocal && !/^(?:[a-z0-9-]+\.)+alchemy\.com:443$/.test(endpoint)) fail('CONFIG_INVALID');
   const now = options.now || Date.now;
-  if (!budget.reserve(FRAME, 0, now(), Infinity)) budget.check();
-  let reserved = FRAME, call, last = now(), ended = false, reason = 'STREAM_ENDED', tick;
+  if (!budget.reserve(FRAME, 0, now(), Infinity, 'grpc')) budget.check();
+  let reserved = FRAME, sessionReceived = 0, call, last = now(), ended = false, reason = 'STREAM_ENDED', tick, expiry;
   const queue = new Queue(16 * 1024 * 1024);
   budget.streamBusy = true; budget.state.streamStarts = (budget.state.streamStarts || 0) + 1; budget.persist();
   const client = new grpc.Client(endpoint, options.allowLocal ? grpc.credentials.createInsecure() : grpc.credentials.createSsl(), {
@@ -88,7 +90,7 @@ async function stream(options) {
   });
   let resolveDone; const done = new Promise(resolve => { resolveDone = resolve; });
   const finish = code => {
-    if (ended) return; ended = true; reason = code; clearInterval(tick); budget.controller.signal.removeEventListener('abort', abort);
+    if (ended) return; ended = true; reason = code; clearInterval(tick); clearTimeout(expiry); budget.controller.signal.removeEventListener('abort', abort);
     if (call) call.cancel(); client.close(); budget.streamBusy = false;
     if (reserved) { budget.settle(reserved, 0, 'grpc'); reserved = 0; }
     resolveDone({ reason, lastReceived: last });
@@ -105,21 +107,28 @@ async function stream(options) {
     if (ended) return {};
     last = now(); const held = reserved; reserved = 0;
     budget.settle(held, raw.length, 'grpc');
+    sessionReceived += raw.length;
     try {
       if (!queue.push(raw)) fail('QUEUE_LIMIT');
       const result = onRaw(queue.shift(), { source: 'grpc', receivedAt: new Date(last).toISOString() });
       if (result && typeof result.then === 'function') fail('ASYNC_RAW_HANDLER');
+      if (options.stopOnFirstFinalizedSlot) {
+        const update = decode(raw);
+        if (update.slot?.status === 2 || update.slot?.status === 'SLOT_FINALIZED') { finish('FIRST_FINALIZED_SLOT'); return {}; }
+      }
+      if (options.maxReceivedBytes !== undefined && options.maxReceivedBytes - sessionReceived < FRAME) { finish('SESSION_RECEIVED_LIMIT'); return {}; }
       if (now() - last > 250) fail('PROCESSING_LIMIT');
-      if (!ended && budget.reserve(FRAME, 0, now(), Infinity)) reserved = FRAME;
+      if (!ended && budget.reserve(FRAME, 0, now(), Infinity, 'grpc')) reserved = FRAME;
       else finish(budget.state.stopped || 'CANCELLED');
     } catch (e) { finish(diagnostic(e)); }
     return {};
   }, metadata);
   call.on('data', () => {}); call.on('error', e => finish([7, 16].includes(e.code) ? 'AUTH_FAILED' : 'STREAM_ERROR'));
   call.on('end', () => finish('STREAM_ENDED'));
-  call.write({ transactions: { watched: { vote: false, failed: false, account_include: PROGRAMS } },
+  call.write(options.subscription || { transactions: { watched: { vote: false, failed: false, account_include: PROGRAMS } },
     slots: { finalized: { filter_by_commitment: true } }, blocks_meta: { finalized: {} }, commitment: 2, from_slot: options.from });
   tick = setInterval(() => { if (now() - last >= 30000) finish('STREAM_STALLED'); }, 250);
+  if (options.timeoutMs) { expiry = setTimeout(() => finish('STREAM_TIMEOUT'), options.timeoutMs); expiry.unref?.(); }
   return { done, cancel: code => finish(code || 'DISCONNECT'), ping: () => { if (!ended) call.write({ ping: { id: 1 } }); } };
 }
 module.exports = { rpc, stream, decode, encode, definitions, sleep };

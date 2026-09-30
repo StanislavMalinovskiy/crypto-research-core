@@ -7,9 +7,11 @@ const path = require('node:path');
 const vm = require('node:vm');
 const { createRequire } = require('node:module');
 const { EventEmitter } = require('node:events');
+const { spawnSync } = require('node:child_process');
 const { Journal, atomic } = require('../journal.cjs');
 const { reconcile, Timeline, fail } = require('../core.cjs');
 const { finalComparison } = require('../collector.cjs');
+const { stateDebit } = require('../cli.cjs');
 const cliFile = path.resolve(__dirname, '../cli.cjs');
 const temp = t => { const dir = fs.mkdtempSync(path.join(os.tmpdir(), 's1-repair-')); t.after(() => fs.rmSync(dir, { recursive: true, force: true })); return dir; };
 function launcher(denyWrites = false) {
@@ -190,6 +192,47 @@ test('actual collector includes V1 config in immutable identity and retains conf
   assert.equal(run.summary.reason, 'IMMUTABLE_CONFLICT'); assert.equal(run.summary.outcome, 'FAIL');
   assert.ok(fs.readFileSync(path.join(run.dir, 'raw.bin')).includes(transport.encode(changed))); assert.equal(run.journal.signatures('100').length, 1);
 });
+test('A LIVE separately counts and retains a watched failed transaction', async t => {
+  const success = wireTx('legacy', 21), failed = wireTx('legacy', 22);
+  failed.transaction.transaction.meta.err = { err: Buffer.from([1]) };
+  const run = await offlineCollector(t, [success, failed], { mode: 'a-live-replay' });
+  assert.equal(run.summary.stats.successful, 1);
+  assert.equal(run.summary.stats.failed, 1);
+  assert.equal(run.summary.stats.transactions, 2);
+  assert.ok(fs.readFileSync(path.join(run.dir, 'raw.bin')).includes(transport.encode(failed)), 'failure receipt is retained raw-first');
+});
+test('A collector excludes silent time before a finalized stream stall from clean LIVE duration', async t => {
+  const parent = temp(t), root = path.join(parent, 'provider-ab-1'), dir = path.join(root, 'a-live-replay');
+  fs.mkdirSync(root); const clock = { elapsed: 0, silent: 0 }; let streams = 0, stopLive;
+  const done = new Promise(resolve => { stopLive = resolve; });
+  const collector = loadFake(path.resolve(__dirname, '../collector.cjs'), (name, actual) => {
+    if (name === './journal.cjs') return { ...actual(name), free: () => 1e12 };
+    if (name === './transport.cjs') return { ...transport,
+      rpc: async ({ budget }) => { assert.equal(budget.rpc(20), true); return '429644638'; },
+      stream: async ({ onRaw, budget }) => {
+        streams++; budget.state.streamStarts = streams;
+        if (streams === 1) {
+          onRaw(transport.encode({ slot: { slot: '429644638', status: 2 } }), { receivedAt: new FixedDate().toISOString() });
+          return { done, cancel() {} };
+        }
+        return { done: Promise.resolve({ reason: 'STREAM_TIMEOUT' }), cancel() {} };
+      },
+      sleep: async ms => {
+        clock.elapsed += ms; clock.silent += ms;
+        if (clock.silent >= 30000) stopLive({ reason: 'STREAM_STALLED' });
+      }
+    };
+  }, {
+    process: { env: Object.fromEntries(syntheticProperties(template.replace('${ALCHEMY_API_KEY}', syntheticKey)).split('\n').map(s => s.split('='))),
+      once() {}, version: process.version },
+    performance: { now: () => clock.elapsed }, setInterval: () => 1, clearInterval() {}
+  });
+  await collector.collect({ root, dir, mode: 'a-live-replay', deadline: Date.now() + 180000 });
+  const summary = JSON.parse(fs.readFileSync(path.join(dir, 'summary.json')));
+  assert.equal(streams, 3);
+  assert.equal(summary.live.streamStopReason, 'STREAM_STALLED');
+  assert.equal(summary.cleanLiveMs, 0, 'silent inactivity must not count as clean LIVE time');
+});
 for (const field of ['lookup', 'writable', 'readonly']) test(`collector rejects V1 ${field} address contradiction after raw retention`, async t => {
   const update = wireTx(1), tx = update.transaction.transaction;
   if (field === 'lookup') tx.transaction.message.address_table_lookups = [{ account_key: Buffer.alloc(32) }];
@@ -339,6 +382,56 @@ function stateFixture(t) {
   atomic(path.join(debit, 'shared-budget.json'), { rpc: 14, activeRun: 'smoke-retry-1', stopped: 'RECEIVED_LIMIT', receivedReserved: 75861230, grpcBytes: 47638937, rpcBytes: 28222293, smoke: stateSeed });
   return { parent, root, debit };
 }
+test('A and B collector runs apply the conservative CU rate to their shared operator ledger', async t => {
+  const f = stateFixture(t), root = path.join(f.parent, 'provider-a-final-1'), bRoot = path.join(f.parent, 'provider-ab-1');
+  const sourceDebit = stateDebit(f.debit), clock = { elapsed: 0 };
+  const aDir = path.join(root, 'a-live-replay'), bDir = path.join(bRoot, 'b-history');
+  fs.mkdirSync(aDir, { recursive: true }); fs.mkdirSync(bDir, { recursive: true });
+  atomic(path.join(root, 'shared-budget.json'), { sourceDebit, budget: {} });
+  atomic(path.join(bRoot, 'shared-budget.json'), { sourceDebit, budget: {} });
+  const canonicalPaths = new Map([['C:/crypto-research-evidence', f.parent],
+    ['C:/crypto-research-evidence/provider-a-final-1', root], ['C:/crypto-research-evidence/alchemy-s1', f.debit]]);
+  const collector = loadFake(path.resolve(__dirname, '../collector.cjs'), (name, actual) => {
+    if (name === 'node:path') return { ...path, resolve(...parts) { return path.resolve(...parts.map(part => canonicalPaths.get(part) || part)); } };
+    if (name === './journal.cjs') return { ...actual(name), free: () => 1e12 };
+    if (name === './transport.cjs') return { ...transport,
+      rpc: async options => {
+        const { budget } = options; assert.equal(budget.rpc(options.cuPerAttempt), true);
+        const reservation = options.maxBody, id = budget.state.rpc;
+        assert.equal(budget.reserve(reservation, 0, Date.now(), 1e12, 'rpc'), true);
+        const result = options.method === 'getSlot' ? '429644638' : { context: { slot: options.params[1].slot }, value: null };
+        const body = Buffer.from(JSON.stringify({ jsonrpc: '2.0', id, result }));
+        options.onRaw(body, { request: id, bodyOffset: 0 }); budget.settle(reservation, body.length, 'rpc');
+        return result;
+      },
+      stream: async ({ budget }) => {
+        budget.state.streamStarts = (budget.state.streamStarts || 0) + 1; budget.persist();
+        return { done: Promise.resolve({ reason: 'STREAM_STALLED' }), cancel() {} };
+      }, sleep: async ms => { clock.elapsed += ms; }
+    };
+  }, {
+    process: { env: Object.fromEntries(syntheticProperties(template.replace('${ALCHEMY_API_KEY}', syntheticKey)).split('\n').map(s => s.split('='))),
+      once() {}, version: process.version },
+    performance: { now: () => clock.elapsed }
+  });
+  const deadline = Date.now() + 120000, aOptions = { root, debitRoot: f.debit, sourceDebit, deadline };
+  const bOptions = { root: bRoot, debitRoot: f.debit, sourceDebit, deadline };
+  await collector.collect({ ...aOptions, dir: aDir, mode: 'a-live-replay' });
+  await collector.collect({ ...bOptions, dir: bDir, mode: 'b-history' });
+  const aLedger = JSON.parse(fs.readFileSync(path.join(root, 'shared-budget.json')));
+  const bLedger = JSON.parse(fs.readFileSync(path.join(bRoot, 'shared-budget.json')));
+  const a = JSON.parse(fs.readFileSync(path.join(aDir, 'summary.json'))), b = JSON.parse(fs.readFileSync(path.join(bDir, 'summary.json')));
+  assert.equal(a.modeBudget.rpc, 3, 'A performs three 20-CU getSlot calls');
+  assert.equal(b.newRun.rpc, 12, 'B performs twelve 10-CU getAccountInfo calls');
+  assert.equal(aLedger.budget.spendPicoUsd, 31_500_000, 'A debit is 60 CU at 525,000 pico-USD/CU');
+  assert.equal(bLedger.budget.spendPicoUsd, 63_000_000, 'B debit is 120 CU at 525,000 pico-USD/CU');
+  assert.equal(aLedger.budget.spendPicoUsd + bLedger.budget.spendPicoUsd, 94_500_000,
+    'separate A and B ledgers sum to 180 CU at 525,000 pico-USD/CU');
+  const aManifest = JSON.parse(fs.readFileSync(path.join(aDir, 'manifest.json')));
+  const bManifest = JSON.parse(fs.readFileSync(path.join(bDir, 'manifest.json')));
+  assert.deepEqual([aManifest.limits.picoUsdPerCu, bManifest.limits.picoUsdPerCu], [525_000, 525_000]);
+  assert.equal(bLedger.activeRun, 'b-history');
+});
 function stateLauncher(fixture, settings = true, processes = false) {
   const state = { launched: 0 }, props = syntheticProperties(template.replace('${ALCHEMY_API_KEY}', syntheticKey));
   const api = loadFake(cliFile, (name, actual) => {
@@ -349,6 +442,129 @@ function stateLauncher(fixture, settings = true, processes = false) {
   }, { process: { env: settings ? Object.fromEntries(props.split('\n').map(s => s.split('='))) : {}, pid: process.pid } });
   return { ...api, state };
 }
+const providerEvidenceParent = 'C:/crypto-research-evidence';
+const providerAbRoot = `${providerEvidenceParent}/provider-ab-1`;
+const providerFinalARoot = `${providerEvidenceParent}/provider-a-final-1`;
+function providerFixture(t) {
+  const f = stateFixture(t);
+  f.finalRoot = path.join(f.parent, 'provider-a-final-1');
+  f.priorRoot = path.join(f.parent, 'provider-ab-1');
+  fs.mkdirSync(path.join(f.priorRoot, 'a-live-replay'), { recursive: true });
+  fs.mkdirSync(path.join(f.priorRoot, 'b-history'), { recursive: true });
+  fs.writeFileSync(path.join(f.priorRoot, 'a-live-replay', 'raw.bin'), Buffer.from('immutable prior A receipt'));
+  fs.writeFileSync(path.join(f.priorRoot, 'b-history', 'raw.bin'), Buffer.from('immutable prior B receipt'));
+  return f;
+}
+const providerArgs = root => ['--enable-live', '--mode', 'a-live-replay', ...(root === undefined ? [] : ['--root', root]),
+  '--debit-root', debitRoot];
+function providerLauncher(f) {
+  const state = { launched: 0, providerCalls: 0 }, props = syntheticProperties(template.replace('${ALCHEMY_API_KEY}', syntheticKey));
+  const redirects = new Map([[providerEvidenceParent, f.parent], [providerFinalARoot, f.finalRoot], [providerAbRoot, f.priorRoot], [debitRoot, f.debit]]);
+  const api = loadFake(cliFile, (name, actual) => {
+    if (name === 'node:path') return { ...path, resolve(...parts) { return path.resolve(...parts.map(part => redirects.get(part) || part)); } };
+    if (name === './journal.cjs') return { ...actual(name), free: () => 1e12, size: () => 0 };
+    if (name === './watchdog.cjs') return { supervise: () => ({ connected: false }) };
+    if (name === 'node:child_process') return { execFileSync: () => '', fork() {
+      state.launched++;
+      const child = new EventEmitter(); child.send = options => { state.options = options; setImmediate(() => child.emit('exit', 0)); }; return child;
+    } };
+  }, { process: { env: Object.fromEntries(props.split('\n').map(s => s.split('='))), pid: process.pid } });
+  return { ...api, state };
+}
+function providerCollector(f) {
+  const state = { rpcCalls: 0, streamCalls: 0 }, props = syntheticProperties(template.replace('${ALCHEMY_API_KEY}', syntheticKey));
+  const redirects = new Map([[providerFinalARoot, f.finalRoot], [debitRoot, f.debit]]);
+  const api = loadFake(path.resolve(__dirname, '../collector.cjs'), (name, actual) => {
+    if (name === 'node:path') return { ...path, resolve(...parts) { return path.resolve(...parts.map(part => redirects.get(part) || part)); } };
+    if (name === './journal.cjs') return { ...actual(name), free: () => 1e12 };
+    if (name === './transport.cjs') return { ...transport,
+      rpc: async () => { state.rpcCalls++; fail('FAKE_RPC_STARTED'); },
+      stream: async () => { state.streamCalls++; fail('FAKE_STREAM_STARTED'); }
+    };
+  }, { process: { env: Object.fromEntries(props.split('\n').map(s => s.split('='))), once() {}, version: process.version } });
+  return { ...api, state };
+}
+test('final A CLI launches once only at the explicit fresh canonical root and leaves predecessor debit and A/B receipts unchanged', async t => {
+  const f = providerFixture(t), oldReceipts = fileHashes(f.priorRoot), oldDebit = fileHashes(f.debit), launch = providerLauncher(f);
+  let error;
+  try { await launch.main(providerArgs(providerFinalARoot)); } catch (e) { error = e.safeCode; }
+  assert.equal(error, undefined, 'the exact explicit absent provider-a-final-1 root must be accepted');
+  assert.equal(launch.state.launched, 1, 'the final A route launches one collector');
+  assert.equal(launch.state.providerCalls, 0, 'the fake child performs no provider calls');
+  assert.equal(launch.state.options.root, f.finalRoot);
+  assert.equal(launch.state.options.dir, path.join(f.finalRoot, 'a-live-replay'));
+  assert.deepEqual(fileHashes(f.priorRoot), oldReceipts, 'the earlier A/B evidence tree remains unchanged');
+  assert.deepEqual(fileHashes(f.debit), oldDebit, 'the stopped predecessor debit remains unchanged');
+});
+test('final A CLI rejects omitted, old, already existing, aliased, nested and traversal roots before writes or child launch', async t => {
+  const f = providerFixture(t), launch = providerLauncher(f), oldReceipts = fileHashes(f.priorRoot), oldDebit = fileHashes(f.debit);
+  const alias = path.join(f.parent, 'provider-a-alias'); fs.symlinkSync(f.parent, alias, 'junction');
+  const traversal = `${f.parent}${path.sep}unused${path.sep}..${path.sep}provider-a-final-1`;
+  const rejected = async (root, expectedPrior = oldReceipts) => {
+    let error;
+    try { await launch.main(providerArgs(root)); } catch (e) { error = e.safeCode; }
+    assert.ok(error, `root ${String(root)} must fail closed`);
+    assert.equal(launch.state.launched, 0, 'rejected roots never start the collector');
+    assert.deepEqual(fileHashes(f.priorRoot), expectedPrior, 'rejected roots leave the previous A/B tree unchanged');
+    assert.deepEqual(fileHashes(f.debit), oldDebit, 'rejected roots leave the stopped debit unchanged');
+  };
+  await rejected(undefined);
+  await rejected(providerAbRoot);
+  await rejected(`${providerEvidenceParent}/nested/provider-a-final-1`);
+  await rejected(`${providerEvidenceParent}/unused/../provider-a-final-1`);
+  await rejected(path.join(alias, 'provider-a-final-1'));
+  await rejected(traversal);
+  fs.mkdirSync(f.finalRoot);
+  await rejected(providerFinalARoot);
+  fs.rmdirSync(f.finalRoot);
+  fs.symlinkSync(f.priorRoot, f.finalRoot, 'junction');
+  await rejected(providerFinalARoot);
+});
+test('A collector accepts only the exact final root and predecessor debit before fake RPC work', async t => {
+  const f = providerFixture(t), sourceDebit = stateDebit(f.debit);
+  fs.mkdirSync(path.join(f.finalRoot, 'a-live-replay'), { recursive: true });
+  const collector = providerCollector(f);
+  await collector.collect({ root: f.finalRoot, dir: path.join(f.finalRoot, 'a-live-replay'), debitRoot: f.debit,
+    sourceDebit, mode: 'a-live-replay', deadline: Date.now() + 120000 });
+  assert.equal(collector.state.rpcCalls, 1, 'the exact fresh A root passes collector validation');
+  assert.equal(collector.state.streamCalls, 0, 'the fake first RPC stop prevents a stream start');
+});
+test('A collector rejects an equivalent fingerprint at a nested noncanonical root and debit before fake RPC work', async t => {
+  const f = providerFixture(t), altParent = path.join(f.parent, 'nested'), wrongRoot = path.join(altParent, 'provider-ab-1');
+  const wrongDebit = path.join(altParent, 'alchemy-s1'); fs.mkdirSync(altParent);
+  fs.cpSync(f.debit, wrongDebit, { recursive: true });
+  fs.mkdirSync(path.join(wrongRoot, 'a-live-replay'), { recursive: true });
+  const sourceDebit = stateDebit(f.debit), collector = providerCollector(f);
+  await assert.rejects(collector.collect({ root: wrongRoot, dir: path.join(wrongRoot, 'a-live-replay'), debitRoot: wrongDebit,
+    sourceDebit, mode: 'a-live-replay', deadline: Date.now() + 120000 }));
+  assert.equal(collector.state.rpcCalls, 0, 'a nested root/debit pair must reject before provider work');
+  assert.equal(collector.state.streamCalls, 0);
+});
+function rewriteStateSummary(fixture, name, update) {
+  const dir = path.join(fixture.debit, name), file = path.join(dir, 'summary.json');
+  const summary = JSON.parse(fs.readFileSync(file)); update(summary);
+  const journal = new Journal(dir, { resume: true }); journal.state.summary = summary; journal.checkpoint(); journal.close();
+  atomic(file, summary);
+}
+test('legacy first smoke without attempt is accepted using its validated cumulative debit', t => {
+  const f = stateFixture(t); rewriteStateSummary(f, 'smoke', summary => { delete summary.attempt; });
+  const before = fileHashes(f.debit); let result;
+  assert.doesNotThrow(() => { result = stateDebit(f.debit); }, 'the original first-smoke summary has no attempt field');
+  assert.deepEqual(result.counters, stateSeed);
+  assert.equal(result.counters.received, 75861230);
+  assert.deepEqual(fileHashes(f.debit), before, 'preflight must be read-only');
+});
+for (const [name, change] of [
+  ['missing retry attempt', summary => { delete summary.attempt; }],
+  ['mismatched first-smoke attempt', summary => { summary.attempt.rpc++; }]
+]) test(`legacy debit preflight refuses ${name} before creating the new root`, async t => {
+  const f = stateFixture(t);
+  rewriteStateSummary(f, name.startsWith('missing') ? 'smoke-retry-1' : 'smoke', change);
+  const before = fileHashes(f.debit), launch = stateLauncher(f);
+  await assert.rejects(launch.main(stateArgs), /STATE_DEBIT_INVALID/);
+  assert.equal(launch.state.launched, 0); assert.equal(fs.existsSync(f.root), false);
+  assert.deepEqual(fileHashes(f.debit), before);
+});
 test('state probe admits only the fixed independent mode and durably seeds verified stopped predecessors before spawn', async t => {
   const f = stateFixture(t), before = fileHashes(f.debit), launch = stateLauncher(f); let code;
   try { await launch.main(stateArgs); } catch (e) { code = e.safeCode; }
@@ -356,6 +572,44 @@ test('state probe admits only the fixed independent mode and durably seeds verif
   assert.deepEqual(launch.state.atSpawn.inherited.counters, stateSeed); assert.equal(launch.state.atSpawn.budget.rpc, 14); assert.equal(launch.state.atSpawn.budget.stopped, null);
   assert.equal(launch.state.options.mode, 'state-probe'); assert.equal(launch.state.watch.deadline, clockAt + 1800000); assert.deepEqual(fileHashes(f.debit), before);
   await assert.rejects(launch.main(stateArgs), /PATH_REUSE/); assert.equal(launch.state.launched, 1);
+});
+test('direct CLI state probe accepts a valid legacy first-smoke summary without provider calls', t => {
+  const f = stateFixture(t); rewriteStateSummary(f, 'smoke', summary => { delete summary.attempt; });
+  const before = fileHashes(f.debit), preloadFile = path.join(f.parent, 'isolated-entrypoint.cjs'), callsFile = path.join(f.parent, 'calls.json');
+  const preload = [
+    "'use strict';",
+    "const path = require('node:path');",
+    'const originalResolve = path.resolve.bind(path);',
+    `const redirects = new Map([[${JSON.stringify(stateRoot)}, process.env.SPIKE_TEST_ROOT], [${JSON.stringify(debitRoot)}, process.env.SPIKE_TEST_DEBIT]]);`,
+    'path.resolve = (...parts) => parts.length === 1 && redirects.has(parts[0]) ? redirects.get(parts[0]) : originalResolve(...parts);',
+    "const fs = require('node:fs');",
+    "const EventEmitter = require('node:events').EventEmitter;",
+    "const Module = require('node:module');",
+    'const cliFile = process.env.SPIKE_TEST_CLI;',
+    'const originalLoad = Module._load;',
+    'Module._load = function(request, parent, isMain) {',
+    '  if (parent && parent.filename === cliFile) {',
+    "    if (request === './journal.cjs') return { ...originalLoad.call(this, request, parent, isMain), free: () => 1e12, size: () => 0 };",
+    "    if (request === './watchdog.cjs') return { supervise: () => ({ connected: false }) };",
+    "    if (request === 'node:child_process') return { execFileSync: () => '', fork() {",
+    "      fs.writeFileSync(process.env.SPIKE_TEST_CALLS, JSON.stringify({ collectorForks: 1, providerCalls: 0 }));",
+    '      const child = new EventEmitter(); child.send = () => setImmediate(() => child.emit("exit", 0)); return child;',
+    '    } };',
+    '  }',
+    '  return originalLoad.call(this, request, parent, isMain);',
+    '};'
+  ].join('\n');
+  fs.writeFileSync(preloadFile, preload);
+  const properties = syntheticProperties(template.replace('${ALCHEMY_API_KEY}', syntheticKey));
+  const result = spawnSync(process.execPath, ['--require', preloadFile, cliFile, ...stateArgs], {
+    cwd: path.resolve(__dirname, '../../../..'), encoding: 'utf8', timeout: 30000, windowsHide: true,
+    env: { ...process.env, ...Object.fromEntries(properties.split('\n').map(line => line.split('='))),
+      SPIKE_TEST_ROOT: f.root, SPIKE_TEST_DEBIT: f.debit, SPIKE_TEST_CLI: cliFile, SPIKE_TEST_CALLS: callsFile }
+  });
+  assert.equal(result.status, 0, `expected the direct CLI to complete local predecessor validation; stderr=${result.stderr}; error=${result.error?.message}`);
+  assert.match(result.stdout, /S3_STOPPED state-probe/);
+  assert.deepEqual(JSON.parse(fs.readFileSync(callsFile, 'utf8')), { collectorForks: 1, providerCalls: 0 });
+  assert.deepEqual(fileHashes(f.debit), before, 'entrypoint preflight must preserve the prior evidence tree');
 });
 test('state probe disabled, missing config and forbidden options make zero collector calls', async t => {
   const f = stateFixture(t), launch = stateLauncher(f); await launch.main(stateArgs.slice(1)); assert.equal(launch.state.launched, 0); assert.equal(fs.existsSync(f.root), false);

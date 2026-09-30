@@ -1,6 +1,6 @@
 # План исправлений по результатам внешних аудитов
 
-**Обновлено:** 27 сентября 2026 года
+**Обновлено:** 30 сентября 2026 года
 **Статус:** рабочий companion plan к [основному Delivery Plan](DELIVERY_PLAN.md)
 
 ## Назначение
@@ -53,7 +53,7 @@
 | ID | Приоритет | Пакет | Когда нужен | Статус |
 |---|---|---|---|---|
 | F0 | Immediate | Синхронизировать документы и устранить противоречия | До следующего implementation change | Done (2026-09-20) |
-| F1 | Blocking | Определить Solana data contract и provider requirements | До завершения Stage 3.1 | Design done (4/10); spikes и выбор провайдера — owner-action |
+| F1 | Blocking | Определить Solana data contract и provider requirements | До завершения Stage 3.1 | Research change archived; S1–S5/3.6 deferred/unverified; verified provider selection pending |
 | F2 | Blocking | Подготовить schema/storage к реальным данным | До первой массовой real-data записи | Core implemented; live-readiness pending F3 forward migrations |
 | F3 | Blocking | Реализовать bounded ingestion, backfill, gaps и monitoring | Для выхода из Stage 3 | Partial: recorded-replay telemetry done; live ingestion/monitoring pending |
 | F4 | Required | Реализовать point-in-time risk и wallet evidence | До production signal families | Not started |
@@ -86,7 +86,7 @@ Roadmap, Delivery Plan, Architecture, Tech Stack, Operations, Project Summary, G
 
 ## F1 — Solana data contract и выбор провайдера
 
-**Статус:** Design complete (2026-09-20). Контракт оформлен как OpenSpec change `define-solana-data-provider-contract` (proposal, `solana-data-contract` spec, design с матрицей F1.1–F1.10, tasks) и прошёл строгую валидацию. Live spikes S1–S5, решение по провайдеру и получение ключей — owner-action; без них выбор провайдера не производится.
+**Статус:** [Исследовательский change `define-solana-data-provider-contract`](../openspec/changes/archive/2026-09-29-define-solana-data-provider-contract/tasks.md) архивирован 2026-09-29 с provisional, не production, рекомендацией. Исходные S1–S5 и 3.6 остались отложенными/неверифицированными; подтверждённого primary transport, historical source или завершения F1/F3 нет. [Bounded Alchemy A/B и финальный A receipt](notes/SOLANA_PROVIDER_SPIKE_RESEARCH_2026-09-27.md) дают только терминальный исследовательский результат: первоначальный и финальный A `INCONCLUSIVE`, ноль чистого LIVE-времени и нет допустимой traffic projection; финальный A остановлен локальным `PROCESSING_LIMIT` в catch-up. B не повторяли: он остаётся `INCONCLUSIVE/MATRIX_COMPLETE`, хотя собраны 12/12 исторических account-state чтений и узко подтверждены два vault reserve inputs одного child block. Разрешённые финальный A запуск и root-only исправление израсходованы; повторов в этом change нет. Provider decision и фактическая gRPC-стоимость отложены; после прогона dashboard/invoice не были доступны для сверки. Текущие кандидаты — Alchemy/Chainstack для live, SQD для history/backfill, GoPlus для текущих risk facts, но не для исторических point-in-time risk facts без новых доказательств.
 
 **Цель:** сначала определить нужные системе данные и только потом выбирать provider.
 
@@ -203,7 +203,7 @@ Helius Free разрешено использовать только для пр
 
 ## F2 — Schema и storage readiness
 
-**Статус:** Core storage implemented; live-readiness pending F3 forward migrations (2026-09-20). OpenSpec change `add-marketdata-live-storage` реализует V5–V9 (`raw_transactions`, price/liquidity observations, USD conversions с двумя обязательными FK lineage, universe snapshots+members), immutable JDBC-stores, батч-пути (включая фикс N+1 из B7), point-in-time индексы, 10k raw volume test и 1001-member boundary/rollback tests. Это не закрывает весь активный F1 contract: `define-solana-data-provider-contract` остаётся design-complete на 4/10 задач, owner spikes 3.1–3.6 не выполнены. До live ingestion F3 обязан отдельными forward-only migrations добавить token-decimal facts, provider-visible time, versioned modeled-availability facts и явные quality status/policy/reason/source provenance; missing inputs не заменяются fabricated values. Partitioning остаётся отложенным до измеренного объёма.
+**Статус:** Core storage implemented; live-readiness pending F3 forward migrations (2026-09-20). OpenSpec change `add-marketdata-live-storage` реализует V5–V9 (`raw_transactions`, price/liquidity observations, USD conversions с двумя обязательными FK lineage, universe snapshots+members), immutable JDBC-stores, батч-пути (включая фикс N+1 из B7), point-in-time индексы, 10k raw volume test и 1001-member boundary/rollback tests. Это не закрывает F1 provider selection: исследовательский change архивирован с исходными S1–S5/3.6, оставленными отложенными и неверифицированными. До live ingestion F3 обязан отдельными forward-only migrations добавить token-decimal facts, provider-visible time, versioned modeled-availability facts и явные quality status/policy/reason/source provenance; missing inputs не заменяются fabricated values. Partitioning остаётся отложенным до измеренного объёма.
 
 **Цель:** подготовить модель хранения до массового live stream/backfill.
 
@@ -480,7 +480,7 @@ F9 не входит в remediation текущего MVP. Он активиру�
 Названия предварительные; точный scope утверждается перед созданием каждого change.
 
 1. **Документационная синхронизация F0.** Поведение не меняется.
-2. **Solana data/provider contract F1.** Requirements, spikes и решение provider; без production adapter.
+2. **Solana data/provider research F1.** Research change архивирован; исходные spikes и verified provider selection отложены, без production adapter.
 3. **Marketdata live-schema readiness F2.** Forward migrations и volume evidence.
 4. **Bounded provider ingestion F3.1.** Один основной provider, raw-first, без скрытых fallback.
 5. **Backfill, gaps and data-quality operations F3.2–F3.6.**
@@ -495,7 +495,7 @@ F9 не входит в remediation текущего MVP. Он активиру�
 
 ## Ближайшие три задачи
 
-1. Завершить F1 owner actions: выполнить capability-specific spikes S1–S5/задачи 3.1–3.6, заполнить evidence matrix и выбрать primary live transport, historical source и только необходимые specialized sources. Helius Free проверяет лишь доступные ему capability, а не mainnet gRPC/replay.
+1. После терминального `INCONCLUSIVE` [Alchemy A/B и финального A receipt](notes/SOLANA_PROVIDER_SPIKE_RESEARCH_2026-09-27.md) отдельно определить, какие новые измерения clean LIVE, восстановления и historical state действительно нужны для выбора Alchemy/Chainstack live, SQD history/backfill и GoPlus current risk. Финальный A запуск уже израсходован, повторов в этом change нет; новые платные пробы требуют отдельного решения владельца. Исходные S1–S5/3.6 остаются отложенными/неверифицированными. Helius Free проверяет лишь доступные ему capability, а не mainnet gRPC/replay.
 2. Оформить F3 bounded-ingestion OpenSpec change для выбранного источника: raw-first adapter, finality/admission, bounded concurrency/rate/retry, reconnect/gap semantics и forward-only storage для token decimals, provider-visible/modeled availability и explicit quality provenance.
 3. Реализовать bounded live ingestion и затем backfill/gap/operational evidence, не начиная signal tuning до preregistered F5 protocol.
 

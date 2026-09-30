@@ -3,6 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { Budget } = require('../core.cjs');
+const { decode } = require('../transport.cjs');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
@@ -180,6 +181,75 @@ test('fake gRPC retains original bytes and applies finalized OR filter with boun
   assert.deepEqual(subscription.transactions.watched.account_include, programs);
   assert.equal(subscription.transactions.watched.vote, false); assert.equal(subscription.transactions.watched.failed, false);
   assert.equal(budget.state.stopped, 'RECEIVED_LIMIT');
+});
+
+async function capturedSubscription(t, request) {
+  const defs = loader.loadSync(path.join(__dirname, '../proto/geyser.proto'), { keepCase: true, longs: String, bytes: Buffer });
+  const service = grpc.loadPackageDefinition(defs).geyser.Geyser.service; let observed;
+  const s = new grpc.Server();
+  s.addService(service, { subscribe(call) { call.on('error', () => {}); call.on('data', value => {
+    observed = value; call.write({ slot: { slot: '900', status: 2 } });
+  }); } });
+  const port = await new Promise((resolve, reject) => s.bindAsync('127.0.0.1:0', grpc.ServerCredentials.createInsecure(), (err, p) => err ? reject(err) : resolve(p)));
+  t.after(() => s.forceShutdown()); const budget = generous();
+  const handle = await api.stream({ endpoint: `127.0.0.1:${port}`, key: 'fake', from: '10', subscription: request,
+    budget, allowLocal: true, onRaw: () => budget.stop('RECEIVED_LIMIT') });
+  await handle.done; return observed;
+}
+test('A finalized LIVE filter omits failed so failed watched transactions remain subscribed', async t => {
+  const request = { transactions: { watched: { vote: false, account_include: programs } },
+    slots: { finalized: { filter_by_commitment: true } }, blocks_meta: { finalized: {} }, commitment: 2, from_slot: '900' };
+  const observed = await capturedSubscription(t, request);
+  assert.equal(observed.transactions.watched.failed, undefined, 'expected failed to be absent; transport sent false');
+});
+test('A replay subscription requests only finalized slots at the exact from_slot', async t => {
+  const request = { slots: { finalized: { filter_by_commitment: true } }, commitment: 2, from_slot: '429635638' };
+  const observed = await capturedSubscription(t, request);
+  assert.deepEqual(observed, request, 'replay must not subscribe to transactions, accounts, or blocks');
+});
+test('A replay probe stops after the first finalized slot and retains no interval-complete claim', async t => {
+  const defs = loader.loadSync(path.join(__dirname, '../proto/geyser.proto'), { keepCase: true, longs: String, bytes: Buffer });
+  const service = grpc.loadPackageDefinition(defs).geyser.Geyser.service; const server = new grpc.Server();
+  server.addService(service, { subscribe(call) { call.on('error', () => {}); call.on('data', () => {
+    call.write({ slot: { slot: '429635637', status: 1 } });
+    call.write({ slot: { slot: '429635638', status: 2 } });
+    call.write({ slot: { slot: '429635639', status: 2 } }); call.end();
+  }); } });
+  const port = await new Promise((resolve, reject) => server.bindAsync('127.0.0.1:0', grpc.ServerCredentials.createInsecure(), (err, p) => err ? reject(err) : resolve(p)));
+  t.after(() => server.forceShutdown()); const seen = [], budget = generous();
+  const handle = await api.stream({ endpoint: `127.0.0.1:${port}`, key: 'fake', from: '429635638',
+    subscription: { slots: { finalized: { filter_by_commitment: true } }, commitment: 2, from_slot: '429635638' },
+    stopOnFirstFinalizedSlot: true, budget, allowLocal: true, onRaw: raw => seen.push(decode(raw).slot.slot) });
+  await handle.done;
+  assert.deepEqual(seen, ['429635637', '429635638'], 'the first finalized sample must end the replay stream');
+});
+test('A offset arithmetic stays exact for the two fixed finalized first-slot probes', () => {
+  const starts = typeof api.slotOffset === 'function'
+    ? [api.slotOffset('429644638', 9000), api.slotOffset('429644638', 60000)] : [];
+  assert.deepEqual(starts, ['429635638', '429584638']);
+});
+test('shared estimate admits the maximum A byte/CU envelope under $3 and rejects excess work', () => {
+  const limits = { received: 15_000_000_000, disk: 1e12, rpc: 15, deadline: 1e15, floor: 0,
+    spendPicoUsd: 3_000_000_000_000, picoUsdPerGrpcByte: 75, picoUsdPerCu: 525_000 };
+  const live = new Budget(limits);
+  assert.equal(live.reserve(15_000_000_000, 0, 0, Infinity, 'grpc'), true);
+  live.settle(15_000_000_000, 15_000_000_000, 'grpc');
+  for (let i = 0; i < 3; i++) assert.equal(live.rpc(20), true);
+  const history = new Budget({ ...limits, received: 4_000_000, rpc: 12 },
+    { ...live.state, received: 0, rpc: 0, grpcBytes: 0, rpcBytes: 0, stopped: null });
+  for (let i = 0; i < 12; i++) assert.equal(history.rpc(10), true);
+  assert.equal(history.state.spendPicoUsd, 1_125_094_500_000);
+  assert.equal(history.state.spendPicoUsd <= limits.spendPicoUsd, true);
+  assert.equal(live.reserve(1, 0, 0, Infinity, 'grpc'), false, 'the 15 GB ceiling rejects before more bytes');
+  const capped = new Budget(limits, { spendPicoUsd: limits.spendPicoUsd - 75 });
+  assert.equal(capped.reserve(2, 0, 0, Infinity, 'grpc'), false, 'shared $3 headroom is checked before reservation');
+  assert.equal(capped.state.stopped, 'SPEND_LIMIT');
+});
+test('A counts exactly 60 clean LIVE minutes after catch-up and excludes replay time', () => {
+  const line = new api.Timeline(0);
+  line.transition('CATCHUP', 0); line.tick(60000); line.transition('LIVE', 60000);
+  line.tick(3660000); line.transition('REPLAY', 3660000); line.tick(4260000);
+  assert.equal(line.liveMs, 3600000);
 });
 
 test('live accumulation excludes gaps/replay/stall and FAIL survives budget stop', () => {
