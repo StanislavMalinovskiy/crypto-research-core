@@ -37,6 +37,13 @@ import io.cryptoresearch.marketdata.api.MarketDataApi.PointInTimeQuery;
 import io.cryptoresearch.marketdata.api.MarketDataApi.RecordedDataset;
 import io.cryptoresearch.marketdata.api.MarketDataApi.RecordedSwapInput;
 import io.cryptoresearch.marketdata.api.MarketDataApi.ReplayStatus;
+import io.cryptoresearch.marketdata.api.MarketDataApi.AvailabilityStatus;
+import io.cryptoresearch.marketdata.api.MarketDataApi.FactKind;
+import io.cryptoresearch.marketdata.api.MarketDataApi.RevisionReference;
+import io.cryptoresearch.marketdata.api.MarketDataApi.SelectionScope;
+import io.cryptoresearch.marketdata.api.MarketDataApi.VersionedFinalizeRequest;
+import io.cryptoresearch.marketdata.application.LiquidityObservation;
+import io.cryptoresearch.marketdata.application.RecordMarketFactUseCase;
 import io.cryptoresearch.risk.api.RiskApi;
 import io.cryptoresearch.risk.api.RiskApi.AssetLifecycle;
 import io.cryptoresearch.risk.api.RiskApi.RiskDecision;
@@ -60,6 +67,116 @@ class FirstSignalEvaluationIT {
 	FirstSignalEvaluationIT(ApplicationContext applicationContext, JdbcClient jdbcClient) {
 		this.applicationContext = applicationContext;
 		this.jdbcClient = jdbcClient;
+	}
+
+	@Test
+	void laterEvaluationSnapshotPricesAnAlreadyAcceptedDecision() {
+		var marketData = requiredApi(MarketDataApi.class);
+		var signal = requiredApi(SignalApi.class);
+		var evaluation = requiredApi(EvaluationApi.class);
+		resetBusinessTables();
+		var fixture = new FirstSignalScenarioFixture().load();
+		var firstTwo = new RecordedDataset("decision-history-v1", fixture.dataset().observations().subList(0, 2));
+		var decisionReplay = marketData.replayVersioned(firstTwo);
+		assertThat(decisionReplay.items()).allMatch(item -> item.legacyItem().status() == ReplayStatus.NORMALIZED);
+		var decisionRefs = decisionReplay.items().stream().map(item -> item.revision()).toList();
+		var decision = marketData.finalizeVersioned(versionedRequest(fixture,
+				fixture.decisionCutoff(), decisionRefs));
+		var detection = signal.detectVersioned(new SignalApi.VersionedDetectionRequest(decision.fingerprint(),
+				detectionRequest(fixture, decision.fingerprint(), fixture.riskFacts(), fixture.configurationFingerprint())));
+		var accepted = detection.legacyResult().acceptedSignal().orElseThrow();
+		var acceptedIdBeforeFutureFacts = accepted.signalId();
+
+		var laterTwo = new RecordedDataset("evaluation-history-v1", fixture.dataset().observations().subList(2, 4));
+		var laterReplay = marketData.replayVersioned(laterTwo);
+		assertThat(laterReplay.items()).allMatch(item -> item.legacyItem().status() == ReplayStatus.NORMALIZED);
+		var allRefs = new ArrayList<>(decisionRefs);
+		allRefs.addAll(laterReplay.items().stream().map(item -> item.revision()).toList());
+		var evaluationSnapshot = marketData.finalizeVersioned(versionedRequest(fixture,
+				fixture.evaluationCutoff(), allRefs));
+		assertThat(evaluationSnapshot.fingerprint()).isNotEqualTo(decision.fingerprint());
+		var report = evaluation.evaluateVersioned(new EvaluationApi.VersionedEvaluationRequest(
+				accepted.signalId(), "1h", fixture.provenance(decision.fingerprint(), fixture.evaluationCutoff()),
+				decision.fingerprint(), evaluationSnapshot.fingerprint()));
+		assertThat(report.legacyReport().outcomes()).singleElement().satisfies(outcome -> {
+			assertThat(outcome.status()).as("later evaluation facts price the existing signal").isEqualTo(PricingStatus.PRICED);
+			assertThat(outcome.grossReturn()).hasValueSatisfying(value -> assertThat(value).isEqualByComparingTo("0.20000000"));
+			assertThat(outcome.friction()).hasValueSatisfying(value -> assertThat(value).isEqualByComparingTo("0.04000000"));
+			assertThat(outcome.netReturn()).hasValueSatisfying(value -> assertThat(value).isEqualByComparingTo("0.16000000"));
+		});
+		assertThat(signal.acceptedSignal(acceptedIdBeforeFutureFacts)).contains(accepted);
+		assertThat(report.decisionDatasetFingerprint()).isEqualTo(decision.fingerprint());
+		assertThat(report.evaluationDatasetFingerprint()).isEqualTo(evaluationSnapshot.fingerprint());
+	}
+
+	@Test
+	void versionedReplayRetainsTwoProviderRevisionsOfOneCanonicalSwap() {
+		var marketData = requiredApi(MarketDataApi.class);
+		resetBusinessTables();
+		var source = new FirstSignalScenarioFixture().load().dataset().observations().getFirst();
+		var alternative = changedRaw(source, source.transactionId().value(), "provider-b", source.payload());
+		var first = marketData.replayVersioned(new RecordedDataset("swap-revisions-v1", List.of(source)));
+		var second = marketData.replayVersioned(new RecordedDataset("swap-revisions-v1", List.of(alternative)));
+		assertThat(first.items()).singleElement().satisfies(item ->
+				assertThat(item.legacyItem().status()).isEqualTo(ReplayStatus.NORMALIZED));
+		assertThat(second.items()).singleElement().satisfies(item ->
+				assertThat(item.legacyItem().status())
+						.as("second provider's valid swap revision must coexist")
+						.isEqualTo(ReplayStatus.NORMALIZED));
+		assertThat(second.items().getFirst().revision().revisionKey())
+				.isNotEqualTo(first.items().getFirst().revision().revisionKey());
+	}
+
+	@Test
+	void finalizationRejectsAnOmittedVisibleLiquidityKeyWithoutPublishingASnapshot() {
+		var marketData = requiredApi(MarketDataApi.class);
+		var facts = requiredApi(RecordMarketFactUseCase.class);
+		jdbcClient.sql("DELETE FROM marketdata.liquidity_observations").update();
+		resetBusinessTables();
+		var fixture = new FirstSignalScenarioFixture().load();
+		var replay = marketData.replayVersioned(new RecordedDataset("liquidity-coverage-v1",
+				fixture.dataset().observations().subList(0, 2)));
+		assertThat(replay.items()).allMatch(item -> item.legacyItem().status() == ReplayStatus.NORMALIZED);
+		var older = replay.items().get(0).revision();
+		var newer = replay.items().get(1).revision();
+		var olderLiquidity = facts.storeVersionedLiquidity(new RecordMarketFactUseCase.VersionedLiquidityRequest(
+				liquidityFact(older, fixture.decisionCutoff().minusSeconds(3600), "50000.00000000"),
+				RecordMarketFactUseCase.RawSourceKind.RAW_CHAIN_EVENT, "recorded-fixture", "liquidity-v1"));
+		facts.storeVersionedLiquidity(new RecordMarketFactUseCase.VersionedLiquidityRequest(
+				liquidityFact(newer, fixture.decisionCutoff(), "80000.00000000"),
+				RecordMarketFactUseCase.RawSourceKind.RAW_CHAIN_EVENT, "recorded-fixture", "liquidity-v1"));
+		var before = rowCount("marketdata", "v2_dataset_snapshots");
+		var scope = new SelectionScope(fixture.asset().chain(), List.of(fixture.asset()),
+				fixture.decisionCutoff().minusSeconds(3600), fixture.decisionCutoff(),
+				List.of(FactKind.LIQUIDITY), List.of("fixture-pool"), List.of());
+		var request = new VersionedFinalizeRequest("length-prefixed-v2", fixture.decisionCutoff(),
+				scope, List.of(new RevisionReference(FactKind.LIQUIDITY, older.canonicalIdentity(), olderLiquidity.revisionKey())),
+				List.of(), "explicit-revisions-v1", "modeled-history-v1", AvailabilityStatus.HISTORICAL_MODEL);
+		assertThatThrownBy(() -> marketData.finalizeVersioned(request))
+				.as("the newer visible liquidity key has no disposition")
+				.isInstanceOf(IllegalArgumentException.class)
+				.hasMessageContaining("incomplete");
+		assertThat(rowCount("marketdata", "v2_dataset_snapshots")).isEqualTo(before);
+		assertThat(rowCount("marketdata", "v2_dataset_snapshot_members")).isZero();
+		assertThat(rowCount("marketdata", "v2_dataset_snapshot_exclusions")).isZero();
+	}
+
+	private LiquidityObservation liquidityFact(RevisionReference revision, Instant observedAt, String value) {
+		var chain = revision.canonicalIdentity().chain();
+		return new LiquidityObservation(revision.canonicalIdentity(),
+				new AssetId(chain, "FixtureAsset1111111111111111111111111111111"), "fixture-pool",
+				new AssetId(chain, "FixtureQuote1111111111111111111111111111111"),
+				new BigDecimal(value), java.math.BigInteger.valueOf(1000), java.math.BigInteger.valueOf(2000),
+				new BlockPosition(chain, 100), observedAt, new BigDecimal("1.0000"), "recorded-fixture", Optional.empty());
+	}
+
+	private VersionedFinalizeRequest versionedRequest(FirstSignalScenarioFixture.Scenario fixture,
+			Instant cutoff, List<RevisionReference> refs) {
+		return new VersionedFinalizeRequest("length-prefixed-v2", cutoff,
+				new SelectionScope(fixture.asset().chain(), List.of(fixture.asset()),
+						fixture.decisionCutoff().minusSeconds(3600), cutoff, List.of(FactKind.SWAP),
+						List.of(), List.of()), refs, List.of(), "explicit-revisions-v1", "modeled-history-v1",
+				AvailabilityStatus.HISTORICAL_MODEL);
 	}
 
 	@Test
@@ -304,6 +421,9 @@ class FirstSignalEvaluationIT {
 
 	private void resetBusinessTables() {
 		for (var table : List.of(
+				"marketdata.v2_dataset_snapshot_exclusions", "marketdata.v2_dataset_snapshot_members",
+				"marketdata.v2_dataset_snapshots", "marketdata.usd_revisions",
+				"marketdata.liquidity_revisions", "marketdata.price_revisions", "marketdata.swap_revisions",
 				"evaluation.evaluation_reports", "evaluation.entry_outcomes", "evaluation.evaluation_runs",
 				"signal.accepted_signals", "signal.signal_candidates",
 				"marketdata.dataset_snapshot_members", "marketdata.dataset_snapshots",
@@ -355,18 +475,24 @@ class FirstSignalEvaluationIT {
 	private void assertDatabaseContract() {
 		assertThat(jdbcClient.sql("SHOW server_version").query(String.class).single()).isEqualTo("18.6");
 		assertThat(jdbcClient.sql("SELECT version FROM flyway_schema_history WHERE success ORDER BY installed_rank")
-				.query(String.class).list()).containsExactly("1", "2", "3", "4", "5", "6", "7", "8", "9");
+				.query(String.class).list()).containsExactly("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12");
 		assertThat(jdbcClient.sql("SELECT schema_name FROM information_schema.schemata WHERE schema_name IN ('marketdata','signal','evaluation','risk') ORDER BY schema_name")
 				.query(String.class).list()).containsExactly("evaluation", "marketdata", "signal");
 		assertThat(jdbcClient.sql("SELECT table_schema || '.' || table_name FROM information_schema.tables WHERE table_schema IN ('marketdata','signal','evaluation') ORDER BY table_schema, table_name")
 				.query(String.class).list()).containsExactly(
 						"evaluation.entry_outcomes", "evaluation.evaluation_reports", "evaluation.evaluation_runs",
+						"evaluation.v2_entry_outcomes", "evaluation.v2_evaluation_reports", "evaluation.v2_evaluation_runs",
 						"marketdata.dataset_snapshot_members", "marketdata.dataset_snapshots",
-						"marketdata.liquidity_observations", "marketdata.normalized_swaps",
-						"marketdata.price_observations", "marketdata.raw_chain_events",
-						"marketdata.raw_transactions", "marketdata.universe_members",
-						"marketdata.universe_snapshots", "marketdata.usd_conversion_facts",
-						"signal.accepted_signals", "signal.signal_candidates");
+						"marketdata.liquidity_observations", "marketdata.liquidity_revisions",
+						"marketdata.normalized_swaps", "marketdata.price_observations",
+						"marketdata.price_revisions", "marketdata.raw_chain_events",
+						"marketdata.raw_transactions", "marketdata.swap_revisions",
+						"marketdata.universe_members", "marketdata.universe_snapshots",
+						"marketdata.usd_conversion_facts", "marketdata.usd_revisions",
+						"marketdata.v2_dataset_snapshot_exclusions", "marketdata.v2_dataset_snapshot_members",
+						"marketdata.v2_dataset_snapshots",
+						"signal.accepted_signals", "signal.signal_candidates",
+						"signal.v2_accepted_signals", "signal.v2_signal_candidates");
 		assertThat(jdbcClient.sql("SELECT indexname FROM pg_indexes WHERE schemaname='marketdata' AND tablename='normalized_swaps' ORDER BY indexname")
 				.query(String.class).list()).containsExactly("normalized_swaps_pk", "normalized_swaps_point_in_time_idx");
 		assertThat(jdbcClient.sql("SELECT numeric_precision || ':' || numeric_scale FROM information_schema.columns WHERE table_schema='marketdata' AND table_name='normalized_swaps' AND column_name IN ('price_usd','liquidity_usd') ORDER BY column_name")

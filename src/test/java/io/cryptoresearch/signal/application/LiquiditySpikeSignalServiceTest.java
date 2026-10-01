@@ -44,7 +44,7 @@ class LiquiditySpikeSignalServiceTest {
 
 	@Test
 	void appliesBothExactLiquidityThresholds() {
-		var service = new LiquiditySpikeSignalService(null, null, null, null);
+		var service = new LiquiditySpikeSignalService(null, null, null, null, null);
 
 		assertThat(service.meetsThresholds(new BigDecimal("50000.00000000"), new BigDecimal("75000.00000000")))
 				.isTrue();
@@ -164,7 +164,7 @@ class LiquiditySpikeSignalServiceTest {
 		final JdbcSignalPersistence persistence = mock(JdbcSignalPersistence.class);
 		final List<PointInTimeQuery> queries = new ArrayList<>();
 		final LiquiditySpikeSignalService service = new LiquiditySpikeSignalService(
-				market, risk, transitions, persistence);
+				market, risk, transitions, persistence, null);
 
 		void assertNoCollaboratorInteractions() {
 			verifyNoInteractions(market, risk, transitions, persistence);

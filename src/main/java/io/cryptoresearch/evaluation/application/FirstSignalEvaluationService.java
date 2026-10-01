@@ -24,16 +24,19 @@ public class FirstSignalEvaluationService implements EvaluationApi {
 	private final SignalApi signalApi;
 	private final EntryValuation valuation;
 	private final EvaluationWriter writer;
+	private final VersionedFirstSignalEvaluationService versioned;
 
 	public FirstSignalEvaluationService(
 			MarketDataApi marketData,
 			SignalApi signalApi,
 			EntryValuation valuation,
-			EvaluationWriter writer) {
+			EvaluationWriter writer,
+			VersionedFirstSignalEvaluationService versioned) {
 		this.marketData = marketData;
 		this.signalApi = signalApi;
 		this.valuation = valuation;
 		this.writer = writer;
+		this.versioned = versioned;
 	}
 
 	@Override
@@ -41,6 +44,9 @@ public class FirstSignalEvaluationService implements EvaluationApi {
 		request = normalize(request);
 		validate(request);
 		var signalId = request.signalId();
+		if (signalApi.versionedAcceptedSignal(signalId).isPresent()) {
+			throw new IllegalArgumentException("Versioned signal requires separate decision and evaluation evidence");
+		}
 		var signal = signalApi.acceptedSignal(signalId)
 				.orElseThrow(() -> new IllegalArgumentException("Unknown accepted signal: " + signalId));
 		if (!signal.datasetFingerprint().equals(request.provenance().datasetFingerprint())) {
@@ -72,6 +78,11 @@ public class FirstSignalEvaluationService implements EvaluationApi {
 				unpriced,
 				average,
 				List.of(outcome)));
+	}
+
+	@Override
+	public VersionedEvaluationReport evaluateVersioned(VersionedEvaluationRequest request) {
+		return versioned.evaluate(request);
 	}
 
 	private List<MarketObservation> entryCandidates(AcceptedSignalSnapshot signal, RunProvenance provenance) {

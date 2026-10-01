@@ -7,6 +7,7 @@ import java.util.Optional;
 
 import io.cryptoresearch.kernel.api.AssetId;
 import io.cryptoresearch.marketdata.api.MarketDataApi.NormalizedSwapIdentity;
+import io.cryptoresearch.marketdata.api.MarketDataApi.RevisionReference;
 import io.cryptoresearch.risk.api.RiskApi.RiskAssessment;
 import io.cryptoresearch.risk.api.RiskApi.RiskFacts;
 
@@ -14,6 +15,22 @@ import io.cryptoresearch.risk.api.RiskApi.RiskFacts;
 public interface SignalApi {
 
 	DetectionResult detect(DetectionRequest request);
+
+	VersionedDetectionResult detectVersioned(VersionedDetectionRequest request);
+
+	record VersionedDetectionRequest(String decisionDatasetFingerprint, DetectionRequest detection) { }
+
+	record VersionedDetectionResult(DetectionResult legacyResult, String decisionDatasetFingerprint,
+			String evidenceVersion) { }
+
+	record VersionedAcceptedSignal(AcceptedSignalSnapshot signal, String decisionDatasetFingerprint,
+			Instant decisionCutoff, List<RevisionReference> sourceRevisions) {
+		public VersionedAcceptedSignal {
+			sourceRevisions = List.copyOf(sourceRevisions);
+		}
+	}
+
+	Optional<VersionedAcceptedSignal> versionedAcceptedSignal(String signalId);
 
 	Optional<AcceptedSignalSnapshot> acceptedSignal(String signalId);
 

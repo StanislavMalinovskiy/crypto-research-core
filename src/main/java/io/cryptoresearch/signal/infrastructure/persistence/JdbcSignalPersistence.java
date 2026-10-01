@@ -16,6 +16,8 @@ import io.cryptoresearch.kernel.api.ChainId;
 import io.cryptoresearch.kernel.api.EventId;
 import io.cryptoresearch.kernel.api.TransactionId;
 import io.cryptoresearch.marketdata.api.MarketDataApi.NormalizedSwapIdentity;
+import io.cryptoresearch.marketdata.api.MarketDataApi.FactKind;
+import io.cryptoresearch.marketdata.api.MarketDataApi.RevisionReference;
 import io.cryptoresearch.risk.api.RiskApi.AssetLifecycle;
 import io.cryptoresearch.risk.api.RiskApi.RiskAssessment;
 import io.cryptoresearch.risk.api.RiskApi.RiskDecision;
@@ -25,6 +27,7 @@ import io.cryptoresearch.signal.api.SignalApi.CandidateSnapshot;
 import io.cryptoresearch.signal.api.SignalApi.CandidateStatus;
 import io.cryptoresearch.signal.api.SignalApi.DetectionResult;
 import io.cryptoresearch.signal.api.SignalApi.ScoreReason;
+import io.cryptoresearch.signal.api.SignalApi.VersionedAcceptedSignal;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
@@ -142,6 +145,148 @@ public class JdbcSignalPersistence {
 		return jdbcClient.sql("SELECT " + ACCEPTED_COLUMNS + " FROM signal.accepted_signals WHERE signal_id = :signalId")
 				.param("signalId", signalId)
 				.query(this::mapAccepted).optional();
+	}
+
+	public void recordVersionedCandidate(CandidateSnapshot candidate) {
+		var inserted = jdbcClient.sql("""
+				INSERT INTO signal.v2_signal_candidates
+				(candidate_id, chain_id, asset_address, family, detector_version,
+				 configuration_fingerprint, decision_dataset_fingerprint, window_start,
+				 decision_cutoff, status)
+				VALUES (:id, :chain, :asset, :family, :detector, :configuration, :decision,
+				 :windowStart, :cutoff, 'DETECTED')
+				ON CONFLICT (candidate_id) DO NOTHING RETURNING 1
+				""").param("id", candidate.candidateId()).param("chain", candidate.asset().chain().value())
+				.param("asset", candidate.asset().value()).param("family", candidate.family())
+				.param("detector", candidate.detectorVersion())
+				.param("configuration", candidate.configurationFingerprint())
+				.param("decision", candidate.datasetFingerprint())
+				.param("windowStart", timestamp(candidate.windowStart()))
+				.param("cutoff", timestamp(candidate.decisionCutoff()))
+				.query(Integer.class).optional().isPresent();
+		if (!inserted && !jdbcClient.sql("""
+				SELECT 1 FROM signal.v2_signal_candidates WHERE candidate_id = :id
+				AND chain_id = :chain AND asset_address = :asset AND family = :family
+				AND detector_version = :detector AND configuration_fingerprint = :configuration
+				AND decision_dataset_fingerprint = :decision AND window_start = :windowStart
+				AND decision_cutoff = :cutoff
+				""").param("id", candidate.candidateId()).param("chain", candidate.asset().chain().value())
+				.param("asset", candidate.asset().value()).param("family", candidate.family())
+				.param("detector", candidate.detectorVersion())
+				.param("configuration", candidate.configurationFingerprint())
+				.param("decision", candidate.datasetFingerprint())
+				.param("windowStart", timestamp(candidate.windowStart()))
+				.param("cutoff", timestamp(candidate.decisionCutoff()))
+				.query(Integer.class).optional().isPresent()) {
+			throw new IllegalStateException("Versioned candidate immutable retry conflict");
+		}
+	}
+
+	public void completeVersionedCandidate(CandidateSnapshot candidate, RiskAssessment assessment,
+			Optional<VersionedAcceptedSignal> accepted) {
+		var status = assessment.decision() == RiskDecision.ALLOW ? "ACCEPTED" : "REJECTED";
+		jdbcClient.sql("""
+				UPDATE signal.v2_signal_candidates SET status = :status, risk_decision = :decision,
+				 risk_manipulation_flags = :flags, risk_lifecycle = :lifecycle,
+				 risk_liquidity_usd = :liquidity, risk_evidence_version = :version,
+				 risk_evidence = CAST(:evidence AS JSONB)
+				WHERE candidate_id = :id AND status = 'DETECTED'
+				""").param("status", status).param("decision", assessment.decision().name())
+				.param("flags", assessment.facts().manipulationFlags())
+				.param("lifecycle", assessment.facts().lifecycle().name())
+				.param("liquidity", assessment.facts().liquidityUsd())
+				.param("version", assessment.facts().evidenceVersion())
+				.param("evidence", riskEvidence(assessment)).param("id", candidate.candidateId()).update();
+		var matching = jdbcClient.sql("""
+				SELECT 1 FROM signal.v2_signal_candidates WHERE candidate_id = :id
+				AND status = :status AND risk_decision = :decision
+				AND risk_manipulation_flags = :flags AND risk_lifecycle = :lifecycle
+				AND risk_liquidity_usd = :liquidity AND risk_evidence_version = :version
+				AND risk_evidence = CAST(:evidence AS JSONB)
+				""").param("id", candidate.candidateId()).param("status", status)
+				.param("decision", assessment.decision().name())
+				.param("flags", assessment.facts().manipulationFlags())
+				.param("lifecycle", assessment.facts().lifecycle().name())
+				.param("liquidity", assessment.facts().liquidityUsd())
+				.param("version", assessment.facts().evidenceVersion())
+				.param("evidence", riskEvidence(assessment)).query(Integer.class).optional().isPresent();
+		if (!matching) {
+			throw new IllegalStateException("Versioned candidate completion conflict");
+		}
+		accepted.ifPresent(this::storeVersionedAccepted);
+	}
+
+	private void storeVersionedAccepted(VersionedAcceptedSignal value) {
+		var signal = value.signal();
+		var refs = value.sourceRevisions();
+		if (refs.size() != 2) {
+			throw new IllegalArgumentException("Versioned signal requires two exact source revisions");
+		}
+		var inserted = jdbcClient.sql("""
+				INSERT INTO signal.v2_accepted_signals
+				(signal_id, candidate_id, chain_id, asset_address, family, position_type, available_at, decision_cutoff,
+				 decision_dataset_fingerprint, baseline_transaction_value, baseline_event_locator,
+				 baseline_revision_key, current_transaction_value, current_event_locator, current_revision_key,
+				 risk_decision, risk_manipulation_flags, risk_lifecycle, risk_liquidity_usd,
+				 risk_evidence_version, risk_evidence, detector_version, scorer_version,
+				 configuration_fingerprint, score, grade, confidence, reasoning)
+				VALUES (:id, :candidate, :chain, :asset, :family, :position, :available, :decisionCutoff,
+				 :decision, :baselineTx, :baselineLocator, :baselineRevision,
+				 :currentTx, :currentLocator, :currentRevision,
+				 :riskDecision, :flags, :lifecycle, :liquidity, :riskVersion,
+				 CAST(:riskEvidence AS JSONB), :detector, :scorer, :configuration,
+				 :score, :grade, :confidence, CAST(:reasoning AS JSONB))
+				ON CONFLICT (signal_id) DO NOTHING RETURNING 1
+				""").param("id", signal.signalId()).param("candidate", signal.candidateId())
+				.param("chain", signal.asset().chain().value()).param("asset", signal.asset().value())
+				.param("family", signal.family()).param("position", signal.position())
+				.param("available", timestamp(signal.availableAt()))
+				.param("decisionCutoff", timestamp(value.decisionCutoff()))
+				.param("decision", value.decisionDatasetFingerprint())
+				.param("baselineTx", refs.get(0).canonicalIdentity().transactionId().value())
+				.param("baselineLocator", refs.get(0).canonicalIdentity().eventId().locator())
+				.param("baselineRevision", refs.get(0).revisionKey())
+				.param("currentTx", refs.get(1).canonicalIdentity().transactionId().value())
+				.param("currentLocator", refs.get(1).canonicalIdentity().eventId().locator())
+				.param("currentRevision", refs.get(1).revisionKey())
+				.param("riskDecision", signal.riskAssessment().decision().name())
+				.param("flags", signal.riskAssessment().facts().manipulationFlags())
+				.param("lifecycle", signal.riskAssessment().facts().lifecycle().name())
+				.param("liquidity", signal.riskAssessment().facts().liquidityUsd())
+				.param("riskVersion", signal.riskAssessment().facts().evidenceVersion())
+				.param("riskEvidence", riskEvidence(signal.riskAssessment()))
+				.param("detector", signal.detectorVersion()).param("scorer", signal.scorerVersion())
+				.param("configuration", signal.configurationFingerprint())
+				.param("score", signal.score()).param("grade", signal.grade())
+				.param("confidence", signal.confidence()).param("reasoning", reasoning(signal.reasoning()))
+				.query(Integer.class).optional().isPresent();
+		if (!inserted && !findVersionedAccepted(signal.signalId()).orElseThrow().equals(value)) {
+			throw new IllegalStateException("Versioned accepted signal immutable retry conflict");
+		}
+	}
+
+	public Optional<VersionedAcceptedSignal> findVersionedAccepted(String signalId) {
+		if (!jdbcClient.sql("SELECT to_regclass('signal.v2_accepted_signals') IS NOT NULL")
+				.query(Boolean.class).single()) {
+			return Optional.empty();
+		}
+		return jdbcClient.sql("""
+				SELECT signal_id, candidate_id, chain_id, asset_address, family, position_type, available_at, decision_cutoff,
+				 decision_dataset_fingerprint AS dataset_fingerprint,
+				 baseline_transaction_value, baseline_event_locator, baseline_revision_key,
+				 current_transaction_value, current_event_locator, current_revision_key,
+				 risk_decision, risk_manipulation_flags, risk_lifecycle, risk_liquidity_usd,
+				 risk_evidence_version, risk_evidence, detector_version, scorer_version,
+				 configuration_fingerprint, score, grade, confidence, reasoning
+				FROM signal.v2_accepted_signals WHERE signal_id = :id
+				""").param("id", signalId).query((row, index) -> {
+			var signal = mapAccepted(row, index);
+			var sources = signal.sourceObservations();
+			return new VersionedAcceptedSignal(signal, signal.datasetFingerprint(),
+					row.getObject("decision_cutoff", OffsetDateTime.class).toInstant(),
+					List.of(new RevisionReference(FactKind.SWAP, sources.get(0), row.getString("baseline_revision_key")),
+							new RevisionReference(FactKind.SWAP, sources.get(1), row.getString("current_revision_key"))));
+		}).optional();
 	}
 
 	private AcceptedSignalSnapshot storeAccepted(AcceptedSignalSnapshot signal) {

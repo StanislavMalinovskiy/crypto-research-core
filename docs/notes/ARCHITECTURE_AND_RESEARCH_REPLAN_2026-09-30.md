@@ -2,7 +2,7 @@
 
 **Статус:** DRAFT для решения владельца и передачи следующему архитектору; 30 сентября 2026 года. Это ненормативная карта, а не принятое ADR, OpenSpec change, разрешение на реализацию, покупку данных или запуск провайдера. Пункты ниже не меняют [принятую архитектуру](../ARCHITECTURE.md), [Roadmap](../ROADMAP.md), [Delivery Plan](../DELIVERY_PLAN.md) и [main specs](../../openspec/specs).
 
-Для A1+A2 подготовлен единый [проект OpenSpec change](../../openspec/changes/version-market-facts-and-split-evidence/proposal.md); он описывает будущую реализацию и ожидает отдельного review, а не вводит новое действующее поведение.
+Для A1+A2 подготовлен единый проект OpenSpec change (`version-market-facts-and-split-evidence/proposal.md`); он описывает будущую реализацию и ожидает отдельного review, а не вводит новое действующее поведение.
 
 По решению владельца от 2026-10-01 R1 подготовлен параллельно с A1+A2: [протокол R1](../research/R1_RESEARCH_PROTOCOL.md) версии `1.0.0` заморожен (`FROZEN`) 2026-10-01; [запись заморозки](../research/R1_PROTOCOL_FREEZE.md) закрепляет коммит и SHA-256. Работа с данными допускается только по утверждённой [offline-процедуре](../research/R1_OFFLINE_RESEARCH_PROCEDURE.md) и в рамках отдельного OpenSpec change для этапа; сам протокол не разрешает выгрузку данных, запуск провайдеров, скрипты, код или просмотр доходности.
 
@@ -104,7 +104,7 @@ Gate D1 требует: point-in-time universe и wallet labels; coverage по a
 
 ## Рабочие пакеты для следующего архитектора
 
-1. Проверить через `openspec list` текущие active changes и их возможное пересечение; общий [A1+A2 design](../../openspec/changes/version-market-facts-and-split-evidence/design.md) и четыре delta specs передать на отдельное review. Для будущей реализации зафиксирован `CORE_RISK`, `RED_REQUIRED`, fresh review; evidence пробы `run-bounded-solana-provider-spikes` и owner changes сохранить.
+1. Проверить через `openspec list` текущие active changes и их возможное пересечение; общий A1+A2 design (`version-market-facts-and-split-evidence/design.md`) и четыре delta specs передать на отдельное review. Для будущей реализации зафиксирован `CORE_RISK`, `RED_REQUIRED`, fresh review; evidence пробы `run-bounded-solana-provider-spikes` и owner changes сохранить.
 2. После решения владельца и review реализовывать единый change внутренними этапами: versioned swaps/price/liquidity/USD с обеими точными USD price revisions, затем bounded frozen snapshots, затем dual-evidence signal/evaluation. Проверить chronological и concurrent-publish/replay, exact legacy read/hash/outcome/report после миграции и concurrent retry. Никакие V1–V9 не редактировать; план и unchecked tasks сами по себе не являются authorization на код.
 3. После их implementation и archive принять versioned R1 research protocol до извлечения и просмотра pilot returns. Для D1 отдельно утвердить источник, объём, cost ceiling, retention и полноту; для P1 считать outcomes только после gate. Если качество недостаточно, явно остановить/сузить гипотезу, не подбирать удобные thresholds.
 4. S1 prospective shadow измеряет реальную availability/lag и executability. Только затем обосновать I1 industrial capacity и соответствующие F1/F3 изменения. Для каждой будущей работы соблюдать короткие owner transactions, публичные module APIs, finite retries/queues и запрет fabricated fallback.

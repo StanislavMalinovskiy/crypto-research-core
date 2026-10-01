@@ -7,11 +7,21 @@ import java.util.Optional;
 import java.util.OptionalLong;
 
 import io.cryptoresearch.marketdata.api.MarketDataApi.MarketObservation;
+import io.cryptoresearch.marketdata.api.MarketDataApi.VersionedSnapshotEvidence;
 
 /** Synchronous boundary for reproducible signal evaluation and evidence reports. */
 public interface EvaluationApi {
 
 	EvaluationReport evaluate(EvaluationRequest request);
+
+	VersionedEvaluationReport evaluateVersioned(VersionedEvaluationRequest request);
+
+	record VersionedEvaluationRequest(String signalId, String horizon, RunProvenance provenance,
+			String decisionDatasetFingerprint, String evaluationDatasetFingerprint) { }
+
+	record VersionedEvaluationReport(EvaluationReport legacyReport, String decisionDatasetFingerprint,
+			String evaluationDatasetFingerprint, String evidenceVersion,
+			VersionedSnapshotEvidence decisionSnapshot, VersionedSnapshotEvidence evaluationSnapshot) { }
 
 	record RunProvenance(
 			String buildIdentity,

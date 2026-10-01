@@ -9,6 +9,7 @@ import io.cryptoresearch.risk.api.RiskApi.RiskAssessment;
 import io.cryptoresearch.signal.api.SignalApi.AcceptedSignalSnapshot;
 import io.cryptoresearch.signal.api.SignalApi.CandidateSnapshot;
 import io.cryptoresearch.signal.api.SignalApi.DetectionResult;
+import io.cryptoresearch.signal.api.SignalApi.VersionedAcceptedSignal;
 import io.cryptoresearch.signal.infrastructure.persistence.JdbcSignalPersistence;
 
 @Service
@@ -31,5 +32,16 @@ public class SignalCandidateTransitions {
 			RiskAssessment assessment,
 			Optional<AcceptedSignalSnapshot> acceptedSignal) {
 		return persistence.completeCandidate(candidate, assessment, acceptedSignal);
+	}
+
+	@Transactional
+	public void recordVersioned(CandidateSnapshot candidate) {
+		persistence.recordVersionedCandidate(candidate);
+	}
+
+	@Transactional
+	public void completeVersioned(CandidateSnapshot candidate, RiskAssessment assessment,
+			Optional<VersionedAcceptedSignal> acceptedSignal) {
+		persistence.completeVersionedCandidate(candidate, assessment, acceptedSignal);
 	}
 }
