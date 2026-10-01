@@ -1,6 +1,6 @@
 # План исправлений по результатам внешних аудитов
 
-**Обновлено:** 30 сентября 2026 года
+**Обновлено:** 1 октября 2026 года
 **Статус:** рабочий companion plan к [основному Delivery Plan](DELIVERY_PLAN.md)
 
 ## Назначение
@@ -26,16 +26,17 @@
 Критический путь:
 
 ```plain text
-Документы и решения
-    -> Solana data contract и provider matrix
-    -> schema/storage readiness
-    -> bounded ingestion, backfill, gaps и monitoring
-    -> point-in-time risk/wallet
-    -> production signal/evaluation rules
-    -> preregistered Evidence Report
-    -> decision support и forward shadow
-    -> только затем PAPER/MANUAL/LIVE
+A1+A2 versioned evidence (Done) + R1 protocol 1.0.0 (FROZEN)
+    -> D1 field inventory и bounded data-quality gate
+    -> R1 calibration 1.1.0
+    -> P1 wallet copier / early multi-wallet pilot
+    -> research decision и prospective forward shadow по R1
+    -> измеренные production source/ingestion потребности F1/F3
+    -> более широкий Evidence Report и decision support
+    -> отдельные gates перед PAPER/MANUAL/LIVE
 ```
+
+Это текущая исследовательская последовательность из [Delivery Plan](DELIVERY_PLAN.md#исследовательская-последовательность-r1). Исходные F1–F9 obligations ниже сохраняются; D1/P1 не заменяют verified provider selection, live ingestion, risk/wallet production APIs или полный Evidence Report.
 
 ## Правила выполнения плана
 
@@ -54,11 +55,11 @@
 |---|---|---|---|---|
 | F0 | Immediate | Синхронизировать документы и устранить противоречия | До следующего implementation change | Done (2026-09-20) |
 | F1 | Blocking | Определить Solana data contract и provider requirements | До завершения Stage 3.1 | Research change archived; S1–S5/3.6 deferred/unverified; verified provider selection pending |
-| F2 | Blocking | Подготовить schema/storage к реальным данным | До первой массовой real-data записи | Core implemented; live-readiness pending F3 forward migrations |
+| F2 | Blocking | Подготовить schema/storage к реальным данным | До первой массовой real-data записи | V5–V9 core and A1+A2 V10–V12 versioned evidence implemented; live-readiness pending F3 forward migrations |
 | F3 | Blocking | Реализовать bounded ingestion, backfill, gaps и monitoring | Для выхода из Stage 3 | Partial: recorded-replay telemetry done; live ingestion/monitoring pending |
 | F4 | Required | Реализовать point-in-time risk и wallet evidence | До production signal families | Not started |
-| F5 | Required | Пререгистрировать research protocol | До просмотра и настройки performance outcomes | Not started |
-| F6 | Required | Исправить production signal/evaluation semantics | До Stage 6 Evidence Report | Partial: bounded F6.2 slice and first-slice report retry hardening done; production scope pending |
+| F5 | Required | Пререгистрировать research protocol | До просмотра и настройки performance outcomes | R1 1.0.0 frozen for copier/multi-wallet; D1 calibration and broader family scope pending |
+| F6 | Required | Исправить production signal/evaluation semantics | До Stage 6 Evidence Report | Partial: bounded F6.2, report retry hardening and A1+A2 dual evidence done; production scope pending |
 | F7 | Required | Построить статистически честный Evidence Report | Для research decision | Not started |
 | F8 | Product gap | Добавить decision support и forward shadow | После положительного/перспективного research decision | Not started |
 | F9 | Deferred | PAPER/MANUAL/LIVE safety and execution | Только после F8 и отдельных gates | Deferred |
@@ -320,6 +321,8 @@ Risk и wallet APIs возвращают воспроизводимые point-in
 
 ## F5 — Пререгистрированный research protocol
 
+**Статус:** R1 `1.0.0` для wallet copier и early multi-wallet заморожен 2026-10-01; [change архивирован](../openspec/changes/archive/2026-10-01-preregister-r1-research-protocol/tasks.md). [Протокол](research/R1_RESEARCH_PROTOCOL.md), [freeze record](research/R1_PROTOCOL_FREEZE.md) и [утверждённая offline-процедура](research/R1_OFFLINE_RESEARCH_PROCEDURE.md) определяют D1/P1. Calibration `1.1.0` ещё не записана, расчёты и pilot не выполнены; preregistration остальных families остаётся будущей работой.
+
 **Цель:** не позволить результату исследования стать post-hoc рационализацией.
 
 Протокол фиксируется и получает version/fingerprint до performance-driven настройки signal families.
@@ -477,27 +480,22 @@ F9 не входит в remediation текущего MVP. Он активиру�
 
 ## Рекомендуемая последовательность OpenSpec changes
 
-Названия предварительные; точный scope утверждается перед созданием каждого change.
+Названия будущих changes предварительные; точный scope утверждается перед созданием каждого change. Завершены F0, F2 core, [A1+A2](../openspec/changes/archive/2026-10-01-version-market-facts-and-split-evidence/tasks.md) и R1 preregistration. F1 research архивирован с незавершёнными исходными provider targets.
 
-1. **Документационная синхронизация F0.** Поведение не меняется.
-2. **Solana data/provider research F1.** Research change архивирован; исходные spikes и verified provider selection отложены, без production adapter.
-3. **Marketdata live-schema readiness F2.** Forward migrations и volume evidence.
-4. **Bounded provider ingestion F3.1.** Один основной provider, raw-first, без скрытых fallback.
-5. **Backfill, gaps and data-quality operations F3.2–F3.6.**
-6. **Research protocol F5.** Зафиксировать до performance tuning; может идти параллельно позднему Stage 3.
-7. **Point-in-time risk history and producers F4.1–F4.3.**
-8. **Wallet analytics with warm-up F4.4.**
-9. **Production signal definitions and dedup F6.1–F6.3.**
-10. **Cost-aware multi-horizon evaluation F6.4–F6.7.**
-11. **Evidence Report and decision gates F7.**
-12. **Decision support and forward shadow F8.**
-13. **Execution safety F9**, только если предыдущие gates положительны.
+1. **D1 source/field inventory и bounded historical data gate.** Уточняет F1 для R1, до bulk extraction и outcome-bearing расчётов.
+2. **R1 calibration `1.1.0`.** Только whitelist `C-1`/`C-2`/`C-3` на D1 measurements без outcomes.
+3. **P1 pilot.** Отдельный stage change по frozen R1; использует ограниченные research reconstruction/selection/evaluation задачи F4/F6/F7, не заявляя production modules готовыми.
+4. **S1 prospective shadow.** Дальнейшая проверка по результату R1; для `INCONCLUSIVE` нужно отдельное обоснованное решение владельца.
+5. **I1 / оставшиеся F1–F3.** Verified source selection, forward live-schema readiness, bounded ingestion, backfill, gaps и monitoring под измеренные потребности; любой ранний collector требует собственного approved change.
+6. **Оставшиеся F4/F6/F7.** Production risk/wallet, дополнительные families/horizons, cost-aware evaluation и полный Evidence Report по подтверждённому scope.
+7. **F8 decision support.** Advisory feed и operational shadow без исполнения.
+8. **Execution safety F9**, только после отдельного evidence decision, approved change и ADR.
 
 ## Ближайшие три задачи
 
-1. После терминального `INCONCLUSIVE` [Alchemy A/B и финального A receipt](notes/SOLANA_PROVIDER_SPIKE_RESEARCH_2026-09-27.md) отдельно определить, какие новые измерения clean LIVE, восстановления и historical state действительно нужны для выбора Alchemy/Chainstack live, SQD history/backfill и GoPlus current risk. Финальный A запуск уже израсходован, повторов в этом change нет; новые платные пробы требуют отдельного решения владельца. Исходные S1–S5/3.6 остаются отложенными/неверифицированными. Helius Free проверяет лишь доступные ему capability, а не mainnet gRPC/replay.
-2. Оформить F3 bounded-ingestion OpenSpec change для выбранного источника: raw-first adapter, finality/admission, bounded concurrency/rate/retry, reconnect/gap semantics и forward-only storage для token decimals, provider-visible/modeled availability и explicit quality provenance.
-3. Реализовать bounded live ingestion и затем backfill/gap/operational evidence, не начиная signal tuning до preregistered F5 protocol.
+1. Оформить отдельный D1 OpenSpec change: inventory источников и обязательных полей, versions, пределы расходов/запросов/байтов/времени/хранения, reviewed scripts и gate из frozen R1. Сначала проверить inventory, затем допускать bounded extraction.
+2. Выполнить D1 только по утверждённому change и offline-процедуре; зафиксировать coverage, reconstruction, availability, gaps, costs и manifests без вычисления returns. При недостаточных данных сохранить `INCONCLUSIVE/data insufficient`.
+3. При пройденном D1 gate записать whitelist calibration `1.1.0`, затем подготовить отдельный P1 change. [Терминальные Alchemy receipts](notes/SOLANA_PROVIDER_SPIKE_RESEARCH_2026-09-27.md), израсходованный финальный A и отложенные S1–S5/3.6 сохраняются; новый paid probe требует отдельного решения владельца.
 
 ## Traceability первого аудита
 

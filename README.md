@@ -29,6 +29,9 @@
 | [docs/OPERATIONS.md](docs/OPERATIONS.md) | Runtime, configuration, secrets, health и resource budgets |
 | [docs/TESTING.md](docs/TESTING.md) | Уровни тестов и правила выбора test infrastructure |
 | [docs/REPRODUCIBILITY.md](docs/REPRODUCIBILITY.md) | UTC, точная арифметика, provenance и deterministic research contract |
+| [docs/research/R1_RESEARCH_PROTOCOL.md](docs/research/R1_RESEARCH_PROTOCOL.md) | Frozen R1 `1.0.0`: wallet copier и early multi-wallet research |
+| [docs/research/R1_PROTOCOL_FREEZE.md](docs/research/R1_PROTOCOL_FREEZE.md) | Freeze commit, SHA-256 и последующие calibration/holdout записи |
+| [docs/research/R1_OFFLINE_RESEARCH_PROCEDURE.md](docs/research/R1_OFFLINE_RESEARCH_PROCEDURE.md) | Утверждённые stage changes, bounded runs, receipts и research gates |
 | [docs/GLOSSARY.md](docs/GLOSSARY.md) | Развёрнутый глоссарий проекта |
 | [docs/modules/README.md](docs/modules/README.md) | Карта документации логических модулей |
 | [docs/adr/README.md](docs/adr/README.md) | Журнал архитектурных решений |
@@ -39,19 +42,11 @@
 
 ## Как передать контекст Codex CLI
 
-Перед изменением кода Codex следует порядку из [AGENTS.md](AGENTS.md):
-
-1. `AGENTS.md`.
-2. `docs/PROJECT_SUMMARY.md`.
-3. Relevant OpenSpec change.
-4. `docs/modules/<module>.md` for every affected module.
-5. Applicable ADRs.
-6. Existing code and tests.
+Перед работой Codex читает [AGENTS.md](AGENTS.md), определяет mode по `.codex/config.toml` и загружает выбранный workflow. Остальные обязательные чтения выбираются по task routing: затронутые accepted sources, module docs, applicable ADRs, код/тесты и active change, когда workflow его требует. `PROJECT_SUMMARY` нужен для onboarding, product orientation или явно релевантного контекста.
 
 Документы имеют разные области ответственности, а не общий линейный приоритет. Правила разрешения конфликтов зафиксированы в `AGENTS.md`. Архивные документы используются только как справочные материалы.
 
-Project default: `gpt-6-sol / medium`. When MULTIAGENT is explicitly enabled, the
-[workflow](docs/AGENT_WORKFLOW_MULTIAGENT.md) defines GPT-6 role routing, independent review and bounded repairs.
+Актуальные model/effort и роли определяют конфигурация проекта и [выбранный workflow](AGENTS.md#agent-workflow-mode). MULTIAGENT задаёт review routing и bounded repairs после явного включения владельцем.
 
 ## OpenSpec navigation
 
@@ -59,7 +54,9 @@ Project default: `gpt-6-sol / medium`. When MULTIAGENT is explicitly enabled, th
 - Completed bootstrap: [2026-09-13-bootstrap-modular-foundation](openspec/changes/archive/2026-09-13-bootstrap-modular-foundation/).
 - Accepted behavior: see [openspec/specs](openspec/specs/); active change names are intentionally not pinned here because completed changes move to `archive/`.
 
-Текущий storage boundary сохраняет stable-inclusion raw provider evidence с точным CAIP-2 identity, отдельные transaction payloads, normalized swaps, price/liquidity observations, USD-conversion lineage и immutable dataset/universe snapshots. Равный retry не изменяет первую запись, а конфликтующие immutable evidence отклоняются. Сам storage не проверяет finality; F1 provider spikes и selection ещё не завершены, а реальный provider adapter и недостающие live facts принадлежат следующему F3 change. Записанный walking skeleton уже проходит путь raw input → normalized swap → signal snapshot → outcome → reproducible report. PAPER/LIVE execution отсутствует в MVP; любые execution gates потребуют отдельного одобренного change и ADR.
+Текущий storage boundary сохраняет stable-inclusion raw provider evidence с точным CAIP-2 identity, отдельные transaction payloads, normalized swaps, price/liquidity observations, USD-conversion lineage и immutable dataset/universe snapshots. [A1+A2 принят и архивирован](openspec/changes/archive/2026-10-01-version-market-facts-and-split-evidence/tasks.md): V10–V12 добавляют append-only revisions, frozen revision-member snapshots и отдельные decision/evaluation fingerprints с сохранением legacy V1–V9 readback. Равный retry сохраняет evidence, конфликт immutable content отклоняется. Записанный walking skeleton проходит путь raw input → normalized swap → signal snapshot → outcome → reproducible report.
+
+[R1 protocol `1.0.0`](docs/research/R1_RESEARCH_PROTOCOL.md) заморожен; следующая работа — отдельный D1 change для field inventory, bounded historical extraction и data-quality gate. Inventory предшествует bulk extraction, а расчёт доходности — только после D1 gate и calibration `1.1.0`. Сам storage не проверяет finality; F1 provider selection остаётся незавершённым, production adapter и недостающие live facts требуют отдельной работы F3. PAPER/LIVE execution отсутствует в MVP; любые execution gates потребуют отдельного одобренного change и ADR.
 
 ## Java baseline
 

@@ -1,6 +1,6 @@
 # План реализации
 
-**Обновлено:** 30 сентября 2026 года
+**Обновлено:** 1 октября 2026 года
 
 ## Назначение
 
@@ -22,12 +22,14 @@
 
 ## Текущая позиция
 
+- **Подтверждённая подготовка к исследованию:** A1+A2 реализованы, проверены и [архивированы](../openspec/changes/archive/2026-10-01-version-market-facts-and-split-evidence/tasks.md): versioned market facts и отдельные decision/evaluation snapshots доступны через публичные API; V10–V12 сохраняют legacy V1–V9 evidence. [R1 protocol](research/R1_RESEARCH_PROTOCOL.md) для wallet copier и early multi-wallet заморожен как `1.0.0`; [freeze record](research/R1_PROTOCOL_FREEZE.md) закрепляет коммит и SHA-256.
+- **Следующий рабочий пакет:** отдельный D1 OpenSpec change для field-availability inventory, bounded исторического среза и data-quality gate по [утверждённой offline-процедуре](research/R1_OFFLINE_RESEARCH_PROCEDURE.md). Inventory предшествует bulk extraction; outcome-bearing вычисления допускаются только после D1 gate и записи calibration amendment `1.1.0`.
 - **Текущий этап:** Этап 3 — Реальные данные Solana (исполняется через remediation-пакеты [DELIVERY_PLAN_FIXES](DELIVERY_PLAN_FIXES.md)).
-- **Текущая работа:** [исследовательский F1 change](../openspec/changes/archive/2026-09-29-define-solana-data-provider-contract/tasks.md) архивирован с provisional shortlist, но исходные S1–S5/3.6 отложены и не верифицированы; primary provider не выбран. [Bounded Alchemy A/B и финальная A-попытка](notes/SOLANA_PROVIDER_SPIKE_RESEARCH_2026-09-27.md) завершены как исследовательские receipts: оба A `INCONCLUSIVE` с нулём чистого LIVE-времени (финальный остановлен локальным `PROCESSING_LIMIT` в catch-up), B `INCONCLUSIVE/MATRIX_COMPLETE` (12/12 исторических чтений; два vault reserve inputs подтверждены для одного child block, pool layout не декодирован). Финальная A-попытка и разрешённое root-only исправление израсходованы; повторов в этом change нет. Решение о провайдере и фактическая gRPC-стоимость отложены: после прогона dashboard/invoice не были доступны для сверки.
+- **Незакрытый F1:** [исследовательский F1 change](../openspec/changes/archive/2026-09-29-define-solana-data-provider-contract/tasks.md) архивирован с provisional shortlist, но исходные S1–S5/3.6 отложены и не верифицированы; primary provider не выбран. [Bounded Alchemy A/B и финальная A-попытка](notes/SOLANA_PROVIDER_SPIKE_RESEARCH_2026-09-27.md) завершены как исследовательские receipts: оба A `INCONCLUSIVE` с нулём чистого LIVE-времени (финальный остановлен локальным `PROCESSING_LIMIT` в catch-up), B `INCONCLUSIVE/MATRIX_COMPLETE` (12/12 исторических чтений; два vault reserve inputs подтверждены для одного child block, pool layout не декодирован). Финальная A-попытка и разрешённое root-only исправление израсходованы; повторов в этом change нет. Решение о провайдере и фактическая gRPC-стоимость отложены: после прогона dashboard/invoice не были доступны для сверки.
 - **Завершённая подготовка:** F0 синхронизировал документы; F2 core storage принят и архивирован — Flyway V5–V9, immutable raw/price/liquidity/USD/universe storage, lineage constraints и bounded batch paths реализованы.
 - **Завершённые срезы 27 сентября:** приняты и архивированы [bounded LIQUIDITY_SPIKE windows](../openspec/changes/archive/2026-09-27-bound-liquidity-spike-observation-windows/verification.md), [recorded-replay telemetry](../openspec/changes/archive/2026-09-27-add-recorded-replay-operational-telemetry/tasks.md) и [evaluation-report retry hardening](../openspec/changes/archive/2026-09-27-harden-evaluation-report-retry-semantics/tasks.md). Это завершённые изменения первого среза; production F6.2 и live monitoring F3.4 остаются частично открытыми.
 - **Агентная разработка:** приняты instruction diet, workflow safety rules и workflow simplification; актуальные роли, tiers, review и gates определяет [выбранный workflow](../AGENTS.md#agent-workflow-mode). Исторические benchmark findings не являются текущими правилами routing.
-- **Следующая операционная работа:** F3 — bounded ingestion выбранного transport с явными timeout, rate, concurrency, finite retry policies, gap recovery и минимальной operational visibility. До допуска live data F3 также добавляет forward migrations для token decimals, provider-visible/modeled availability и явного quality provenance.
+- **Операционная работа после выбора источника:** F3 — bounded ingestion выбранного transport с явными timeout, rate, concurrency, finite retry policies, gap recovery и минимальной operational visibility. D1 определяет доступность исторических полей для R1; он сам по себе не выбирает production transport и не закрывает F3. До допуска live data F3 также добавляет forward migrations для token decimals, provider-visible/modeled availability и явного quality provenance.
 - **Условие перехода к этапу 4:** реальные текущие и исторические Solana observations воспроизводятся с raw lineage, trusted observation time, parser identity и видимыми gaps без повторных доменных эффектов (F3.6).
 
 ## Сводка этапов
@@ -42,6 +44,22 @@
 | 6. Исследовательское решение | Planned | Evidence Report обосновывает углубление, изменение, продление или остановку направления |
 | 6A. Decision support и forward shadow | Planned | Подтверждённые результаты превращаются в advisory feed без исполнения сделок (F8) |
 | 7. Исполнение | Deferred | Paper/live рассматриваются только после доказательств и отдельного safety design |
+
+## Исследовательская последовательность R1
+
+Этапы ниже сохраняют свои выходные условия. Ближайшая работа внутри них организована как bounded R1 research; полный live ingestion не является следующим пакетом по умолчанию.
+
+| Пакет | Статус | Подтверждённый результат или следующий выход |
+|---|---|---|
+| A1+A2 | Done | [Versioned facts и dual evidence](../openspec/changes/archive/2026-10-01-version-market-facts-and-split-evidence/tasks.md), commit `ad61760`, merge `9c53f61`; legacy compatibility и chronological evaluation проверены. |
+| R1 preregistration | Done | [Архивированный протокол](../openspec/changes/archive/2026-10-01-preregister-r1-research-protocol/tasks.md) `1.0.0`, freeze commit `6e5647e`, утверждённая offline-процедура. |
+| D1 | Next | Field inventory, объявленные источники/лимиты, bounded extraction и coverage/reconstruction/availability gate без расчёта доходности. |
+| R1 calibration | Planned | После D1 записать `1.1.0` только для разрешённых `C-1`/`C-2`/`C-3`; критерии и правила отбора остаются frozen. |
+| P1 | Planned | Wallet copier и early multi-wallet pilot по frozen protocol, validation и отдельный holdout freeze; результаты и ограничения воспроизводимы. |
+| S1 | Planned | Prospective forward shadow как дальнейшая проверка по решению R1; `INCONCLUSIVE` требует отдельного обоснованного решения владельца. |
+| I1 / F1–F3 | Planned | Обосновать production source/capacity/ingestion измеренными потребностями и оставшимися provider/gap acceptance. |
+
+Каждый data stage получает собственный OpenSpec change. Эта карта не разрешает provider calls, расходы, новые scripts или просмотр outcomes.
 
 ## Этап 1 — Архитектурный фундамент
 
@@ -83,7 +101,7 @@
 |---|---|---|
 | 3.0 | Done | Настроить постоянную managed PostgreSQL для работы из нескольких мест и подтвердить профиль, секреты, Flyway, PostgreSQL 18.6, TLS и восстановление свежего backup; сетевая политика остаётся ответственностью оператора. |
 | 3.1 | Current | F1 research contract и provisional shortlist архивированы; S1–S5 и выбор primary transport/history sources остаются отложенными/неверифицированными. Bounded Alchemy: первоначальный и единственный финальный A завершились `INCONCLUSIVE` без чистого LIVE; B остаётся `INCONCLUSIVE/MATRIX_COMPLETE` (12/12, узкое vault corroboration). Ни эти receipts, ни их исследовательское закрытие не закрывают исходные acceptance targets или выбор провайдера. |
-| 3.2 | Next | После F1 selection реализовать F3 bounded real-time ingestion с явными timeout, rate, concurrency и finite retry policies; V5–V9 core storage уже готов, недостающие live facts добавляются только forward migrations. |
+| 3.2 | Planned | После F1 selection и уточнения потребностей исследования реализовать F3 bounded real-time ingestion с явными timeout, rate, concurrency и finite retry policies; V5–V9 core storage и V10–V12 versioned evidence уже готовы, недостающие live facts добавляются только forward migrations. |
 | 3.3 | Planned | Добавить provider-specific normalization, parser versioning и replay сохранённых raw payloads. |
 | 3.4 | Planned | Обнаруживать reconnect gaps, восстанавливать пропущенные диапазоны и явно отмечать unresolved windows. |
 | 3.5 | Planned | Сохранять observed price snapshots, source/quality facts и необходимые token discovery observations. |
@@ -113,7 +131,7 @@
 
 | ID | Статус | Рабочий пакет |
 |---|---|---|
-| 5.0 | Planned | Зафиксировать preregistered research protocol (F5) до любой настройки по outcome-результатам: гипотезы, grid, диапазоны, min sample, multiplicity policy, decision gates. |
+| 5.0 | Done | Зафиксирован R1 `1.0.0` для wallet copier и early multi-wallet: гипотезы, grid, диапазоны, min sample, multiplicity policy и decision gates. D1 calibration и исследования остальных families остаются отдельной работой. |
 | 5.1 | Planned | Определить versioned signal definitions, configuration identity, candidate journal и правила дедупликации. |
 | 5.2 | Planned | Реализовать entry families Smart Wallet Buy, Multi Wallet Buy, Liquidity Spike и Holder Growth. |
 | 5.3 | Planned | Реализовать Token Risk Alert как avoidance family и сохранять shadow outcomes отклонённых кандидатов. |

@@ -1,6 +1,6 @@
 # Crypto Research Core — Wiki терминов
-**Версия:** 1.3
-**Дата:** 20 сентября 2026
+**Версия:** 1.4
+**Дата:** 1 октября 2026
 **Формат:** пояснительный глоссарий, включающий текущие и исторические термины проекта.
 > **Важно:** области ответственности нормативных источников и правила конфликтов определены в [AGENTS.md](../AGENTS.md). Историческая multi-module структура v5 удалена из репозитория 2026-09-20 и доступна только через git history. Термины будущих возможностей не являются спецификацией реализации без локальной пометки Target или Deferred и соответствующего OpenSpec change.
 ---
@@ -13,6 +13,17 @@
 | Reproducible result | Одинаковые dataset snapshot/cutoff, build/commit, algorithm/configuration и seed дают одинаковый упорядоченный вычислительный результат. | Reproducibility contract |
 | Provenance manifest | Идентичность build/source, algorithm/configuration, dataset, cutoff и seed, необходимая для аудита результата. | Evaluation evidence |
 | Dataset fingerprint | Algorithm-qualified checksum канонического immutable dataset snapshot. | Market-data lineage |
+| Canonical fact key | Идентичность рыночного факта независимо от конкретного source/derivation варианта. | [Versioned marketdata](modules/marketdata.md#versioned-evidence-path) |
+| Fact revision | Неизменяемый вариант факта с revision key, source lineage, derivation version и content digest; другой валидный вариант может сосуществовать. | V10 market facts |
+| Frozen revision-member snapshot | Сохранённая выборка точных revisions с scope, cutoff, ordered members/exclusions, coverage и версиями правил. Полнота относится к видимым stored facts в scope. | `marketdata::api` |
+| Decision snapshot | Неизменяемая выборка фактов, на которой принято решение о сигнале; принятый сигнал закрепляет её fingerprint и cutoff. | `signal::api` |
+| Evaluation snapshot | Отдельная frozen выборка для последующей оценки; run/report сохраняют её fingerprint вместе с decision fingerprint. | `evaluation::api` |
+| `HISTORICAL_MODEL` / `VERIFIED_REALTIME` | Availability labels versioned application snapshots: modeled historical cutoff / cutoff, полученный при database freeze. | [Reproducibility](REPRODUCIBILITY.md) |
+| R1 | Frozen research protocol `1.0.0` для wallet copier и early multi-wallet; preregistration, не доказательство edge. | [R1 protocol](research/R1_RESEARCH_PROTOCOL.md) |
+| D1 | Research stage: field inventory перед bulk extraction, bounded historical sample и data-quality gate без outcomes. | R1 offline research |
+| R1 calibration `1.1.0` | После D1 уточняются только разрешённые data-quality/availability значения; запись ещё не сделана. | [Freeze record](research/R1_PROTOCOL_FREEZE.md) |
+| P1 | Отдельный historical pilot после D1 и calibration по frozen selection, costs, validation и holdout правилам. | R1 research |
+| `MODELED` / `OBSERVED_LIVE` | R1 report availability classes: явно смоделированная доступность / наблюдаемое live receipt time. Это report labels R1, не имена application snapshot labels. | R1 report lineage |
 | Deterministic tie-break | Стабильный вторичный ключ, устраняющий неоднозначность при равных значениях. | Signal/evaluation ordering |
 | ChainId | Точный case-sensitive customary CAIP-2 идентификатор сети; текущая MVP chain — `solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp`; одинаковые значения в разном регистре — разные сети. | `kernel::api` |
 | TransactionId | Сеть плюс opaque идентификатор транзакции; для Solana value является signature, для EVM — transaction hash. | `kernel::api` |
@@ -113,12 +124,12 @@
 | Materialized view | Сохранённый результат тяжёлого SQL-запроса. | Wallet stats |
 | `wallets` | **Target draft name:** будущая таблица кошельков; не реализована. | Future wallet change |
 | `tokens` | **Target draft name:** будущая таблица токенов; не реализована. | Future marketdata/risk change |
-| `swaps` | **Target draft name:** нормализованные свопы текущей схемы хранятся в `marketdata.normalized_swaps`. | Current schema |
+| `swaps` | **Target draft name:** legacy normalized swaps — `marketdata.normalized_swaps`; versioned варианты — `marketdata.swap_revisions`. | Current legacy/versioned schema |
 | `token_metrics` | **Target draft name:** будущие исторические метрики токенов; не реализованы. | Future marketdata change |
 | `wallet_scores` | **Target draft name:** будущая таблица текущих оценок кошельков; не реализована. | Future wallet change |
 | `wallet_score_history` | **Target draft name:** будущая append-only история скоринга для point-in-time backtest; не реализована. | Future wallet change |
-| `signals` | **Target draft name:** принятые сигналы текущей схемы — `signal.accepted_signals`. | Current schema |
-| `signal_reasoning` | **Target draft name:** reasoning хранится как JSONB в `signal.accepted_signals`. | Current schema |
+| `signals` | **Target draft name:** legacy accepted signals — `signal.accepted_signals`; versioned decisions — `signal.v2_accepted_signals`. | Current legacy/versioned schema |
+| `signal_reasoning` | **Target draft name:** reasoning хранится как JSONB в owning legacy/versioned accepted-signal rows. | Current schema |
 | `paper_trades` | **Historical/deferred name:** возможные виртуальные сделки paper trading; текущая схема не утверждена. | Future PAPER change |
 | `paper_fills` | **Historical/deferred name:** возможные детали виртуального исполнения; текущая схема не утверждена. | Future PAPER change |
 | `backtest_runs` | **Target draft name:** метаданные запусков backtest; текущая схема не утверждена. | Future evaluation change |
