@@ -11,17 +11,86 @@ import io.cryptoresearch.marketdata.api.MarketDataApi.NormalizedSwapIdentity;
 
 @Service
 public class RecordMarketFactUseCase {
+	public enum RawSourceKind { RAW_CHAIN_EVENT, RAW_TRANSACTION }
+
+	public record VersionedPriceRequest(PriceObservation observation, RawSourceKind sourceKind,
+			String sourceProvider, String derivationVersion) { }
+
+	public record VersionedPriceResult(PriceObservation observation, String revisionKey, String evidenceVersion) { }
+
+	public record VersionedLiquidityRequest(LiquidityObservation observation, RawSourceKind sourceKind,
+			String sourceProvider, String derivationVersion) { }
+
+	public record VersionedLiquidityResult(LiquidityObservation observation, String revisionKey, String evidenceVersion) { }
+
+	public record VersionedUsdRequest(UsdConversionFact fact, String convertedPriceRevisionKey,
+			String quotePriceRevisionKey) { }
+
+	public record VersionedUsdResult(UsdConversionFact fact, String revisionKey, String evidenceVersion) { }
 
 	private final MarketFactStore store;
+	private final VersionedFactStore versionedStore;
 
-	public RecordMarketFactUseCase(MarketFactStore store) {
+	public RecordMarketFactUseCase(MarketFactStore store, VersionedFactStore versionedStore) {
 		this.store = Objects.requireNonNull(store, "store must not be null");
+		this.versionedStore = Objects.requireNonNull(versionedStore, "versionedStore must not be null");
 	}
 
 	@Transactional
 	public PriceObservation storePrice(PriceObservation observation) {
 		Objects.requireNonNull(observation, "observation must not be null");
 		return store.storePrice(observation);
+	}
+
+	@Transactional
+	public VersionedPriceResult storeVersionedPrice(VersionedPriceRequest request) {
+		Objects.requireNonNull(request, "request must not be null");
+		var observation = Objects.requireNonNull(request.observation(), "observation must not be null");
+		if (!observation.provider().equals(request.sourceProvider())) {
+			throw new IllegalArgumentException("Source provider must match price provider");
+		}
+		var rawHash = versionedStore.rawPayloadHash(request.sourceKind(), observation.source(), request.sourceProvider());
+		var sourceIdentity = VersionedFactFingerprint.sourceIdentity(request.sourceKind(),
+				observation.source(), request.sourceProvider());
+		var key = VersionedFactFingerprint.revision("PRICE", observation.source(), sourceIdentity, rawHash,
+				request.derivationVersion(), observation.asset().value() + "|" + observation.venue());
+		var digest = VersionedFactFingerprint.priceContent(observation, key);
+		versionedStore.storePrice(observation, key, digest, sourceIdentity, rawHash,
+				request.derivationVersion(), request.sourceKind());
+		return new VersionedPriceResult(observation, key, "EXPLICIT_REVISION_V1");
+	}
+
+	@Transactional
+	public VersionedLiquidityResult storeVersionedLiquidity(VersionedLiquidityRequest request) {
+		Objects.requireNonNull(request, "request must not be null");
+		var observation = Objects.requireNonNull(request.observation(), "observation must not be null");
+		if (!observation.provider().equals(request.sourceProvider())) {
+			throw new IllegalArgumentException("Source provider must match liquidity provider");
+		}
+		var rawHash = versionedStore.rawPayloadHash(request.sourceKind(), observation.source(), request.sourceProvider());
+		var sourceIdentity = VersionedFactFingerprint.sourceIdentity(request.sourceKind(),
+				observation.source(), request.sourceProvider());
+		var key = VersionedFactFingerprint.revision("LIQUIDITY", observation.source(), sourceIdentity, rawHash,
+				request.derivationVersion(), observation.asset().value() + "|" + observation.poolAddress());
+		var digest = VersionedFactFingerprint.liquidityContent(observation, key);
+		versionedStore.storeLiquidity(observation, key, digest, sourceIdentity, rawHash,
+				request.derivationVersion(), request.sourceKind());
+		return new VersionedLiquidityResult(observation, key, "EXPLICIT_REVISION_V1");
+	}
+
+	@Transactional
+	public VersionedUsdResult storeVersionedUsd(VersionedUsdRequest request) {
+		Objects.requireNonNull(request, "request must not be null");
+		var fact = Objects.requireNonNull(request.fact(), "fact must not be null");
+		if (!versionedStore.priceRevisionMatches(request.convertedPriceRevisionKey(), fact.source())
+				|| !versionedStore.priceRevisionMatches(request.quotePriceRevisionKey(), fact.usdQuoteSource())) {
+			throw new IllegalArgumentException("USD inputs must resolve to exact source price revisions");
+		}
+		var key = VersionedFactFingerprint.usdRevision(
+				fact, request.convertedPriceRevisionKey(), request.quotePriceRevisionKey());
+		versionedStore.storeUsd(fact, key, VersionedFactFingerprint.usdContent(fact, key),
+				request.convertedPriceRevisionKey(), request.quotePriceRevisionKey());
+		return new VersionedUsdResult(fact, key, "EXPLICIT_REVISION_V1");
 	}
 
 	@Transactional

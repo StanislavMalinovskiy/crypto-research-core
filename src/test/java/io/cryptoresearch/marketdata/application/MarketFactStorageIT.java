@@ -2,11 +2,16 @@ package io.cryptoresearch.marketdata.application;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.assertThatCode;
 
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -25,6 +30,9 @@ import io.cryptoresearch.kernel.api.ChainId;
 import io.cryptoresearch.kernel.api.EventId;
 import io.cryptoresearch.kernel.api.TransactionId;
 import io.cryptoresearch.marketdata.api.MarketDataApi.NormalizedSwapIdentity;
+import io.cryptoresearch.marketdata.api.MarketDataApi;
+import io.cryptoresearch.marketdata.api.MarketDataApi.FactKind;
+import io.cryptoresearch.marketdata.api.MarketDataApi.RevisionReference;
 
 @Testcontainers
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.NONE)
@@ -42,12 +50,20 @@ class MarketFactStorageIT {
 	private static final Instant T3 = Instant.parse("2026-09-20T10:01:00Z");
 
 	private final RecordMarketFactUseCase useCase;
+	private final StoreRawObservationUseCase rawStore;
+	private final StoreRawTransactionUseCase rawTransactionStore;
 	private final JdbcClient jdbcClient;
+	private final MarketDataApi marketData;
 
 	@Autowired
-	MarketFactStorageIT(RecordMarketFactUseCase useCase, JdbcClient jdbcClient) {
+	MarketFactStorageIT(RecordMarketFactUseCase useCase, StoreRawObservationUseCase rawStore,
+			StoreRawTransactionUseCase rawTransactionStore,
+			JdbcClient jdbcClient, MarketDataApi marketData) {
 		this.useCase = useCase;
+		this.rawStore = rawStore;
+		this.rawTransactionStore = rawTransactionStore;
 		this.jdbcClient = jdbcClient;
+		this.marketData = marketData;
 	}
 
 	@BeforeEach
@@ -68,6 +84,173 @@ class MarketFactStorageIT {
 		assertThat(priceCount()).isEqualTo(2);
 		assertThat(useCase.findPrice(identity(1))).contains(first);
 		assertThat(useCase.findPrice(identity(9))).isEmpty();
+	}
+
+	@Test
+	void versionedPriceRetainsTwoValidDerivationsOfOneCanonicalEvent() {
+		var source = identity(1);
+		rawStore.store(new RawChainObservation(CHAIN, source.transactionId(), source.eventId(),
+				"provider-a", new BlockPosition(CHAIN, 101), Optional.empty(), Optional.empty(), T1,
+				"{\"recordedPrice\":\"1.5\"}", "recorded-price-v1"));
+		var original = new RecordMarketFactUseCase.VersionedPriceRequest(
+				price(1, T1, "1.500000000000000000"),
+				RecordMarketFactUseCase.RawSourceKind.RAW_CHAIN_EVENT, "provider-a", "price-v1");
+		var corrected = new RecordMarketFactUseCase.VersionedPriceRequest(
+				price(1, T1, "1.600000000000000000"),
+				RecordMarketFactUseCase.RawSourceKind.RAW_CHAIN_EVENT, "provider-a", "price-v2");
+		var first = useCase.storeVersionedPrice(original);
+		var second = new AtomicReference<RecordMarketFactUseCase.VersionedPriceResult>();
+		assertThatCode(() -> second.set(useCase.storeVersionedPrice(corrected)))
+				.as("a different valid derivation remains addressable alongside the first")
+				.doesNotThrowAnyException();
+		assertThat(useCase.storeVersionedPrice(original).revisionKey()).isEqualTo(first.revisionKey());
+		assertThat(second.get().revisionKey()).isNotEqualTo(first.revisionKey());
+		assertThat(jdbcClient.sql("SELECT price FROM marketdata.price_revisions WHERE revision_key = :revision")
+				.param("revision", first.revisionKey()).query(BigDecimal.class).single())
+				.isEqualByComparingTo("1.500000000000000000");
+		assertThat(jdbcClient.sql("SELECT price FROM marketdata.price_revisions WHERE revision_key = :revision")
+				.param("revision", second.get().revisionKey()).query(BigDecimal.class).single())
+				.isEqualByComparingTo("1.600000000000000000");
+		assertThat(jdbcClient.sql("SELECT count(*) FROM marketdata.price_revisions")
+				.query(Integer.class).single()).isEqualTo(2);
+		assertThat(priceCount()).isZero();
+	}
+
+	@Test
+	void usdRevisionPinsBothExactPriceRevisionsAndRejectsConflictingContent() {
+		try {
+		storeRawPriceSource(3);
+		storeRawPriceSource(4);
+		var converted = useCase.storeVersionedPrice(new RecordMarketFactUseCase.VersionedPriceRequest(
+				price(3, T1, "1.500000000000000000"),
+				RecordMarketFactUseCase.RawSourceKind.RAW_CHAIN_EVENT, "provider-a", "price-v1"));
+		var quote = useCase.storeVersionedPrice(new RecordMarketFactUseCase.VersionedPriceRequest(
+				price(4, T1, "2.000000000000000000"),
+				RecordMarketFactUseCase.RawSourceKind.RAW_CHAIN_EVENT, "provider-a", "price-v1"));
+		var request = new RecordMarketFactUseCase.VersionedUsdRequest(
+				usd(3, 4, "1.800000000000000000"), converted.revisionKey(), quote.revisionKey());
+		var first = useCase.storeVersionedUsd(request);
+		assertThat(useCase.storeVersionedUsd(request).revisionKey()).isEqualTo(first.revisionKey());
+		assertThat(jdbcClient.sql("SELECT converted_price_revision_key || '|' || quote_price_revision_key FROM marketdata.usd_revisions")
+				.query(String.class).single()).isEqualTo(converted.revisionKey() + "|" + quote.revisionKey());
+		assertThatThrownBy(() -> useCase.storeVersionedUsd(new RecordMarketFactUseCase.VersionedUsdRequest(
+				usd(3, 4, "9.900000000000000000"), converted.revisionKey(), quote.revisionKey())))
+				.isInstanceOf(MarketFactConflictException.class);
+		assertThatThrownBy(() -> useCase.storeVersionedUsd(new RecordMarketFactUseCase.VersionedUsdRequest(
+				usd(3, 4, "1.800000000000000000"), quote.revisionKey(), converted.revisionKey())))
+				.isInstanceOf(IllegalArgumentException.class)
+				.hasMessageContaining("exact source price revisions");
+		assertThat(jdbcClient.sql("SELECT count(*) FROM marketdata.usd_revisions").query(Integer.class).single()).isOne();
+		}
+		finally {
+			jdbcClient.sql("DELETE FROM marketdata.usd_revisions").update();
+			jdbcClient.sql("DELETE FROM marketdata.price_revisions WHERE transaction_value IN ('fixture-tx-3', 'fixture-tx-4')").update();
+		}
+	}
+
+	@Test
+	void concurrentEqualPriceRevisionRetryPublishesOneCompleteRow() throws Exception {
+		storeRawPriceSource(5);
+		var request = new RecordMarketFactUseCase.VersionedPriceRequest(
+				price(5, T1, "1.500000000000000000"),
+				RecordMarketFactUseCase.RawSourceKind.RAW_CHAIN_EVENT, "provider-a", "price-v1");
+		var release = new CountDownLatch(1);
+		try (var executor = Executors.newFixedThreadPool(2)) {
+			var first = executor.submit(() -> {
+				if (!release.await(20, TimeUnit.SECONDS)) throw new IllegalStateException("start timeout");
+				return useCase.storeVersionedPrice(request);
+			});
+			var second = executor.submit(() -> {
+				if (!release.await(20, TimeUnit.SECONDS)) throw new IllegalStateException("start timeout");
+				return useCase.storeVersionedPrice(request);
+			});
+			release.countDown();
+			try {
+				assertThat(first.get(20, TimeUnit.SECONDS).revisionKey())
+						.isEqualTo(second.get(20, TimeUnit.SECONDS).revisionKey());
+				assertThat(jdbcClient.sql("SELECT count(*) FROM marketdata.price_revisions WHERE transaction_value = 'fixture-tx-5'")
+						.query(Integer.class).single()).isOne();
+				assertThatThrownBy(() -> useCase.storeVersionedPrice(new RecordMarketFactUseCase.VersionedPriceRequest(
+						price(5, T1, "1.600000000000000000"),
+						RecordMarketFactUseCase.RawSourceKind.RAW_CHAIN_EVENT, "provider-a", "price-v1")))
+						.isInstanceOf(MarketFactConflictException.class);
+			}
+			finally {
+				release.countDown();
+			}
+		}
+		finally {
+			jdbcClient.sql("DELETE FROM marketdata.price_revisions WHERE transaction_value = 'fixture-tx-5'").update();
+		}
+	}
+
+	private void storeRawPriceSource(int index) {
+		var source = identity(index);
+		rawStore.store(new RawChainObservation(CHAIN, source.transactionId(), source.eventId(),
+				"provider-a", new BlockPosition(CHAIN, 100 + index), Optional.empty(), Optional.empty(), T1,
+				"{\"priceSource\":\"" + index + "\"}", "recorded-price-v1"));
+	}
+
+	@Test
+	void versionedFactReadReturnsExactRevisionAndTypedLineage() {
+		storeRawPriceSource(6);
+		storeRawPriceSource(7);
+		try {
+			var converted = useCase.storeVersionedPrice(new RecordMarketFactUseCase.VersionedPriceRequest(
+					price(6, T1, "1.500000000000000000"),
+					RecordMarketFactUseCase.RawSourceKind.RAW_CHAIN_EVENT, "provider-a", "price-v1"));
+			var quote = useCase.storeVersionedPrice(new RecordMarketFactUseCase.VersionedPriceRequest(
+					price(7, T1, "2.000000000000000000"),
+					RecordMarketFactUseCase.RawSourceKind.RAW_CHAIN_EVENT, "provider-a", "price-v1"));
+			var usd = useCase.storeVersionedUsd(new RecordMarketFactUseCase.VersionedUsdRequest(
+					usd(6, 7, "1.800000000000000000"), converted.revisionKey(), quote.revisionKey()));
+			var priceRef = new RevisionReference(FactKind.PRICE, identity(6), converted.revisionKey());
+			assertThat(marketData.versionedFact(priceRef)).isPresent().get().satisfies(evidence -> {
+				assertThat(evidence.reference()).isEqualTo(priceRef);
+				assertThat(evidence.contentDigest()).startsWith("sha256:");
+				assertThat(evidence.sourceKind()).isEqualTo("RAW_CHAIN_EVENT");
+				assertThat(evidence.provider()).isEqualTo("provider-a");
+				assertThat(evidence.rawPayloadHash()).startsWith("sha256:");
+				assertThat(evidence.derivationVersion()).isEqualTo("price-v1");
+			});
+			var usdRef = new RevisionReference(FactKind.USD, identity(6), usd.revisionKey());
+			assertThat(marketData.versionedFact(usdRef)).isPresent().get().satisfies(evidence -> {
+				assertThat(evidence.sourceKind()).isEqualTo("PRICE_REVISION_PAIR");
+				assertThat(evidence.convertedPriceRevisionKey()).isEqualTo(converted.revisionKey());
+				assertThat(evidence.quotePriceRevisionKey()).isEqualTo(quote.revisionKey());
+			});
+			assertThat(marketData.versionedFact(new RevisionReference(FactKind.PRICE, identity(7), converted.revisionKey())))
+					.isEmpty();
+		}
+		finally {
+			jdbcClient.sql("DELETE FROM marketdata.usd_revisions WHERE transaction_value = 'fixture-tx-6'").update();
+			jdbcClient.sql("DELETE FROM marketdata.price_revisions WHERE transaction_value IN ('fixture-tx-6', 'fixture-tx-7')").update();
+		}
+	}
+
+	@Test
+	void versionedPriceRetainsRawTransactionSourceLineage() {
+		var source = identity(8);
+		rawTransactionStore.store(new RawTransactionPayload(CHAIN, source.transactionId(),
+				"provider-a", new BlockPosition(CHAIN, 108), Optional.empty(), Optional.of(T1),
+				T1, T1, "{\"transactionSource\":\"eight\"}", Optional.of("raw-tx-v1")));
+		try {
+			var saved = useCase.storeVersionedPrice(new RecordMarketFactUseCase.VersionedPriceRequest(
+					price(8, T1, "1.500000000000000000"),
+					RecordMarketFactUseCase.RawSourceKind.RAW_TRANSACTION, "provider-a", "price-v1"));
+			var evidence = marketData.versionedFact(new RevisionReference(FactKind.PRICE, source, saved.revisionKey()));
+			assertThat(evidence).isPresent().get().satisfies(fact -> {
+				assertThat(fact.sourceKind()).isEqualTo("RAW_TRANSACTION");
+				assertThat(fact.sourceIdentity()).startsWith("sha256:");
+				assertThat(fact.rawPayloadHash()).isEqualTo(jdbcClient.sql(
+						"SELECT payload_hash FROM marketdata.raw_transactions WHERE transaction_value = 'fixture-tx-8'")
+						.query(String.class).single());
+			});
+		}
+		finally {
+			jdbcClient.sql("DELETE FROM marketdata.price_revisions WHERE transaction_value = 'fixture-tx-8'").update();
+			jdbcClient.sql("DELETE FROM marketdata.raw_transactions WHERE transaction_value = 'fixture-tx-8'").update();
+		}
 	}
 
 	@Test

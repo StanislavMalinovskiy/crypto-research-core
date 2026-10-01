@@ -15,6 +15,8 @@ A computational result is reproducible when all of the following inputs are iden
 
 Given those inputs, ordered domain results must be identical. Worker count, virtual-thread scheduling, provider-batch completion order, elapsed time, log order and presentation timestamps must not change the computational result. Reproducibility does not require byte-identical logs or report packaging.
 
+For versioned signal evaluation, the immutable inputs include **two** snapshots: the decision snapshot and its knowledge cutoff, and the later evaluation snapshot and its cutoff. The accepted signal pins only decision evidence; the run and report identify both fingerprints separately. A legacy recorded run retains the original single-dataset meaning and its original identity algorithm.
+
 ## UTC and time sources
 
 - Authoritative event, observation, processing, decision, cutoff and evaluation timestamps use `Instant` semantics in UTC.
@@ -55,6 +57,8 @@ Every persisted research or evaluation run must resolve a provenance manifest co
 
 Missing mandatory provenance marks the run incomplete. It must not be silently grouped or compared with reproducible runs.
 
+For a versioned run, dataset identity resolves both the accepted signal's decision fingerprint and the separately frozen evaluation fingerprint. Its outcome resolves the exact selected entry and horizon revisions, or records a counted `UNPRICED` result. The versioned report identifies both snapshot scopes, exclusions and coverage counts. The build/source, algorithm, configuration and optional seed rules above still apply.
+
 ## Dataset fingerprint and lineage
 
 - A dataset fingerprint identifies content, not merely a query string or mutable table range.
@@ -64,6 +68,9 @@ Missing mandatory provenance marks the run incomplete. It must not be silently g
 - Any changed raw input, transformation version, canonicalization version or digest algorithm produces distinguishable lineage.
 - Normalized observations retain provider/source identity, raw-input identity and normalization/transformation version.
 - Historical fingerprints and lineage records are immutable; new versions do not rewrite old evidence.
+- A versioned market fact has a canonical key and an application-derived revision key based on source lineage and derivation version; its separate content digest covers persisted immutable values. Equal revision/content retries resolve the same fact, conflicting content for one revision fails, and another valid source or derivation can coexist. USD conversion references both exact input price revisions.
+- Under `explicit-revisions-v1`, snapshot finalization independently enumerates visible canonical keys within the declared chain, asset, pool/venue, fact-kind and time scope. Every visible key has exactly one admissible selected revision or a policy-supported exclusion with immutable evidence. The fingerprint includes scope, selection/availability policy, cutoff, ordered members and exclusions, and coverage counts. Incomplete or contradictory selections fail before publication. This establishes completeness over visible stored facts in the declared scope, not over a provider or chain in general.
+- One `REPEATABLE READ` freeze fixes member visibility for each versioned snapshot; later commits or backfills cannot alter that stored membership. A verified-realtime selection obtains its knowledge cutoff from the database at freeze; an earlier caller-supplied cutoff is allowed only with the explicit `HISTORICAL_MODEL` label. Both decision and evaluation batches admit at most 10,000 visible canonical keys and, independently, at most 20,000 visible revisions in the declared scope. Scoped reads fetch at most one overflow revision, use at most 1,000-row chunks, and reject excess work without partial publication. These bounds do not apply to offline wallet history.
 
 ## Deterministic ordering and randomness
 

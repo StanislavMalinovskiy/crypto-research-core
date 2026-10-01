@@ -10,6 +10,7 @@ import java.util.Objects;
 import java.util.Optional;
 
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Autowired;
 
 import io.cryptoresearch.marketdata.api.MarketDataApi;
 import io.cryptoresearch.marketdata.api.MarketDataApi.MarketObservation;
@@ -32,17 +33,22 @@ public class LiquiditySpikeSignalService implements SignalApi {
 	private final RiskApi risk;
 	private final SignalCandidateTransitions transitions;
 	private final JdbcSignalPersistence persistence;
+	private final VersionedLiquiditySpikeSignalService versioned;
 
+	@Autowired
 	public LiquiditySpikeSignalService(
 			MarketDataApi marketData,
 			RiskApi risk,
 			SignalCandidateTransitions transitions,
-			JdbcSignalPersistence persistence) {
+			JdbcSignalPersistence persistence,
+			VersionedLiquiditySpikeSignalService versioned) {
 		this.marketData = marketData;
 		this.risk = risk;
 		this.transitions = transitions;
 		this.persistence = persistence;
+		this.versioned = versioned;
 	}
+
 
 	@Override
 	public DetectionResult detect(DetectionRequest request) {
@@ -115,11 +121,23 @@ public class LiquiditySpikeSignalService implements SignalApi {
 	}
 
 	@Override
+	public VersionedDetectionResult detectVersioned(VersionedDetectionRequest request) {
+		return versioned.detect(request);
+	}
+
+	@Override
+	public Optional<VersionedAcceptedSignal> versionedAcceptedSignal(String signalId) {
+		return persistence.findVersionedAccepted(signalId);
+	}
+
+	@Override
 	public Optional<AcceptedSignalSnapshot> acceptedSignal(String signalId) {
 		if (signalId == null || signalId.isBlank()) {
 			throw new IllegalArgumentException("signalId must not be blank");
 		}
-		return persistence.findAccepted(signalId);
+		var versionedResult = persistence.findVersionedAccepted(signalId);
+		return versionedResult.isPresent() ? versionedResult.map(VersionedAcceptedSignal::signal)
+				: persistence.findAccepted(signalId);
 	}
 
 	boolean meetsThresholds(BigDecimal baseline, BigDecimal current) {

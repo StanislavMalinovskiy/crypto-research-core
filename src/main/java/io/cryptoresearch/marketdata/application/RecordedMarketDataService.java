@@ -7,10 +7,13 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
+import java.sql.SQLException;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.dao.CannotAcquireLockException;
 import org.springframework.transaction.annotation.Transactional;
 
 import io.micrometer.core.instrument.MeterRegistry;
@@ -31,16 +34,28 @@ public class RecordedMarketDataService implements MarketDataApi {
 	private final StoreRawObservationUseCase rawStore;
 	private final NormalizeRecordedSwapUseCase normalizer;
 	private final NormalizedMarketDataStore normalizedStore;
+	private final ObjectProvider<VersionedSwapUseCase> versionedSwaps;
+	private final ObjectProvider<VersionedSnapshotFinalizer> versionedSnapshots;
+	private final ObjectProvider<VersionedSnapshotStore> versionedSnapshotStore;
+	private final ObjectProvider<VersionedFactStore> versionedFactStore;
 	private final MeterRegistry meterRegistry;
 
 	public RecordedMarketDataService(
 			StoreRawObservationUseCase rawStore,
 			NormalizeRecordedSwapUseCase normalizer,
 			NormalizedMarketDataStore normalizedStore,
+			ObjectProvider<VersionedSwapUseCase> versionedSwaps,
+			ObjectProvider<VersionedSnapshotFinalizer> versionedSnapshots,
+			ObjectProvider<VersionedSnapshotStore> versionedSnapshotStore,
+			ObjectProvider<VersionedFactStore> versionedFactStore,
 			MeterRegistry meterRegistry) {
 		this.rawStore = rawStore;
 		this.normalizer = normalizer;
 		this.normalizedStore = normalizedStore;
+		this.versionedSwaps = versionedSwaps;
+		this.versionedSnapshots = versionedSnapshots;
+		this.versionedSnapshotStore = versionedSnapshotStore;
+		this.versionedFactStore = versionedFactStore;
 		this.meterRegistry = meterRegistry;
 	}
 
@@ -83,6 +98,70 @@ public class RecordedMarketDataService implements MarketDataApi {
 			publishSummary("aborted", attempted, normalized, normalizationFailed);
 			throw exception;
 		}
+	}
+
+	@Override
+	public VersionedReplayResult replayVersioned(RecordedDataset dataset) {
+		Objects.requireNonNull(dataset, "dataset must not be null");
+		var items = new ArrayList<VersionedReplayItem>();
+		for (var input : dataset.observations()) {
+			var source = new RawChainObservation(input.chain(), input.transactionId(), input.eventId(),
+					input.provider(), input.blockPosition(), input.blockHash(), input.sourceEventTime(),
+					input.observedAt(), input.payload(), input.transformationVersion());
+			rawStore.store(source);
+			var rawHash = PayloadFingerprint.sha256(input.payload());
+			var identity = new NormalizedSwapIdentity(input.chain(), input.transactionId(), input.eventId());
+			try {
+				var revision = versionedSwaps.getObject().normalizeAndStore(input, rawHash);
+				items.add(new VersionedReplayItem(new ReplayItem(identity, rawHash,
+						ReplayStatus.NORMALIZED, java.util.Optional.empty()), revision));
+			}
+			catch (IllegalArgumentException | MarketFactConflictException exception) {
+				items.add(new VersionedReplayItem(new ReplayItem(identity, rawHash,
+						ReplayStatus.NORMALIZATION_FAILED, java.util.Optional.of(exception.getMessage())), null));
+			}
+		}
+		return new VersionedReplayResult(items, "EXPLICIT_REVISION_V1");
+	}
+
+	@Override
+	public VersionedSnapshot finalizeVersioned(VersionedFinalizeRequest request) {
+		for (var attempt = 0; attempt < 2; attempt++) {
+			try {
+				return versionedSnapshots.getObject().finalizeSnapshot(request);
+			}
+			catch (CannotAcquireLockException exception) {
+				if (attempt == 1 || !serializationAbort(exception)) {
+					throw exception;
+				}
+			}
+		}
+		throw new IllegalStateException("Unreachable snapshot retry state");
+	}
+
+	private boolean serializationAbort(Throwable failure) {
+		for (var cause = failure; cause != null; cause = cause.getCause()) {
+			if (cause instanceof SQLException sql && "40001".equals(sql.getSQLState())) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	@Override
+	public List<MarketObservation> versionedObservations(PointInTimeQuery query) {
+		return versionedSnapshotStore.getObject().swapObservations(
+				query.datasetFingerprint().orElseThrow(() -> new IllegalArgumentException("Versioned snapshot fingerprint required")), query);
+	}
+
+	@Override
+	public java.util.Optional<VersionedFactEvidence> versionedFact(RevisionReference reference) {
+		return versionedFactStore.getObject().findRevision(Objects.requireNonNull(reference, "reference must not be null"));
+	}
+
+	@Override
+	public java.util.Optional<VersionedSnapshotEvidence> versionedSnapshotEvidence(String fingerprint) {
+		return versionedSnapshotStore.getObject().findEvidence(Objects.requireNonNull(fingerprint, "fingerprint must not be null"));
 	}
 
 	private void recordItem(String status) {
@@ -154,9 +233,15 @@ public class RecordedMarketDataService implements MarketDataApi {
 		if (query.toInclusive().isAfter(query.cutoff())) {
 			throw new IllegalArgumentException("toInclusive must not be after cutoff");
 		}
-		return normalizedStore.observations(new PointInTimeQuery(
+		var normalized = new PointInTimeQuery(
 				query.asset(), microseconds(query.fromInclusive()), microseconds(query.toInclusive()),
-				microseconds(query.cutoff()), query.datasetFingerprint()));
+				microseconds(query.cutoff()), query.datasetFingerprint());
+		var versionedStore = versionedSnapshotStore.getIfAvailable();
+		if (normalized.datasetFingerprint().isPresent() && versionedStore != null
+				&& versionedStore.containsSnapshot(normalized.datasetFingerprint().get())) {
+			return versionedStore.swapObservations(normalized.datasetFingerprint().get(), normalized);
+		}
+		return normalizedStore.observations(normalized);
 	}
 
 	private String datasetFingerprint(String version, Instant cutoff, List<MarketObservation> observations) {
