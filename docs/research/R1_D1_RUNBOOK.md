@@ -2,7 +2,7 @@
 
 ## Scope
 
-This runbook covers local validation of the documentary [candidate inventory](../../tools/research/r1/inventory-candidates.json) only. It is part of section 1 of the active [D1 tasks](../../openspec/changes/establish-r1-d1-data-gate/tasks.md). The [field inventory](R1_D1_FIELD_INVENTORY.md) records the current source evidence and limitations. This local validation is not a D1 source data run or an extraction command.
+This runbook covers local validation of the [candidate inventory](../../tools/research/r1/inventory-candidates.json), including section 1a's offline candidate correction in the active [D1 tasks](../../openspec/changes/establish-r1-d1-data-gate/tasks.md). The [field inventory](R1_D1_FIELD_INVENTORY.md) records Alchemy, SQD, public RPC and unconnected Dune evidence and limitations. This local validation is not a D1 source data run or an extraction command. No provider call is allocated here.
 
 The [frozen R1 protocol](R1_RESEARCH_PROTOCOL.md), [freeze entry 1](R1_PROTOCOL_FREEZE.md) and owner-approved [offline procedure](R1_OFFLINE_RESEARCH_PROCEDURE.md) govern the later data work. The current implementation uses CommonJS and Node built-ins only; Node `v20.18.0` was observed on 2026-10-01. It needs no npm install, provider account or credentials. Runtime changes before data work require a planning decision under the active [design](../../openspec/changes/establish-r1-d1-data-gate/design.md).
 
@@ -24,7 +24,7 @@ The [CLI](../../tools/research/r1/inventory-cli.cjs) accepts exactly `--inventor
 | `2` | `INVENTORY_BLOCKED` | Input is valid, but declared field/source prerequisites remain unresolved. This is the expected candidate result. |
 | `1` | `INVENTORY_INVALID` | Fixed error code for malformed/unsupported input, bounds, arguments or file errors; fix the input or invocation under the change. |
 
-Every report, including exit `0`, retains `runAuthorized = false` and `d1Passed = false`. Invalid reports omit a fingerprint and never echo paths, input content or caught exceptions. The initial candidate returns exit `2`, 67 blockers and fingerprint `sha256:dea0c1610d91856990ccd0c7d45eb1943efb275410c8f647ce0df5353f1851f1`. Its selected cost `"0"` sums zero selected sources and supplies no estimate of D1 cost.
+Every report, including exit `0`, retains `runAuthorized = false` and `d1Passed = false`. Invalid reports omit a fingerprint and never echo paths, input content or caught exceptions. The historical two-source candidate returned exit `2`, 67 blockers and fingerprint `sha256:dea0c1610d91856990ccd0c7d45eb1943efb275410c8f647ce0df5353f1851f1`. Builder verified the corrected four-source candidate: exit `2`, 67 blockers and new fingerprint `sha256:f9f2fb5450ce37e923892979e5b6a180e7e82fcbfe25ef44c7362fb2c972888f`. Recompute after any input edit; matching blocker counts do not mean matching identities. Selected cost `"0"` sums zero selected sources and supplies no estimate of D1 cost.
 
 ## Input, identity and limits
 
@@ -40,24 +40,37 @@ All schema lists are unordered sets. Canonical encoding uses type tags, UTF-8 by
 
 ## Tool verification and inventory review
 
-The targeted synthetic-fixture command is:
+Run the original frozen synthetic-fixture suite and the new candidate-evidence suite separately. The second command is allocated by section 1a and becomes available when Builder adds the new test file:
 
 ```powershell
 node --test tools/research/r1/test/inventory.test.cjs
+node --test tools/research/r1/test/inventory-candidates.test.cjs
 ```
 
-Builder records behavioral RED/GREEN and `tests_changed_after_red`; these local tests are not an R1 data run. A fresh Reviewer checks the stable implementation, documentary claims, semantic freeze, bounded budget and full CI-01..CI-15 matrix. Main then runs the exact complete repository gate from the change design: test-integrity preflight, Docker preflight, `mvnw.cmd clean verify`, Node tests, strict all-item OpenSpec validation, doctor and `git diff --check`. This runbook does not claim that review or Main's gate has passed.
+Builder records new assertion-based RED/GREEN and `tests_changed_after_red`, preserving the original 41-test file; local tests are not an R1 data run. Initial section 1 already received APPROVE and Main's gate; its evidence remains in active tasks. The correction requires its own fresh Reviewer, stable input/documentary claims, frozen new tests and full CI-01..CI-15 matrix. Main then runs the complete repository gate: test-integrity preflight, Docker preflight, `mvnw.cmd clean verify`, both Node commands, strict all-item OpenSpec validation, doctor and `git diff --check`. Correction review/gate remain pending.
+
+## Existing source evidence and owner decisions
+
+The [provider research note](../notes/SOLANA_PROVIDER_SPIKE_RESEARCH_2026-09-27.md) and active design section 4a retain Alchemy B's 12/12 historical reads and six repeat matches for one pool/two vaults/two slots, plus sampled SQD/public RPC reconciliation. B stayed `INCONCLUSIVE`, its pool layout incomplete and formal S3 unfulfilled. These facts support candidates without establishing full-envelope CLMM/depth, mint transitions, exact SOL/USD or visibility coverage. Dune is not connected. Helius key-name presence is not tested entitlement.
+
+Official Alchemy/SQD/Helius retention publications were inspected on 2026-10-01 and are linked with their dates in the field inventory. They did not establish the applicable local chain-data export-retention permission; keep it unverified. The owner selected `C:\crypto-research-evidence\r1-d1` and explicitly declined Alchemy PAYG D1 spending on 2026-10-01: "Не разрешаю пока". New PAYG calls and paid-run PLAN_READY remain prohibited until a future explicit owner decision. Historical paid access and exhausted A/B permission do not authorize new calls. These local validation commands create no extractor or provider probe.
 
 ## Before the first D1 source run
 
 Section 2 remains blocked pending a new Architect PLAN with `reason = CONTRACT_CHANGED`. Complete these prerequisites in updated active artifacts before dependent tooling or any schema probe/source run:
 
-1. Resolve selected sources, exact source/query/export versions, independently reviewable field claims, access/retention terms and complete-source cost bounds. Identify the independent raw-receipt cross-check source and supported venue inputs.
-2. Record the owner-chosen data directory outside the git working tree, exact lossless formats, runtime/libraries and reviewed scripts. Do not infer a default output location or reuse an earlier spike's permission.
+1. Resolve selected sources, exact source/query/export versions, independently reviewable field claims, applicable access/retention terms and defensible zero-paid cost bounds. Preserve the owner's PAYG denial; no paid run is eligible without a future explicit owner spending decision. Admit public RPC and retained historical Alchemy evidence only for their evidenced/reviewed scope; define supported venue inputs and layouts.
+2. Record the already owner-selected `C:\crypto-research-evidence\r1-d1`, exact lossless formats, runtime/libraries and reviewed scripts. Its parent exists; its new directory was not created during PLAN. Recheck free space before the run; the inspection recorded `124262658048` bytes. Do not reuse an earlier spike's permission.
 3. Declare finite cash/request/received-byte/wall-clock/storage ceilings and per-request timeouts/retry counts, with cumulative accounting across all runs. OD-2 caps remain USD 100, 14 days, 10 GB evidence and 30 GB free space; checkpoint at 80 percent of any ceiling and stop at 100 percent.
 4. Obtain updated strict-valid `PLAN_READY`, establish behavioral RED for source-specific calculations, and obtain the fresh Reviewer's APPROVE of the inventory and run scripts plus Main's complete pre-run gate. Recheck all first-run preconditions in offline procedure section 1.
 5. Allocate exact bounded run commands and receipt/manifest checks in that PLAN. No extractor or probe command is currently allocated by this runbook.
 
+### Proposed sample and the full-stage boundary
+
+Design section 4c now proposes a finite sample using verified zero-paid options only: at most nine cases, 18 transactions, 36 total provider attempts including retries (zero new Alchemy, 18 public RPC, 18 SQD), 30-second request timeout, 64 MiB received, 100 MiB evidence, two hours and USD 0 cash. The previous 96-account/USD 3 draft is withdrawn. Exact sources/versions/layouts, terms, zero billable worst-case reservations and reviewed implementation remain prerequisites. This is not a run command or authorization. Reuse retained account receipts read-only; do not fall back to paid reads or unbounded tick/history expansion. Retain prior spike accounting separately and preserve cumulative OD-2 accounting for future D1 attempts.
+
+A sample can test layout decodeability and receipt agreement; it cannot satisfy continuous whole-envelope thresholds or the 200 venue/month-stratified trades. If only sampled evidence is collected, D1 remains `INCONCLUSIVE` and another PLAN is required before full extraction/gate implementation. Do not silently narrow the frozen experiment to sampled periods or treat current-state observations as historical transitions.
+
 Later receipts belong under `docs/research/r1-receipts/`; raw/intermediate/analytic data stay outside git. Receipts record the exact command, UTC start/end/ranges, git state, source/query versions, protocol/freeze entry, requests, bytes, actual cost, row counts, errors/gaps, operator, local path and per-file SHA-256 manifest. Interrupted attempts and reruns are both recorded. Each reviewed run needs budget pre/post accounting, deterministic rerun checks and a secret scan of receipts/logs under offline procedure sections 4–6.
 
-Only measured evidence can establish the unchanged R1 sections 8.2/8.3 gate over the complete envelope. Unfinished evidence on budget exhaustion is `INCONCLUSIVE`, not evidence of no edge. Outcome-bearing quantities remain blocked until measured D1 passage and calibration `1.1.0`; holdout additionally follows its freeze/rerun rules. After section 1, keep the D1 change active and section 2 unchecked. Final closure requires the full stage evidence, independent APPROVE and authorized workflow closure/archive phases.
+Only measured evidence can establish the unchanged R1 sections 8.2/8.3 gate over the complete envelope. Unfinished evidence on budget exhaustion is `INCONCLUSIVE`, not evidence of no edge. Outcome-bearing quantities remain blocked until measured D1 passage and calibration `1.1.0`; holdout additionally follows its freeze/rerun rules. After sections 1 and 1a, keep the D1 change active and section 2 unchecked. Final closure requires full-stage evidence, independent APPROVE and authorized workflow closure/archive phases.

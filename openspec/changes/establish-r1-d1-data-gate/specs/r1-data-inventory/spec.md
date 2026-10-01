@@ -35,6 +35,14 @@ Each selected source SHALL identify its source version, query/export version, da
 - **THEN** the report SHALL be `INVENTORY_BLOCKED`
 - **AND** access to that source SHALL NOT be treated as retention permission.
 
+### Requirement: Evidenced offline candidate correction
+The candidate inventory SHALL include unselected `alchemy-solana-account-archive` and `solana-public-rpc` alongside the existing Dune and SQD candidates, linking historical account state to reserve/depth and mint-state fields and independent raw receipts to transaction fields. Its evidence SHALL distinguish the retained Alchemy B 12/12 bounded matrix and sampled SQD/public RPC agreement from unfulfilled formal S3 and full-envelope D1 requirements. Dune SHALL remain explicitly unconnected. Source costs and query/source versions SHALL remain unknown, retention unverified and full-envelope dates unset until supported by evidence; no required field SHALL become `CONFIRMED` from these samples. Updating candidate input SHALL NOT alter the offline validator schema or authorize provider calls.
+
+#### Scenario: Historical state candidate is retained without false readiness
+- **WHEN** the offline candidate input incorporates the retained Alchemy B matrix and sampled independent receipt agreement
+- **THEN** Alchemy SHALL be present and linked to reserve/depth and mint-state fields with the measured sample scope and unresolved layout/transition limits retained
+- **AND** public RPC SHALL be present as the independent transaction candidate, all sources SHALL remain unselected, and validation SHALL report `INVENTORY_BLOCKED` with `runAuthorized = false` and `d1Passed = false`.
+
 ### Requirement: Deterministic inventory identity
 Every structurally valid inventory report SHALL identify inventory schema and canonicalization versions and a SHA-256 content fingerprint. Equivalent field, source and evidence-list ordering SHALL produce identical ordered classifications, blockers and fingerprint. Changes to accepted inventory content SHALL produce distinguishable identity. The only supported canonicalization version SHALL be `r1-d1-inventory-c14n-v1`; another nonempty string version SHALL produce `INVENTORY_INVALID` with fixed code `UNSUPPORTED_CANONICALIZATION_VERSION` and no fingerprint. Supporting a different version SHALL require an approved contract update. The JSON numeric `freezeEntry` value `1` SHALL encode as the exact ASCII bytes `n1:1`; its string form SHALL be rejected. Documentary references SHALL record their URL, retrieval date and known content version or an explicit unknown version; missing version evidence SHALL remain visible.
 
@@ -74,3 +82,18 @@ A syntactically valid inventory SHALL be `INVENTORY_COMPLETE` only when every re
 - **WHEN** only the offline inventory slice has been implemented and reviewed
 - **THEN** extraction and full D1 gate tasks SHALL remain incomplete
 - **AND** the D1 stage change SHALL NOT be archived as complete.
+
+#### Scenario: Retained provider samples
+- **WHEN** prior provider receipts prove historical account reads or independent transaction agreement only for a bounded sample
+- **THEN** source admission SHALL preserve that measured evidence and its exact sampled scope
+- **AND** it SHALL NOT infer full-envelope depth, mint-state, visibility, retention or cost completeness from those receipts.
+
+#### Scenario: Source-admission sample is not a D1 pass
+- **WHEN** an updated reviewed plan permits only finite source-admission samples and the frozen full-envelope gates remain unmeasured
+- **THEN** the D1 conclusion SHALL remain `INCONCLUSIVE`
+- **AND** no sample result SHALL replace the frozen 200-trade check, full-envelope thresholds, full-stage task completion or archive prerequisites.
+
+#### Scenario: Owner declines PAYG spending
+- **WHEN** the owner has explicitly declined Alchemy PAYG D1 spending
+- **THEN** source-run planning SHALL preserve that denial and allocate only verified zero-paid sample options until a future explicit owner spending decision
+- **AND** retained paid spike receipts SHALL NOT be treated as permission for new paid calls or a paid-run PLAN_READY.

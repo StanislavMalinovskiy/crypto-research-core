@@ -14,52 +14,88 @@
       ] },
       "evidence": [
         { "url": "https://docs.dune.com/data-catalog/curated/dex-trades/solana/solana-dex-trades", "retrievedAt": "2026-10-01T09:43:29Z", "version": null,
-          "claim": "DEX documentation describes route segments and transaction/instruction positions. Raw token quantities use UINT256; display and USD values use DOUBLE. Full-envelope availability, depth reconstruction and exact pricing remain unverified." },
+          "claim": "Dune is unconnected. DEX documentation describes route segments and transaction/instruction positions. Raw token quantities use UINT256; display and USD values use DOUBLE. Full-envelope availability, depth reconstruction and exact pricing remain unverified." },
         { "url": "https://dune.com/sql-api-terms", "retrievedAt": "2026-10-01T09:43:29Z", "version": "2026-05-13",
           "claim": "Export credits depend on data points and byte size. Subscription access and a complete-source upper cost remain unresolved; no query has run." }
       ]
     },
     {
       "id": "sqd-solana-portal", "selected": false, "sourceVersion": null, "queryVersion": null,
-      "costUpperMicrousd": null, "retention": { "status": "UNVERIFIED", "evidence": [] },
+      "costUpperMicrousd": null, "retention": { "status": "UNVERIFIED", "evidence": [
+        { "url": "https://cloud.sqd.dev/terms.pdf", "retrievedAt": "2026-10-01T16:11:32Z", "version": null,
+          "claim": "Undated Cloud terms describe software-use licensing. Applicability to public Portal and permission to retain exported chain data for reproducibility remain unverified." }
+      ] },
       "evidence": [
         { "url": "https://docs.sqd.dev/en/data/solana/solana-mainnet", "retrievedAt": "2026-10-01T09:43:29Z", "version": null,
-          "claim": "Portal documents slot-addressed Solana history from genesis and transaction/instruction plus pre/post balance fields; legacy archives retain about 30 days. These claims do not establish measured coverage, independent cross-checks or complete historical pricing state." },
+          "claim": "Portal documents slot-addressed Solana history from genesis and transaction/instruction plus pre/post balances; legacy archives retain about 30 days. Documentation does not establish complete historical pricing state or full-envelope measured coverage." },
         { "url": "https://docs.sqd.dev/en/portal/pricing", "retrievedAt": "2026-10-01T09:43:29Z", "version": null,
-          "claim": "Published plans are prelaunch: billing is not live and paid access uses early access. Starter is listed at USD 99 monthly; available access, total D1 cost and retention permission are not confirmed." }
+          "claim": "Published plans are prelaunch: billing is not live and paid access uses early access. Starter is listed at USD 99 monthly; available access, total D1 cost and retention permission are not confirmed." },
+        { "url": "https://docs.sqd.dev/en/data/solana/solana-mainnet", "retrievedAt": "2026-10-01T16:11:32Z", "version": null,
+          "claim": "Separate retained local observation, not a documentation claim: old/midpoint/recent SQD samples have sampled reconciliation with independent public RPC. Join by full signature, not filtered ordinals. Old Raydium ten-slot tail has no full transaction-payload cross-check; recent PumpSwap HTTP 529, continuation behavior and full-envelope gaps remain unresolved. Local child-slot sample: C:/crypto-research-evidence/provider-s2-sep28b/provider-feasibility/006.raw, SHA-256 0cabe2acea6178358ac7c18033fc12c6a4a8eda452479ee984bcd9d4a7869f14. This is not full-envelope D1 agreement." }
+      ]
+    },
+    {
+      "id": "alchemy-solana-account-archive", "selected": false, "sourceVersion": null, "queryVersion": null,
+      "costUpperMicrousd": null, "retention": { "status": "UNVERIFIED", "evidence": [
+        { "url": "https://legal.alchemy.com/", "retrievedAt": "2026-10-01T16:11:32Z", "version": "2025-06-27",
+          "claim": "Terms permit internal licensed-volume use and authorized downloads; scraping and limit circumvention are prohibited. Applicable account agreement and retained RPC-export permission for this research remain unverified." }
+      ] },
+      "evidence": [
+        { "url": "https://www.alchemy.com/docs/solana/account-archive", "retrievedAt": "2026-10-01T16:11:32Z", "version": null,
+          "claim": "Account Archive documents historical getAccountInfo since July 2025, no pruning and state at or before a requested finalized slot. Generic historical bytes do not prove supported venue layouts, mint transitions or full-envelope D1 completeness." },
+        { "url": "https://www.alchemy.com/docs/solana/account-archive", "retrievedAt": "2026-10-01T16:11:32Z", "version": null,
+          "claim": "Separate retained local B observation: 12/12 reads for one PumpSwap pool and two vaults at parent slot 429644638 and child 429644639; six repeat comparisons match and context slots match. Sampled vault balances reconcile with independent child receipts. Pool layout remains undecodable/incomplete; formal S3 remains unfulfilled, with no CLMM/tick decoder, mint-transition or full-envelope proof. Matrix INCONCLUSIVE. C:/crypto-research-evidence/provider-ab-1/b-history/raw.bin SHA-256 4c22a24aab2178eff415710226197159160011fe88d0394ac735f38da5e37a87; summary.json SHA-256 49281f6865852feb7c33d75157c1c2db1a4e7caafdd9c7e1b42644ec8e35c4ef. Prior paid authorization is exhausted; this observation grants no new PAYG permission." }
+      ]
+    },
+    {
+      "id": "solana-public-rpc", "selected": false, "sourceVersion": null, "queryVersion": null,
+      "costUpperMicrousd": null, "retention": { "status": "UNVERIFIED", "evidence": [] },
+      "evidence": [
+        { "url": "https://solana.com/docs/rpc/http/gettransaction", "retrievedAt": "2026-10-01T16:11:32Z", "version": null,
+          "claim": "getTransaction documents transaction receipts. Endpoint access limits, frozen adapter/query versions, cost completeness and permission for reproducible retained exports remain unresolved." },
+        { "url": "https://solana.com/docs/rpc/http/getblock", "retrievedAt": "2026-10-01T16:11:32Z", "version": null,
+          "claim": "Separate retained local observation: complete finalized blocks and transaction receipts reconcile sampled SQD metadata, instructions and balances using full signatures. Child slot 429644639: C:/crypto-research-evidence/provider-s2-rpc-cm-2/provider-feasibility/002.raw SHA-256 7f028de71b26e8f8fa9ca05ee5cef8647863226bf4cef74301deb0a7ff4a6cae. Sampled agreement does not satisfy the 200 venue/month-stratified trades or full-envelope checks, and getBlock does not establish complete historical account state." }
       ]
     }
   ],
   "fields": [
-    { "id": "trade-legs", "status": "DOCUMENTED", "sourceIds": ["dune-solana-dex", "sqd-solana-portal"],
+    { "id": "trade-legs", "status": "DOCUMENTED", "sourceIds": ["dune-solana-dex", "sqd-solana-portal", "solana-public-rpc"],
       "coveredFrom": null, "coveredTo": null, "granularity": "documented route leg / raw transaction instruction", "gaps": ["Envelope and supported-venue reconstruction unmeasured"], "evidence": [
         { "url": "https://docs.dune.com/data-catalog/curated/dex-trades/solana/solana-dex-trades", "retrievedAt": "2026-10-01T09:43:29Z", "version": null,
-          "claim": "Route-leg rows are documented. They do not prove economic-trade grouping, raw-receipt agreement, full instruction paths or complete historical depth." }
+          "claim": "Route-leg rows are documented. Retained SQD/public RPC samples have agreement; full-envelope economic-trade grouping, canonical instruction paths, independent agreement and depth remain unresolved." }
       ] },
-    { "id": "spl-transfers", "status": "UNVERIFIED", "sourceIds": ["sqd-solana-portal"], "coveredFrom": null, "coveredTo": null, "granularity": "documented per-transaction token balance", "gaps": ["Complete SPL transfer decoding and envelope coverage unverified"], "evidence": [
+    { "id": "spl-transfers", "status": "UNVERIFIED", "sourceIds": ["sqd-solana-portal", "solana-public-rpc"], "coveredFrom": null, "coveredTo": null, "granularity": "documented per-transaction token balance", "gaps": ["Complete SPL transfer decoding and envelope coverage unverified"], "evidence": [
       { "url": "https://docs.sqd.dev/en/data/solana/solana-mainnet", "retrievedAt": "2026-10-01T09:43:29Z", "version": null,
         "claim": "Token pre/post balances and instructions are documented; transfer-event decoding and completeness are not established by balance changes." }
     ] },
-    { "id": "sol-transfers", "status": "UNVERIFIED", "sourceIds": ["sqd-solana-portal"], "coveredFrom": null, "coveredTo": null, "granularity": "documented per-transaction native balance", "gaps": ["SOL transfer decoding, fees and tips attribution unverified"], "evidence": [
+    { "id": "sol-transfers", "status": "UNVERIFIED", "sourceIds": ["sqd-solana-portal", "solana-public-rpc"], "coveredFrom": null, "coveredTo": null, "granularity": "documented per-transaction native balance", "gaps": ["SOL transfer decoding, fees and tips attribution unverified"], "evidence": [
       { "url": "https://docs.sqd.dev/en/data/solana/solana-mainnet", "retrievedAt": "2026-10-01T09:43:29Z", "version": null,
         "claim": "Native pre/post balances are documented; net balance changes do not establish individual SOL transfers or their attribution." }
     ] },
-    { "id": "base-priority-fees", "status": "UNVERIFIED", "sourceIds": ["sqd-solana-portal"], "coveredFrom": null, "coveredTo": null, "granularity": "documented per-transaction fee", "gaps": ["Exact base and priority fee separation unverified"], "evidence": [
+    { "id": "base-priority-fees", "status": "UNVERIFIED", "sourceIds": ["sqd-solana-portal", "solana-public-rpc"], "coveredFrom": null, "coveredTo": null, "granularity": "documented per-transaction fee", "gaps": ["Exact base and priority fee separation unverified"], "evidence": [
       { "url": "https://docs.sqd.dev/en/data/solana/solana-mainnet", "retrievedAt": "2026-10-01T09:43:29Z", "version": null,
         "claim": "An integer transaction fee is documented; exact fee decomposition across the historical envelope remains unresolved." }
     ] },
     { "id": "tips", "status": "UNVERIFIED", "sourceIds": [], "coveredFrom": null, "coveredTo": null, "granularity": null, "gaps": ["Independent tip accounts and attribution source unidentified"], "evidence": [] },
-    { "id": "reserves-depth", "status": "UNVERIFIED", "sourceIds": [], "coveredFrom": null, "coveredTo": null, "granularity": null, "gaps": ["Historical reserves, ticks and bonding-curve inputs unverified"], "evidence": [] },
-    { "id": "liquidity-events", "status": "UNVERIFIED", "sourceIds": [], "coveredFrom": null, "coveredTo": null, "granularity": null, "gaps": ["Venue-specific liquidity additions/removals decoding unverified"], "evidence": [] },
-    { "id": "mint-decimals-freeze", "status": "UNVERIFIED", "sourceIds": ["sqd-solana-portal"], "coveredFrom": null, "coveredTo": null, "granularity": null, "gaps": ["Historical mint freeze authority/state and independent decimals evidence unresolved"], "evidence": [
-      { "url": "https://docs.sqd.dev/en/data/solana/solana-mainnet", "retrievedAt": "2026-10-01T09:43:29Z", "version": null,
-        "claim": "Token balance postDecimals is documented; it does not prove historical mint freeze state or complete authoritative mint metadata." }
+    { "id": "reserves-depth", "status": "UNVERIFIED", "sourceIds": ["alchemy-solana-account-archive", "sqd-solana-portal"], "coveredFrom": null, "coveredTo": null, "granularity": null, "gaps": ["Sampled vault balances only; full-envelope CLMM ticks, bonding-curve inputs and pool layout decoding unverified"], "evidence": [
+      { "url": "https://www.alchemy.com/docs/solana/account-archive", "retrievedAt": "2026-10-01T16:11:32Z", "version": null,
+        "claim": "Local B matrix vault amounts agree with sampled SQD/public RPC child receipts; this is not a complete historical pool-state decoder or full-envelope depth measurement. Formal S3 remains unfulfilled." }
     ] },
-    { "id": "executable-entry-exit", "status": "UNVERIFIED", "sourceIds": [], "coveredFrom": null, "coveredTo": null, "granularity": null, "gaps": ["Independent historical executable pricing and loss-of-exit inputs unidentified"], "evidence": [] },
+    { "id": "liquidity-events", "status": "UNVERIFIED", "sourceIds": [], "coveredFrom": null, "coveredTo": null, "granularity": null, "gaps": ["Venue-specific liquidity additions/removals decoding unverified"], "evidence": [] },
+    { "id": "mint-decimals-freeze", "status": "UNVERIFIED", "sourceIds": ["sqd-solana-portal", "alchemy-solana-account-archive"], "coveredFrom": null, "coveredTo": null, "granularity": null, "gaps": ["Historical mint-transition coverage, freeze authority/state and independent decimals evidence unresolved"], "evidence": [
+      { "url": "https://docs.sqd.dev/en/data/solana/solana-mainnet", "retrievedAt": "2026-10-01T09:43:29Z", "version": null,
+        "claim": "Token balance postDecimals is documented; it does not prove historical mint freeze state or complete authoritative mint metadata." },
+      { "url": "https://www.alchemy.com/docs/solana/account-archive", "retrievedAt": "2026-10-01T16:11:32Z", "version": null,
+        "claim": "Historical account bytes are a mint-state candidate. The retained pool/vault B sample contains no proven full-envelope mint freeze transitions." }
+    ] },
+    { "id": "executable-entry-exit", "status": "UNVERIFIED", "sourceIds": ["alchemy-solana-account-archive", "sqd-solana-portal"], "coveredFrom": null, "coveredTo": null, "granularity": null, "gaps": ["CLMM/tick, bonding-curve and pool layout inputs plus full-envelope executable pricing and loss-of-exit coverage unresolved"], "evidence": [
+      { "url": "https://www.alchemy.com/docs/solana/account-archive", "retrievedAt": "2026-10-01T16:11:32Z", "version": null,
+        "claim": "Retained sampled vault balances are candidate inputs; they do not establish complete executable venue pricing, pool layout decoding or loss-of-exit evidence." }
+    ] },
     { "id": "sol-usd", "status": "UNVERIFIED", "sourceIds": [], "coveredFrom": null, "coveredTo": null, "granularity": null, "gaps": ["Exact historical SOL/USD source unidentified; display DOUBLE values are insufficient"], "evidence": [] },
-    { "id": "block-time", "status": "DOCUMENTED", "sourceIds": ["dune-solana-dex", "sqd-solana-portal"], "coveredFrom": null, "coveredTo": null, "granularity": "documented block timestamp", "gaps": ["Envelope timestamp completeness and agreement unmeasured"], "evidence": [
+    { "id": "block-time", "status": "DOCUMENTED", "sourceIds": ["dune-solana-dex", "sqd-solana-portal", "solana-public-rpc"], "coveredFrom": null, "coveredTo": null, "granularity": "documented block timestamp", "gaps": ["Full-envelope timestamp completeness and agreement unmeasured"], "evidence": [
       { "url": "https://docs.dune.com/data-catalog/curated/dex-trades/solana/solana-dex-trades", "retrievedAt": "2026-10-01T09:43:29Z", "version": null,
-        "claim": "A UTC block_time column is documented; no historical coverage measurement or timestamp cross-check has run." }
+        "claim": "A UTC block_time column is documented. Retained SQD/public RPC sample timestamps agree, but full-envelope historical timestamp coverage and agreement remain unmeasured." }
     ] },
     { "id": "visibility-latency", "status": "UNVERIFIED", "sourceIds": [], "coveredFrom": null, "coveredTo": null, "granularity": null, "gaps": ["Measured source visibility latency unavailable; no live receipt observations"], "evidence": [] }
   ]
