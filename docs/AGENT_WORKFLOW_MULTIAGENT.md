@@ -4,7 +4,7 @@
 
 This is the normative workflow when `.codex/config.toml` contains exact Boolean `[agents].enabled = true` at task start. Main owns task intake, scope coordination, routing, the full gate and final DONE. Main alone spawns project subagents; subagents never spawn subagents. Mode remains fixed for the task.
 
-Use native Codex project roles from `.codex/agents/**`, or `codex queue` for user-created Codex sessions. Do not invoke Orca or `orca-cli` unless the user explicitly requests Orca in the current task. The owner owns intent, scope decisions and explicit risk downgrades. Main communicates at phase boundaries and blockers; apart from strictly TRIVIAL edits below, it does not implement, redesign, duplicate normal review or classify risk. DEFAULT retains its independent Control/Developer workflow; these tiers do not change it.
+Use native Codex project roles from `.codex/agents/**`, or `codex queue` for user-created Codex sessions. Under Claude Code, use the equivalent native Claude Code project subagents from `.claude/agents/**`, selected by role name through the Agent tool; role instructions, phases, statuses and routing are identical and only models differ. Do not invoke Orca or `orca-cli` unless the user explicitly requests Orca in the current task. The owner owns intent, scope decisions and explicit risk downgrades. Main communicates at phase boundaries and blockers; apart from strictly TRIVIAL edits below, it does not implement, redesign, duplicate normal review or classify risk. DEFAULT retains its independent Control/Developer workflow; these tiers do not change it.
 
 ## Task tiers and Main's direct-edit boundary
 
@@ -18,15 +18,17 @@ NORMAL contract uses the existing handoff with accepted-source paths, scope, tes
 
 ## Roles and model routing
 
-| Role or fixed risk | Model / effort | Project role |
-|---|---|---|
-| Main | gpt-6-sol / medium | Main session |
-| Architect | gpt-6-sol / high | architect |
-| ROUTINE Builder | gpt-6-luna / xhigh | builder_luna_xhigh |
-| STANDARD Builder | gpt-6-luna / max | builder_luna_max |
-| CORE_RISK Builder | gpt-6-sol / medium | builder_sol |
-| Fresh Reviewer | gpt-6-sol / medium | reviewer |
-| Fresh Escalation | gpt-6-sol / high | escalation |
+| Role or fixed risk | Model / effort | Project role | Claude Code model / effort | Claude Code role |
+|---|---|---|---|---|
+| Main | gpt-6.1-sol / medium | Main session | claude-opus-5-5 / medium | Main session |
+| Architect | gpt-6.1-sol / high | architect | claude-opus-5-5 / high | architect |
+| ROUTINE Builder | gpt-6-luna / xhigh | builder_luna_xhigh | claude-sonnet-5-5 / medium | builder_sonnet_routine |
+| STANDARD Builder | gpt-6-luna / max | builder_luna_max | claude-sonnet-5-5 / medium | builder_sonnet_standard |
+| CORE_RISK Builder | gpt-6.1-sol / medium | builder_sol | claude-opus-5-5 / medium | builder_opus |
+| Fresh Reviewer | gpt-6.1-sol / medium | reviewer | claude-opus-5-5 / medium | reviewer |
+| Fresh Escalation | gpt-6.1-sol / high | escalation | claude-opus-5-5 / high | escalation |
+
+Under Claude Code, Luna maps to Sonnet and Sol maps to Opus wherever this workflow names a model; `.claude/settings.json` limits concurrent subagents to 4 and spawn depth to 1, and every role file denies the Agent tool. Reviewer and Escalation additionally deny file-editing tools.
 
 Builder risk routing is independent of NORMAL versus CONTRACT. It follows Architect's fixed ROUTINE/STANDARD/CORE_RISK risk below, not a fixed tier-to-Luna mapping. Separate Luna role files pin their efforts because custom role settings take precedence over dispatch overrides. Documentation-only work stays with Architect and skips Builder. Historical benchmarks do not change this routing.
 
@@ -72,7 +74,7 @@ Builder owns implementation, requirement-derived tests, targeted GREEN and bound
 
 Builder verifies the RED reason before semantic freeze, then implements without another Main RED turn, runs targeted GREEN and returns BUILD_DONE with the assertion, expected/actual and `tests_changed_after_red`. RED/test-freeze content hashes and pre-implementation-diff snapshots are not required. Stable review diffs, ordinary verification output and archive/checkpoint/recovery hashes remain required for their own purposes. RED_NOT_REQUIRED records Architect's reason and applicable checks without artificial failure or process-only evidence. Selecting RED voluntarily invokes the same semantic freeze.
 
-Compilation, discovery, configuration, startup, Docker and infrastructure failure are not RED. Use real PostgreSQL through Testcontainers when [Testing](TESTING.md) requires it. On Windows under Codex, Docker Desktop named pipes may be inaccessible in the restricted sandbox. Run `docker version` and every Docker/Testcontainers command with escalated host access. Retry in-sandbox permission denial, discovery timeout or `docker_engine is not listening` once in that host context. This infrastructure retry is not RED or a repair round. Docker is unavailable only if same-context host `docker version` fails.
+Compilation, discovery, configuration, startup, Docker and infrastructure failure are not RED. Use real PostgreSQL through Testcontainers when [Testing](TESTING.md) requires it. On Windows under Codex, Docker Desktop named pipes may be inaccessible in the restricted sandbox. Run `docker version` and every Docker/Testcontainers command with escalated host access. Retry in-sandbox permission denial, discovery timeout or `docker_engine is not listening` once in that host context. This infrastructure retry is not RED or a repair round. Docker is unavailable only if same-context host `docker version` fails. Under Claude Code, the host context is a Bash call with `dangerouslyDisableSandbox` when sandboxing is enabled.
 
 After verified RED and semantic freeze under [Testing](TESTING.md#agent-assisted-development), never change, weaken, skip, narrow, retag, reconfigure, regenerate or relocate establishing tests, expectations, fixtures, snapshots, discovery or runtime settings. Production behavior must not recognize a test artifact. A post-freeze necessary test change or suspected test/spec conflict returns BLOCKED with `blocked_reason = TEST_SPEC_ERROR` and exact evidence. The current reviewer alone may authorize correction through REPAIR with `requires_new_red = true`; establish new behavioral RED before resuming implementation. Report authorized changes honestly in `tests_changed_after_red`; the reviewer verifies final tests still encode the intended behavior. Contract defects reopen Architect PLAN.
 

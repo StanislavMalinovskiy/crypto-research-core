@@ -211,19 +211,19 @@ The repository SHALL provide concise common guidance for source responsibilities
 - **AND** a failed required check SHALL block completion without narrowing or skipping it.
 
 ### Requirement: GPT-6 agent model routing
-The project SHALL configure Main as `gpt-6-sol / medium` and SHALL use deterministic GPT-6 role routing in MULTIAGENT without changing the manually selected workflow mode.
+The project SHALL configure Main as `gpt-6.1-sol / medium` and SHALL use deterministic GPT-6 role routing in MULTIAGENT without changing the manually selected workflow mode.
 
 #### Scenario: Fixed role mapping
 - **WHEN** Main dispatches a non-Builder project role
-- **THEN** Architect SHALL use `gpt-6-sol / high`
-- **AND** fresh Reviewer SHALL use `gpt-6-sol / medium`
-- **AND** fresh Escalation SHALL use `gpt-6-sol / high`.
+- **THEN** Architect SHALL use `gpt-6.1-sol / high`
+- **AND** fresh Reviewer SHALL use `gpt-6.1-sol / medium`
+- **AND** fresh Escalation SHALL use `gpt-6.1-sol / high`.
 
 #### Scenario: Risk-based Builder selection
 - **WHEN** Architect returns `PLAN_READY` for implementation
 - **THEN** ROUTINE SHALL use `builder_luna_xhigh` with `gpt-6-luna / xhigh`
 - **AND** STANDARD SHALL use `builder_luna_max` with `gpt-6-luna / max`
-- **AND** CORE_RISK SHALL use `builder_sol` with `gpt-6-sol / medium`
+- **AND** CORE_RISK SHALL use `builder_sol` with `gpt-6.1-sol / medium`
 - **AND** separate role files SHALL pin the two Luna efforts.
 
 #### Scenario: Current guidance consistency

@@ -44,11 +44,11 @@ These reads are mandatory before the affected decision, not optional background.
 
 ## Agent workflow mode
 
-Project transport is native Codex: project roles in `.codex/agents/**`, or `codex queue` for user-created sessions. Do not invoke Orca, `orca-cli`, Orca orchestration/run/worker commands or the Orca application unless the user explicitly requests Orca in the current task. Generic agent, delegation, supervision or progress requests do not grant that permission.
+Project transport is native Codex: project roles in `.codex/agents/**`, or `codex queue` for user-created sessions. Under Claude Code, the equivalent transport is native Claude Code project subagents in `.claude/agents/**` with the same roles, phases and statuses; only model names differ, as mapped in the selected workflow. Do not invoke Orca, `orca-cli`, Orca orchestration/run/worker commands or the Orca application unless the user explicitly requests Orca in the current task. Generic agent, delegation, supervision or progress requests do not grant that permission.
 
-The project default is `gpt-6-sol` with `medium` reasoning. Model choice does not choose mode; the selected workflow owns role routing. Determine mode once at task start from `.codex/config.toml`:
+The project default is `gpt-6.1-sol` with `medium` reasoning (Claude Code: `claude-opus-5-5` with `medium` effort in `.claude/settings.json`). Model choice does not choose mode; the selected workflow owns role routing. Determine mode once at task start from `.codex/config.toml`; Claude Code uses the same switch:
 
-- Exact Boolean `[agents].enabled = true`: use MULTIAGENT and load [docs/AGENT_WORKFLOW_MULTIAGENT.md](docs/AGENT_WORKFLOW_MULTIAGENT.md) plus the applicable `.codex/agents/*.toml` role configuration.
+- Exact Boolean `[agents].enabled = true`: use MULTIAGENT and load [docs/AGENT_WORKFLOW_MULTIAGENT.md](docs/AGENT_WORKFLOW_MULTIAGENT.md) plus the applicable `.codex/agents/*.toml` role configuration, or `.claude/agents/*.md` under Claude Code.
 - `false`, missing or invalid: fail-closed DEFAULT; do not spawn project subagents; load [docs/AGENT_WORKFLOW.md](docs/AGENT_WORKFLOW.md).
 
 Never edit the switch, spawn a project subagent or silently change mode because a task seems risky. Only the owner may enable MULTIAGENT; you may recommend it. Mode remains fixed unless the owner explicitly restarts or continues after changing the setting. DEFAULT uses its own Control/Developer responsibilities and evidence, without importing specialized MULTIAGENT phases, statuses, manifests, capsules, telemetry or role routing.

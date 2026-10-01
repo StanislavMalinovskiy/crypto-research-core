@@ -1,4 +1,4 @@
-model = "gpt-6-sol"
+model = "gpt-6.1-sol"
 model_reasoning_effort = "medium"
 model_post_turn_compact_threshold_percent = 60
 
@@ -9,5 +9,5 @@ model_post_turn_compact_threshold_percent = 60
   enabled = true
   max_concurrent_threads_per_session = 4
   max_depth = 1
-  default_subagent_model = "gpt-6-sol"
+  default_subagent_model = "gpt-6.1-sol"
   default_subagent_reasoning_effort = "medium"

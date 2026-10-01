@@ -1083,13 +1083,13 @@ class RepositoryConventionsTest {
 		var violations = new ArrayList<String>();
 		checkReasoningEffort("root", rootConfig, violations);
 		violations.addAll(builderBodyViolations(roleConfigurations));
-		if (!rootConfig.contains("model = \"gpt-6-sol\"")
+		if (!rootConfig.contains("model = \"gpt-6.1-sol\"")
 				|| !"medium".equals(configuredReasoningEffort(rootConfig))) {
-			violations.add("Main must use gpt-6-sol with medium reasoning");
+			violations.add("Main must use gpt-6.1-sol with medium reasoning");
 		}
-		if (!rootConfig.contains("default_subagent_model = \"gpt-6-sol\"")
+		if (!rootConfig.contains("default_subagent_model = \"gpt-6.1-sol\"")
 				|| !rootConfig.contains("default_subagent_reasoning_effort = \"medium\"")) {
-			violations.add("default subagents must use gpt-6-sol with medium reasoning");
+			violations.add("default subagents must use gpt-6.1-sol with medium reasoning");
 		}
 		if (!Pattern.compile("(?m)^\\s*max_depth\\s*=\\s*1\\s*$").matcher(rootConfig).find()) {
 			violations.add("root config must set max_depth = 1");
@@ -1099,12 +1099,12 @@ class RepositoryConventionsTest {
 		}
 
 		var expectedModels = Map.of(
-				"architect", "gpt-6-sol",
-				"builder_sol", "gpt-6-sol",
+				"architect", "gpt-6.1-sol",
+				"builder_sol", "gpt-6.1-sol",
 				"builder_luna_xhigh", "gpt-6-luna",
 				"builder_luna_max", "gpt-6-luna",
-				"reviewer", "gpt-6-sol",
-				"escalation", "gpt-6-sol");
+				"reviewer", "gpt-6.1-sol",
+				"escalation", "gpt-6.1-sol");
 		var expectedEfforts = Map.of(
 				"architect", "high",
 				"builder_sol", "medium",
