@@ -1,0 +1,66 @@
+{
+  "schemaVersion": "r1-d1-inventory-v1",
+  "canonicalizationVersion": "r1-d1-inventory-c14n-v1",
+  "protocolVersion": "1.0.0",
+  "freezeEntry": 1,
+  "envelope": { "from": "2026-04-01T00:00:00Z", "to": "2026-09-29T04:02:00Z" },
+  "sources": [
+    {
+      "id": "dune-solana-dex", "selected": false, "sourceVersion": null, "queryVersion": null,
+      "costUpperMicrousd": null,
+      "retention": { "status": "UNVERIFIED", "evidence": [
+        { "url": "https://dune.com/sql-api-terms", "retrievedAt": "2026-10-01T09:43:29Z", "version": "2026-05-13",
+          "claim": "SQL API terms meter exports by data points. This reference does not confirm permission for the intended retained research exports or a complete-envelope cost." }
+      ] },
+      "evidence": [
+        { "url": "https://docs.dune.com/data-catalog/curated/dex-trades/solana/solana-dex-trades", "retrievedAt": "2026-10-01T09:43:29Z", "version": null,
+          "claim": "DEX documentation describes route segments and transaction/instruction positions. Raw token quantities use UINT256; display and USD values use DOUBLE. Full-envelope availability, depth reconstruction and exact pricing remain unverified." },
+        { "url": "https://dune.com/sql-api-terms", "retrievedAt": "2026-10-01T09:43:29Z", "version": "2026-05-13",
+          "claim": "Export credits depend on data points and byte size. Subscription access and a complete-source upper cost remain unresolved; no query has run." }
+      ]
+    },
+    {
+      "id": "sqd-solana-portal", "selected": false, "sourceVersion": null, "queryVersion": null,
+      "costUpperMicrousd": null, "retention": { "status": "UNVERIFIED", "evidence": [] },
+      "evidence": [
+        { "url": "https://docs.sqd.dev/en/data/solana/solana-mainnet", "retrievedAt": "2026-10-01T09:43:29Z", "version": null,
+          "claim": "Portal documents slot-addressed Solana history from genesis and transaction/instruction plus pre/post balance fields; legacy archives retain about 30 days. These claims do not establish measured coverage, independent cross-checks or complete historical pricing state." },
+        { "url": "https://docs.sqd.dev/en/portal/pricing", "retrievedAt": "2026-10-01T09:43:29Z", "version": null,
+          "claim": "Published plans are prelaunch: billing is not live and paid access uses early access. Starter is listed at USD 99 monthly; available access, total D1 cost and retention permission are not confirmed." }
+      ]
+    }
+  ],
+  "fields": [
+    { "id": "trade-legs", "status": "DOCUMENTED", "sourceIds": ["dune-solana-dex", "sqd-solana-portal"],
+      "coveredFrom": null, "coveredTo": null, "granularity": "documented route leg / raw transaction instruction", "gaps": ["Envelope and supported-venue reconstruction unmeasured"], "evidence": [
+        { "url": "https://docs.dune.com/data-catalog/curated/dex-trades/solana/solana-dex-trades", "retrievedAt": "2026-10-01T09:43:29Z", "version": null,
+          "claim": "Route-leg rows are documented. They do not prove economic-trade grouping, raw-receipt agreement, full instruction paths or complete historical depth." }
+      ] },
+    { "id": "spl-transfers", "status": "UNVERIFIED", "sourceIds": ["sqd-solana-portal"], "coveredFrom": null, "coveredTo": null, "granularity": "documented per-transaction token balance", "gaps": ["Complete SPL transfer decoding and envelope coverage unverified"], "evidence": [
+      { "url": "https://docs.sqd.dev/en/data/solana/solana-mainnet", "retrievedAt": "2026-10-01T09:43:29Z", "version": null,
+        "claim": "Token pre/post balances and instructions are documented; transfer-event decoding and completeness are not established by balance changes." }
+    ] },
+    { "id": "sol-transfers", "status": "UNVERIFIED", "sourceIds": ["sqd-solana-portal"], "coveredFrom": null, "coveredTo": null, "granularity": "documented per-transaction native balance", "gaps": ["SOL transfer decoding, fees and tips attribution unverified"], "evidence": [
+      { "url": "https://docs.sqd.dev/en/data/solana/solana-mainnet", "retrievedAt": "2026-10-01T09:43:29Z", "version": null,
+        "claim": "Native pre/post balances are documented; net balance changes do not establish individual SOL transfers or their attribution." }
+    ] },
+    { "id": "base-priority-fees", "status": "UNVERIFIED", "sourceIds": ["sqd-solana-portal"], "coveredFrom": null, "coveredTo": null, "granularity": "documented per-transaction fee", "gaps": ["Exact base and priority fee separation unverified"], "evidence": [
+      { "url": "https://docs.sqd.dev/en/data/solana/solana-mainnet", "retrievedAt": "2026-10-01T09:43:29Z", "version": null,
+        "claim": "An integer transaction fee is documented; exact fee decomposition across the historical envelope remains unresolved." }
+    ] },
+    { "id": "tips", "status": "UNVERIFIED", "sourceIds": [], "coveredFrom": null, "coveredTo": null, "granularity": null, "gaps": ["Independent tip accounts and attribution source unidentified"], "evidence": [] },
+    { "id": "reserves-depth", "status": "UNVERIFIED", "sourceIds": [], "coveredFrom": null, "coveredTo": null, "granularity": null, "gaps": ["Historical reserves, ticks and bonding-curve inputs unverified"], "evidence": [] },
+    { "id": "liquidity-events", "status": "UNVERIFIED", "sourceIds": [], "coveredFrom": null, "coveredTo": null, "granularity": null, "gaps": ["Venue-specific liquidity additions/removals decoding unverified"], "evidence": [] },
+    { "id": "mint-decimals-freeze", "status": "UNVERIFIED", "sourceIds": ["sqd-solana-portal"], "coveredFrom": null, "coveredTo": null, "granularity": null, "gaps": ["Historical mint freeze authority/state and independent decimals evidence unresolved"], "evidence": [
+      { "url": "https://docs.sqd.dev/en/data/solana/solana-mainnet", "retrievedAt": "2026-10-01T09:43:29Z", "version": null,
+        "claim": "Token balance postDecimals is documented; it does not prove historical mint freeze state or complete authoritative mint metadata." }
+    ] },
+    { "id": "executable-entry-exit", "status": "UNVERIFIED", "sourceIds": [], "coveredFrom": null, "coveredTo": null, "granularity": null, "gaps": ["Independent historical executable pricing and loss-of-exit inputs unidentified"], "evidence": [] },
+    { "id": "sol-usd", "status": "UNVERIFIED", "sourceIds": [], "coveredFrom": null, "coveredTo": null, "granularity": null, "gaps": ["Exact historical SOL/USD source unidentified; display DOUBLE values are insufficient"], "evidence": [] },
+    { "id": "block-time", "status": "DOCUMENTED", "sourceIds": ["dune-solana-dex", "sqd-solana-portal"], "coveredFrom": null, "coveredTo": null, "granularity": "documented block timestamp", "gaps": ["Envelope timestamp completeness and agreement unmeasured"], "evidence": [
+      { "url": "https://docs.dune.com/data-catalog/curated/dex-trades/solana/solana-dex-trades", "retrievedAt": "2026-10-01T09:43:29Z", "version": null,
+        "claim": "A UTC block_time column is documented; no historical coverage measurement or timestamp cross-check has run." }
+    ] },
+    { "id": "visibility-latency", "status": "UNVERIFIED", "sourceIds": [], "coveredFrom": null, "coveredTo": null, "granularity": null, "gaps": ["Measured source visibility latency unavailable; no live receipt observations"], "evidence": [] }
+  ]
+}
