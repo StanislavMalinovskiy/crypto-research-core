@@ -2,12 +2,16 @@ model = "gpt-6.1-sol"
 model_reasoning_effort = "medium"
 model_post_turn_compact_threshold_percent = 60
 
-# Exact boolean true manually selects native Codex MULTIAGENT for a new task.
-# False, missing or invalid selects fail-closed DEFAULT; agents never edit this switch.
-# Orca is outside this project workflow unless the user explicitly requests it.
 [agents]
-  enabled = true
-  max_concurrent_threads_per_session = 4
-  max_depth = 1
-  default_subagent_model = "gpt-6.1-sol"
-  default_subagent_reasoning_effort = "medium"
+enabled = true
+max_concurrent_threads_per_session = 4
+max_depth = 1
+default_subagent_model = "gpt-6.1-sol"
+default_subagent_reasoning_effort = "medium"
+
+[shell_environment_policy]
+inherit = "core"
+
+[shell_environment_policy.set]
+CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS = "4"
+CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH = "1"
