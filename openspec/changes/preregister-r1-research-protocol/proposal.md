@@ -32,6 +32,6 @@ The replan note's R1 package and remediation F5 require the wallet copier and ea
 
 ## Impact
 
-- New documentation: `docs/research/R1_RESEARCH_PROTOCOL.md` and `docs/research/R1_OFFLINE_RESEARCH_PROCEDURE.md`; later, at freeze, `docs/research/R1_PROTOCOL_FREEZE.md`.
+- New documentation: `docs/research/R1_RESEARCH_PROTOCOL.md` and `docs/research/R1_OFFLINE_RESEARCH_PROCEDURE.md`; at freeze, `docs/research/R1_PROTOCOL_FREEZE.md` (created 2026-10-01, pinning freeze commit and SHA-256).
 - Pointer line in `docs/notes/ARCHITECTURE_AND_RESEARCH_REPLAN_2026-09-30.md`.
 - Future D1/P1 work and any F5-related change must cite a frozen protocol version. The A1+A2 change remains independent; R1 references its dual decision/evaluation evidence only as a future precondition for application-computed outcomes.
