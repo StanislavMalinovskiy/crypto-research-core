@@ -10,9 +10,12 @@ metadata:
   generatedBy: "1.13.0"
 ---
 
+**Project authority:** Retain existing explicit bounded authorization; planning/exploration does not itself implement, and discovery answers or silence grant no new scope. In MULTIAGENT use the mandatory [workflow](../../../docs/AGENT_WORKFLOW_MULTIAGENT.md) for guarantee-based ordinary/critical routing, probe applicability, independent review, proven fixture correction, cumulative repair resources and next allowed action. DEFAULT keeps its own [workflow](../../../docs/AGENT_WORKFLOW.md). Select checks by dependencies/effects under [Testing](../../../docs/TESTING.md): isolated documents/tools use scoped checks, integration-triggering commits require the full gate, mixed scope the union. Report unrun/failed/skipped checks honestly; readiness or approval is not the completed goal.
+
+
 Propose a new change - create the change and generate all artifacts in one step.
 
-**Project routing:** In MULTIAGENT, TRIVIAL and Architect-classified NORMAL use their existing Main or Architect/Builder route without OpenSpec. Do not create a dummy change or select an unrelated active change for them; this skill's change-creation procedure applies only when the selected route requires OpenSpec. DEFAULT retains its existing OpenSpec policy and Control ownership.
+**Project routing:** In MULTIAGENT, TRIVIAL and ordinary NORMAL use their existing Main or Architect/Builder route without OpenSpec. Do not create a dummy change or select an unrelated active change for them; this skill's change-creation procedure applies only when the selected route requires OpenSpec. DEFAULT retains its existing OpenSpec policy and Control ownership.
 
 **Planning boundary**: This workflow creates planning artifacts only and never edits project code. Existing explicit owner authorization for a bounded later action or transition survives this workflow; do not demand duplicate permission merely because planning was invoked. In MULTIAGENT, a PLAN-only request stops at PLAN_READY and Main controls later authorized phase transitions after a valid plan. In DEFAULT, Control owns planning and coordinates the authorized Developer implementation under docs/AGENT_WORKFLOW.md, without specialized phases or statuses. A planning-only request ends after presenting the artifacts in either mode. Unresolved intent, expanded scope, silence and discovery answers are not new authorization.
 

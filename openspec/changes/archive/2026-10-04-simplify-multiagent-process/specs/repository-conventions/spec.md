@@ -1,103 +1,4 @@
-# Repository Conventions Specification
-
-## Purpose
-
-Makes long-lived human and AI-assisted development safer by turning dependency and documentation conventions into repeatable verification checks.
-
-## Requirements
-
-### Requirement: Forbidden dependency enforcement
-The Maven verification lifecycle SHALL reject modern and legacy JPA, Hibernate ORM, WebFlux, Reactor, R2DBC and Vert.x dependencies anywhere in the resolved dependency graph.
-
-#### Scenario: Dependency policy verification
-- **WHEN** the project dependency graph is checked during `verify`
-- **THEN** modern or legacy JPA and Hibernate ORM coordinates and all other forbidden dependency families SHALL fail the build, including transitive occurrences
-- **AND** allowed synchronous JDBC, servlet and future Bean Validation provider dependencies SHALL remain unaffected.
-
-### Requirement: Markdown hygiene
-Repository verification SHALL inspect all tracked Markdown documentation for tool-export-specific markers and broken relative file links, and SHALL inspect `docs/GLOSSARY.md` for obsolete architecture presented as current.
-
-#### Scenario: Documentation verification
-- **WHEN** repository convention checks scan tracked Markdown files
-- **THEN** tool-export-specific markers SHALL be absent
-- **AND** every relative Markdown file link SHALL resolve to an existing repository path.
-
-#### Scenario: Active architecture terminology
-- **WHEN** repository convention checks scan `docs/GLOSSARY.md`
-- **THEN** legacy module names or database entities SHALL not be presented as current
-- **AND** any retained legacy module name or database entity SHALL be locally marked as historical or deferred.
-
-### Requirement: Active planning document consistency
-Active repository documentation SHALL distinguish the verified current baseline from target MVP components and deferred options without overriding accepted ADRs or main specifications.
-
-#### Scenario: Current and target baseline review
-- **WHEN** a developer reads the Roadmap and Tech Stack
-- **THEN** current, target and deferred technologies SHALL be distinguishable
-- **AND** caches, external observability infrastructure, providers and partitioning SHALL include activation rules proportional to their architectural impact
-- **AND** the documented Java package root SHALL be `io.cryptoresearch`.
-
-#### Scenario: Durable change navigation
-- **WHEN** an OpenSpec change is archived or a new active change is created
-- **THEN** README navigation SHALL remain valid without naming a transient active change
-- **AND** the completed bootstrap archive and next planned business change SHALL remain discoverable.
-
-#### Scenario: Persistence change ordering
-- **WHEN** the planned market-data changes introduce or modify persistence
-- **THEN** idempotency SHALL be an acceptance criterion of each persistence change
-- **AND** the storage foundation SHALL precede provider ingestion in the planned change sequence.
-
-### Requirement: Concise project delivery map
-The repository SHALL maintain one concise top-level delivery plan that identifies source boundaries, the current project position, ordered outcome-oriented stages, short status-bearing work packages within every stage, the next planned work and each stage's exit result without duplicating detailed product, architecture or change specifications. A completed stage SHALL transition to `Done` and the next stage to `Current` only after the completed stage's exit evidence is satisfied.
-
-#### Scenario: New-session delivery orientation
-- **WHEN** a human or AI agent opens the delivery plan in a new session
-- **THEN** the document SHALL identify the current stage, current work, next planned change and next business change
-- **AND** it SHALL show the completed, current, next and planned work packages inside the stage route
-- **AND** it SHALL show the route from architecture foundation through an evidence-based research decision
-- **AND** execution SHALL remain explicitly deferred until the required evidence and safety design exist.
-
-#### Scenario: Appropriate planning detail
-- **WHEN** the delivery plan describes a stage
-- **THEN** it SHALL use only the statuses `Done`, `Current`, `Next`, `Planned` or `Deferred`
-- **AND** each work package SHALL remain a short one-to-two-line outcome or change-sized description rather than a detailed implementation task
-- **AND** it SHALL describe goals, outcomes, major change groups and exit results rather than Java types, database objects, libraries or algorithms
-- **AND** it SHALL link to the authoritative Roadmap, ADR, main spec or active change instead of copying their detailed decisions.
-
-#### Scenario: Adaptive work-package map
-- **WHEN** implementation evidence, research findings, provider constraints or newly discovered dependencies reveal necessary work
-- **THEN** work packages MAY be added, split, reordered or deferred through an explicit Delivery Plan update
-- **AND** the plan SHALL state that its task map is directional rather than an immutable commitment
-- **AND** active implementation detail and checkbox progress SHALL remain in the relevant OpenSpec change.
-
-#### Scenario: Delivery position maintenance
-- **WHEN** an OpenSpec change is archived or project priority explicitly changes
-- **THEN** the delivery plan's current and next position SHALL be reviewed and updated when affected
-- **AND** ordinary task progress SHALL remain owned by the relevant OpenSpec change rather than being mirrored as percentages in the delivery plan
-- **AND** plan concision SHALL remain an editorial review concern rather than a new automated line-count or CI gate.
-
-#### Scenario: Advance after exit evidence
-- **WHEN** every exit condition of the current stage has verified evidence
-- **THEN** the Delivery Plan SHALL mark that stage `Done` and the next stage `Current`
-- **AND** it SHALL identify the first planned work of the new current stage
-- **AND** it SHALL not retain a completed checkpoint or archived change as current work.
-
-### Requirement: Agent workflow mode selection
-The repository SHALL use `DEFAULT` unless the user has manually enabled project subagents, and SHALL use `MULTIAGENT` only after that explicit opt-in.
-
-#### Scenario: Default mode
-- **WHEN** a task starts and `[agents].enabled` is `false`, missing or invalid
-- **THEN** the task SHALL use `DEFAULT`
-- **AND** no project subagent SHALL be spawned.
-
-#### Scenario: Multiagent mode
-- **WHEN** a task starts and the user has manually set `[agents].enabled = true`
-- **THEN** the task SHALL use `MULTIAGENT`
-- **AND** the supervised project roles MAY be used as needed.
-
-#### Scenario: No automatic mode change
-- **WHEN** an agent considers that MULTIAGENT would provide additional assurance
-- **THEN** it MAY recommend that mode and explain why
-- **AND** it SHALL NOT edit `[agents].enabled`, spawn a project subagent or silently change the current task's mode.
+## MODIFIED Requirements
 
 ### Requirement: Default development workflow
 The DEFAULT workflow SHALL use one top-level Control session and one top-level Developer session without the specialized MULTIAGENT phase and status protocol.
@@ -263,59 +164,6 @@ Repository verification SHALL reject committed configuration and Java test-sourc
 - **AND** the stable quality-gate job SHALL run the same independent preflight before Maven without a conditional or continue-on-error escape
 - **AND** scope-specific local checks SHALL NOT change or narrow the complete Maven lifecycle, required CI command or independent integrity inspection.
 
-### Requirement: Durable architecture policies
-The repository SHALL record accepted decisions for table ownership and PostgreSQL schemas, transaction and event semantics, background work coordination and bounded blocking concurrency before business implementation begins.
-
-#### Scenario: Architecture policy review
-- **WHEN** an architecture-affecting change is reviewed
-- **THEN** every table SHALL have one owning module and every transaction SHALL have one owning application use case
-- **AND** background work SHALL use idempotent database-backed claiming across instances
-- **AND** virtual-thread workloads SHALL have explicit provider, database, queue, timeout and retry limits.
-
-### Requirement: Explicit persistence access policy
-Repository architecture documentation SHALL define how an owning module selects a persistence mechanism and SHALL prohibit direct cross-module data access.
-
-#### Scenario: Persistence mechanism selection
-- **WHEN** a module designs a persistence operation
-- **THEN** simple aggregate CRUD SHALL use Spring Data JDBC only when aggregate semantics fit
-- **AND** projections, explicit queries, upserts and targeted writes SHALL use `JdbcClient`
-- **AND** high-volume writes SHALL use prepared JDBC batch operations
-- **AND** DDL SHALL remain owned exclusively by Flyway.
-
-#### Scenario: Module data access
-- **WHEN** one module needs data owned by another module
-- **THEN** it SHALL use the owner's public API, immutable projection, defined event or separately approved analytical read model
-- **AND** it SHALL not use the owner's table, SQL, repository, entity or row mapper directly.
-
-### Requirement: Documented engineering operating contracts
-The repository SHALL document configuration, secret handling, health, logging and test-level rules before business capabilities depend on them.
-
-#### Scenario: Secret-bearing configuration
-- **WHEN** a change introduces a secret or mandatory production setting
-- **THEN** the value SHALL come from external configuration or a secret store and SHALL fail fast when required but absent
-- **AND** it SHALL not appear in Git, logs or exception messages
-- **AND** validation infrastructure SHALL be introduced only with a real configuration or input contract that uses it.
-
-#### Scenario: Logging and measurement dimensions
-- **WHEN** application or workload telemetry is designed
-- **THEN** logs SHALL exclude secrets and complete sensitive provider payloads
-- **AND** correlation fields SHALL identify workload, run, provider, chain and operation where applicable
-- **AND** wallet addresses, token addresses and transaction hashes SHALL not be metric tags.
-
-#### Scenario: Test-level selection
-- **WHEN** a change chooses a test level
-- **THEN** pure rules SHALL use unit tests and module use cases SHALL use module-scoped tests when they exist
-- **AND** SQL, repositories and migrations SHALL use PostgreSQL Testcontainers
-- **AND** architecture verification and a small full-startup smoke test SHALL remain part of the Maven lifecycle.
-
-### Requirement: Implicit nondeterminism guard
-Repository verification SHALL reject unapproved implicit wall-clock reads and unseeded randomness entry points in production module source code.
-
-#### Scenario: Production source verification
-- **WHEN** the Maven repository-convention tests inspect production sources beneath the application module root
-- **THEN** direct machine-clock and unseeded-randomness entry points SHALL fail verification
-- **AND** explicitly supplied time sources, reference instants and seeded random sources SHALL remain allowed.
-
 ### Requirement: Bounded technical escalation
 MULTIAGENT technical escalation SHALL use a fresh read-only role, return one bounded verdict and preserve author ownership and cumulative agreed time/resource accounting.
 
@@ -368,15 +216,6 @@ In MULTIAGENT, Main and Architect SHALL close approved CONTRACT and CORE_RISK ch
 - **AND** destructive broad reset, whole-tree checkout, clean, owner-work stash and manual reversal of accepted-spec patches SHALL NOT be used
 - **AND** the task SHALL return to Architect for the active-change correction, applicable verification and archive again without resetting cumulative resource accounting
 - **AND** inability to prove scoped restoration safe SHALL return `BLOCKED` before destructive action.
-
-### Requirement: Active-change overlap check before PLAN_READY
-In MULTIAGENT CONTRACT and CORE_RISK, Architect SHALL run `openspec list` before PLAN_READY, inspect the affected specs of other active changes and record overlaps in the PLAN_READY handoff as `none` or each change with a disposition of `resolve first`, `safe to proceed` or `blocked`.
-
-#### Scenario: Planning with other active changes
-- **WHEN** Architect prepares a CONTRACT or CORE_RISK PLAN_READY handoff
-- **THEN** Architect SHALL identify other active changes touching the same specs and record `none` or each overlapping change with its disposition
-- **AND** Architect SHALL resolve a `resolve first` overlap before PLAN_READY and SHALL NOT issue PLAN_READY while an overlap is `blocked`
-- **AND** TRIVIAL and NORMAL SHALL NOT require this overlap check.
 
 ### Requirement: Verified RED reason before test freeze
 In MULTIAGENT, Builder SHALL freeze tests only after verifying that each failing test fails for the requirement-derived reason. Builder SHALL record the requirement/acceptance-criterion, expected and actual result for each failing test in the RED evidence before freeze and repeat that evidence in BUILD_DONE. Before freeze, a wrong target, wrong assertion or setup error SHALL be corrected and RED rerun without reviewer permission; this pre-freeze correction is the exception to the suspected-test-defect referral, not permission to change the contract. After freeze, proven synthetic fixture/setup errors MAY be corrected without prior owner or Reviewer permission, preserving contradiction/change/rerun evidence and subsequent independent review; no acceptance criterion, assertion strength or accepted raw evidence SHALL change.
@@ -483,52 +322,6 @@ The seven repository-local OpenSpec skills SHALL retain their distinct operation
 - **AND** applicable existing Main or Architect/Builder responsibility SHALL govern that task instead
 - **AND** the actual change-based artifact, selection, roots/stores, merge, retirement, CLI archive and mutation-safety safeguards SHALL remain effective; DEFAULT SHALL retain its session structure with shared scope-check wording.
 
-### Requirement: Builder entry-point equivalence
-The three existing Builder entry points SHALL retain their fixed model/effort metadata and behaviorally identical normative instruction bodies.
-
-#### Scenario: Detecting instruction drift
-- **WHEN** repository conventions inspect the three Builder role configurations
-- **THEN** equal normative bodies SHALL pass independently of the expected metadata differences
-- **AND** a missing, empty or diverging normative body in any one entry point SHALL fail verification
-- **AND** normalization SHALL ignore only line-ending differences, not remove clauses or reorder instructions.
-
-#### Scenario: Relocated safeguard verification
-- **WHEN** convention checks inspect required instructions after relocation
-- **THEN** they SHALL accept the authorized explicit root/workflow/closure reference chain with all obligations present
-- **AND** a missing target, missing mandatory route or omitted existing safety obligation SHALL fail
-- **AND** convention checks SHALL reconcile owner-authorized tier, review and semantic-freeze changes through valid behavioral RED, while continuing to reject missing CORE_RISK fresh review, changed routing, weakened test execution, broken required archive order and missing checkpoint/recovery safeguards
-- **AND** checks SHALL verify active guidance and delta requirements before archive without depending on the main spec already being synchronized.
-
-### Requirement: Bounded Main context
-Main SHALL coordinate using bounded summaries and source paths when those suffice, without replacing durable contract and verification truth with conversational memory.
-
-#### Scenario: Deep inspection handoff
-- **WHEN** a decision requires deep reading of large source files, raw logs, reports or a complete diff
-- **THEN** Main MAY route that inspection to the appropriate existing role when useful, and MAY inspect the sources directly for ordinary bounded work and receive bounded findings with evidence paths
-- **AND** Main SHALL retain permission to inspect exact relevant excerpts needed for routing, blockers, the final gate or archive mutation inspection
-- **AND** summary size SHALL NOT excuse omitted failures, invariant evidence or required checks.
-
-#### Scenario: Durable truth after compaction
-- **WHEN** context is summarized, compacted or a session is replaced
-- **THEN** current truth SHALL remain recoverable from existing OpenSpec artifacts, code/tests and existing evidence sources
-- **AND** no new state, capsule or evidence file SHALL be introduced solely for context management
-- **AND** existing self-contained handoffs and session recovery SHALL preserve cumulative time/resource accounting and independent review.
-
-### Requirement: Bounded compaction experiment
-This change SHALL add only top-level `model_post_turn_compact_threshold_percent = 60` to the project Codex configuration and SHALL treat that value as an experiment rather than a proven optimum.
-
-#### Scenario: Configuration boundary
-- **WHEN** the compaction setting is added
-- **THEN** its value SHALL be the integer `60` at the top level
-- **AND** `[agents].enabled`, `model_auto_compact_token_limit`, model routing and effort, `tool_output_token_limit` and `compact_prompt` SHALL remain unchanged
-- **AND** unsupported-setting evidence SHALL be reported without substituting another compaction control.
-
-#### Scenario: Measuring the experiment
-- **WHEN** implementation evaluates context efficiency
-- **THEN** it SHALL distinguish on-disk byte estimates, effective configuration support and observed runtime compaction behavior
-- **AND** any observed efficiency result SHALL use available existing evidence and state its workload and limitations
-- **AND** absence of an observed compaction event SHALL NOT be reported as proof of successful runtime tuning.
-
 ### Requirement: Strictly trivial direct editing
 In MULTIAGENT, Main SHALL perform ordinary bounded local changes within accepted requirements and owner authority. Strictly TRIVIAL editorial work SHALL remain distinguishable from behavior/requirement changes, but a non-TRIVIAL label alone SHALL NOT require a separate Architect. Architectural decisions, material ambiguity and critical-guarantee changes SHALL receive Architect participation and critical changes SHALL receive independent review regardless of author.
 
@@ -566,28 +359,22 @@ MULTIAGENT NORMAL SHALL use a bounded accepted-source contract without OpenSpec,
 - **AND** an observable/public or accepted contract change with no trigger SHALL select CONTRACT
 - **AND** mixed scope SHALL receive the highest applicable tier.
 
-### Requirement: Opt-in assignment measurement
-MULTIAGENT SHALL use the existing assignment-activity logging script only for benchmark, debug or explicitly requested measurement, not as a mandatory ordinary-development step.
+### Requirement: Bounded Main context
+Main SHALL coordinate using bounded summaries and source paths when those suffice, without replacing durable contract and verification truth with conversational memory.
 
-#### Scenario: Ordinary development handoff
-- **WHEN** a task has no benchmark, debug or explicit measurement purpose
-- **THEN** dispatch and return logging through `log-agent-activity.ps1` SHALL NOT be required
-- **AND** the ordinary contract, review, required verification evidence and truthful handoff SHALL remain required.
+#### Scenario: Deep inspection handoff
+- **WHEN** a decision requires deep reading of large source files, raw logs, reports or a complete diff
+- **THEN** Main MAY route that inspection to the appropriate existing role when useful, and MAY inspect the sources directly for ordinary bounded work and receive bounded findings with evidence paths
+- **AND** Main SHALL retain permission to inspect exact relevant excerpts needed for routing, blockers, the final gate or archive mutation inspection
+- **AND** summary size SHALL NOT excuse omitted failures, invariant evidence or required checks.
 
-### Requirement: Compact truthful gate results
-Main SHALL report bounded PASS/FAIL results without changing gate ownership, required commands or failure handling, and SHALL capture full command output using plain shell redirection or an existing mechanism without new workflow infrastructure.
+#### Scenario: Durable truth after compaction
+- **WHEN** context is summarized, compacted or a session is replaced
+- **THEN** current truth SHALL remain recoverable from existing OpenSpec artifacts, code/tests and existing evidence sources
+- **AND** no new state, capsule or evidence file SHALL be introduced solely for context management
+- **AND** existing self-contained handoffs and session recovery SHALL preserve cumulative time/resource accounting and independent review.
 
-#### Scenario: Passed required check
-- **WHEN** a required command actually completes successfully and all required checks execute
-- **THEN** Main SHALL report the exact command/check, exit status, compact available counts and PASS
-- **AND** test counts SHALL include failures, errors and skipped counts where applicable
-- **AND** unavailable counts SHALL NOT be fabricated and skipped required checks SHALL NOT be called PASS.
-
-#### Scenario: Failed or missing required check
-- **WHEN** a required command fails or a required check is skipped or absent despite exit zero
-- **THEN** Main SHALL report the exact command and captured exit code, identify the failed test/check/plugin or missing check, provide a bounded relevant error excerpt and the path to full output
-- **AND** Main SHALL disclose unrun remaining checks and withhold DONE
-- **AND** output formatting SHALL NOT replace the command exit status, hide failures or introduce test-selection/skip flags into the full gate.
+## ADDED Requirements
 
 ### Requirement: Autonomous concise authorized continuation
 Every final task or phase report SHALL state status, result, concrete evidence, blockers/material risks and the next allowed action. Existing authorized phases SHALL continue without repeat permission; phase readiness or approval SHALL NOT be represented as the completed user goal.

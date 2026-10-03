@@ -171,14 +171,13 @@ class RepositoryConventionsTest {
 
 	@Test
 	void multiagentWorkflowRequiresLeanApprovalClosureAndFinalGateRouting() throws IOException {
-		var valid = "APPROVE\nDOCS_CLOSE\ncomplete final gate\ntwo ordinary repair passes\nthird repair\nSol High\n"
+		var valid = "APPROVE\nDOCS_CLOSE\ncomplete final gate\ncumulative resources\nindependent diagnosis\n"
 				+ "implementation or test issue\ndocumentation or contract issue\ninfrastructure issue";
 		var invalid = "DOCS_CLOSE\nAPPROVE\ncomplete final gate";
 
 		assertThat(workflowLifecycleViolations(valid)).isEmpty();
 		assertThat(workflowLifecycleViolations(invalid))
 				.contains("workflow must close documentation after APPROVE and before the final gate",
-						"workflow must bound repair to two ordinary passes plus one reviewer-authorized pass",
 						"workflow must route final-gate failures by ownership");
 		assertThat(workflowLifecycleViolations(reachableWorkflow())).isEmpty();
 	}
@@ -270,6 +269,41 @@ class RepositoryConventionsTest {
 		assertThat(repositoryRoot.resolve(".codex/agents/researcher.toml")).doesNotExist();
 		assertThat(repositoryRoot.resolve(".codex/scripts/phase-manifest.ps1")).doesNotExist();
 		assertThat(repositoryRoot.resolve(".codex/scripts/log-repair-routing.ps1")).doesNotExist();
+	}
+
+	@Test
+	void configurationInspectorRejectsModelPermissionAndReviewDrift() throws IOException {
+		var roles = new LinkedHashMap<String, String>();
+		for (var role : ROLE_OUTPUT_STATUSES.keySet()) {
+			roles.put(role, Files.readString(repositoryRoot.resolve(".codex/agents/" + role + ".toml")));
+		}
+		var config = Files.readString(repositoryRoot.resolve(".codex/config.toml"));
+		var root = Files.readString(repositoryRoot.resolve("AGENTS.md"));
+		var workflow = reachableWorkflow();
+		assertThat(agentConfigurationViolations(config, roles, root, workflow)).isEmpty();
+		assertThat(agentConfigurationViolations(config.replace("max_depth = 1", "max_depth = 2"), roles, root, workflow))
+				.anyMatch(message -> message.contains("max_depth"));
+		var changed = new LinkedHashMap<>(roles);
+		changed.put("builder_sol", roles.get("builder_sol").replace("model = \"gpt-6.1-sol\"", "model = \"other\""));
+		assertThat(agentConfigurationViolations(config, changed, root, workflow))
+				.anyMatch(message -> message.contains("builder_sol must use"));
+		changed.put("builder_sol", roles.get("builder_sol"));
+		changed.put("reviewer", roles.get("reviewer").replace("sandbox_mode = \"read-only\"", "sandbox_mode = \"workspace-write\""));
+		assertThat(agentConfigurationViolations(config, changed, root, workflow))
+				.anyMatch(message -> message.contains("reviewer must set sandbox_mode"));
+		changed.put("reviewer", roles.get("reviewer") + "\nReviewer may approve its own CORE_RISK changes.");
+		assertThat(agentConfigurationViolations(config, changed, root, workflow))
+				.contains("critical changes must not allow author self-approval");
+	}
+
+	@Test
+	void relativeLinkInspectionRejectsMissingTarget() {
+		var path = repositoryRoot.resolve("AGENTS.md");
+		var violations = new ArrayList<String>();
+		checkRelativeLinks(path, "[Testing](docs/TESTING.md)", violations);
+		assertThat(violations).isEmpty();
+		checkRelativeLinks(path, "[Missing](docs/missing-convention-fixture.md)", violations);
+		assertThat(violations).containsExactly("AGENTS.md has broken link: docs/missing-convention-fixture.md");
 	}
 
 	@Test
@@ -423,163 +457,46 @@ class RepositoryConventionsTest {
 		return workflow + "\n" + reachableClosure(workflow);
 	}
 
-	private static final List<String> LEAN_POLICY_CLAUSES = List.of(
-			"Architect is the sole risk classifier",
-			"risk_triggers = matched triggers | none",
-			"Risk remains fixed during implementation, review and repairs",
-			"Only explicit owner direction may lower risk",
-			"reason = CONTRACT_CHANGED", "subreason = RISK_CHANGED",
-			"NORMAL / CONTRACT → same Architect thread.",
-			"Any CORE_RISK change → fresh Reviewer (new thread).",
-			"CORE_RISK takes precedence",
-			"Implementation or test repairs return to the same Builder",
-			"Documentation repairs return to the same Architect",
-			"The current reviewer authorizes the third repair",
-			"requires_new_red = true", "new behavioral RED", "tests_changed_after_red",
-			"Replanning and escalation never reset the repair budget",
-			"verdict = REPAIR | REPLAN | APPROVE | OWNER_DECISION",
-			"REPLAN → ESCALATE", "OWNER_DECISION → BLOCKED",
-			"Only Architect may issue a new PLAN_READY",
-			"Owner intent or scope ambiguity goes directly to the owner",
-			"Main decides only strictly TRIVIAL or not TRIVIAL",
-			"no source code, configuration, scripts, OpenSpec, ADRs, workflow/skills or normative docs",
-			"no API/path/code rename or behavioral meaning change",
-			"preserve factual claims and link/path targets",
-			"Any exclusion or uncertainty goes to Architect",
-			"all TR triggers before NORMAL or CONTRACT",
-			"unresolved credible trigger uncertainty selects CORE_RISK",
-			"mixed scope takes the highest applicable tier",
-			"NORMAL preserves accepted observable behavior",
-			"CONTRACT changes observable/public or accepted behavior",
-			"uncertainty between NORMAL and CONTRACT selects CONTRACT",
-			"Builder risk routing is independent of NORMAL versus CONTRACT",
-			"NORMAL contract uses the existing handoff",
-			"NORMAL skips OpenSpec, overlap checks, DOCS_CLOSE and archive",
-			"CONTRACT and CORE_RISK require OpenSpec",
-			"CORE_RISK and every bugfix require RED_REQUIRED",
-			"other CONTRACT work uses Architect-selected test mode with a concrete reason",
-			"other NORMAL work uses useful appropriate tests",
-			"documentation-only CORE_RISK has no RED waiver",
-			"NORMAL/CONTRACT review reports only touched CI",
-			"CORE_RISK review reports the full CI-01..CI-15 matrix",
-			"accepted normative-spec change alone does not require fresh review",
-			"NORMAL runs Main's complete final gate",
-			"TRIVIAL runs git diff --check and mvnw.cmd -Dtest=RepositoryConventionsTest test",
-			"TRIVIAL has no subagents, OpenSpec, review, overlap check, DOCS_CLOSE or archive",
-			"log-agent-activity.ps1 only for benchmark, debug or explicitly requested measurement");
 	private static final List<String> CLOSURE_POLICY_CLAUSES = List.of(
 			"Any nonzero required check blocks completion", "never narrow or skip it",
 			"pre-archive", "temporary Git index", "raw-byte", "hash-object -w --no-filters",
 			"post-archive", "exact paths", "unchanged real index",
 			"Never reset-hard", "whole-tree checkout", "git clean", "stash owner work",
 			"BLOCKED before destructive action");
-	private static final List<String> GATE_OUTPUT_CLAUSES = List.of(
-			"full output", "exit code", "PASS", "FAIL", "failures", "errors", "skipped",
-			"unrun", "required skipped", "exact command", "redirection");
 
 	@Test
-	void leanWorkflowPolicyCoversRiskReviewRepairEscalationAndRecovery() throws IOException {
+	void workflowInspectorRejectsCriticalAuthorSelfApprovalEvenWhenOtherSafeguardsRemain() throws IOException {
+		var guidance = Files.readString(repositoryRoot.resolve("docs/AGENT_WORKFLOW_MULTIAGENT.md"));
+		assertThat(leanPolicyViolations(guidance + "\nMain may approve its own CORE_RISK changes."))
+				.contains("critical changes must not allow author self-approval");
+	}
+
+	@Test
+	void activeWorkflowRequiresIndependentCriticalReviewWithoutExactWording() throws IOException {
 		var workflow = Files.readString(repositoryRoot.resolve("docs/AGENT_WORKFLOW_MULTIAGENT.md"));
 		assertThat(leanPolicyViolations(workflow)).isEmpty();
+		assertThat(leanPolicyViolations("Every CORE_RISK change requires an independent Reviewer.")).isEmpty();
+		assertThat(leanPolicyViolations("Critical changes require a Reviewer independent of their author.")).isEmpty();
+		assertThat(leanPolicyViolations("Main reviews all changes."))
+				.contains("critical changes require independent review");
 		assertThat(missingClauses(reachableClosure(workflow), CLOSURE_POLICY_CLAUSES)).isEmpty();
 	}
 
 	@Test
-	void leanPolicyGuardRejectsEachMissingSafetyObligation() {
-		var valid = String.join("\n", LEAN_POLICY_CLAUSES);
-		assertThat(leanPolicyViolations(valid)).isEmpty();
-		for (var clause : LEAN_POLICY_CLAUSES) {
-			assertThat(leanPolicyViolations(valid.replace(clause, "omitted")))
-					.as("missing obligation: %s", clause).contains(clause);
+	void builderInstructionsMatchAcrossCodexAndClaudeExceptHostTransport() throws IOException {
+		var bodies = new ArrayList<String>();
+		for (var role : BUILDER_ROLES) {
+			var content = Files.readString(repositoryRoot.resolve(".codex/agents/" + role + ".toml"));
+			bodies.add(content.substring(content.indexOf("\"\"\"") + 3, content.lastIndexOf("\"\"\"")).strip()
+					.replace("\r\n", "\n").replace("under Codex", "under HOST"));
 		}
-	}
-
-	@Test
-	void planningRequiresActiveChangeOverlapEvidenceOnlyForContractAndCoreRisk() throws IOException {
-		assertPolicyTokens(List.of("docs/AGENT_WORKFLOW_MULTIAGENT.md", ".codex/agents/architect.toml"),
-				List.of("Before PLAN_READY", "openspec list", "same specs", "handoff", "none",
-						"resolve first", "safe to proceed", "blocked", "CONTRACT and CORE_RISK",
-						"NORMAL", "TRIVIAL"));
-	}
-
-	@Test
-	void conditionalChangeRoutingDoesNotInventLowRiskArtifacts() throws IOException {
-		assertPolicyTokens(List.of("AGENTS.md", "openspec/config.yaml"),
-				List.of("MULTIAGENT", "TRIVIAL", "NORMAL", "DEFAULT", "when the selected route requires"));
-		assertPolicyTokens(List.of(".agents/skills/openspec-propose/SKILL.md",
-				".agents/skills/openspec-apply-change/SKILL.md"),
-				List.of("MULTIAGENT", "TRIVIAL", "NORMAL", "DEFAULT", "dummy", "unrelated active change"));
-	}
-
-	@Test
-	void reviewAndSemanticFreezeAreConsistentAcrossActiveGuidance() throws IOException {
-		assertPolicyTokens(List.of("docs/TESTING.md", "docs/CORE_INVARIANTS.md", ".codex/agents/architect.toml"),
-				List.of("NORMAL", "CONTRACT", "CORE_RISK", "touched CI", "full", "same Architect", "fresh Reviewer"));
-		assertPolicyTokens(List.of("docs/TESTING.md", ".codex/agents/builder_sol.toml",
-				".codex/agents/builder_luna_xhigh.toml", ".codex/agents/builder_luna_max.toml",
-				".codex/agents/reviewer.toml"),
-				List.of("semantic freeze", "tests_changed_after_red", "requires_new_red", "TEST_SPEC_ERROR"));
-		for (var path : List.of("docs/AGENT_WORKFLOW_MULTIAGENT.md", "docs/TESTING.md",
-				".codex/agents/architect.toml", ".codex/agents/builder_sol.toml",
-				".codex/agents/builder_luna_xhigh.toml", ".codex/agents/builder_luna_max.toml",
-				".codex/agents/reviewer.toml", "docs/CORE_INVARIANTS.md")) {
-			assertThat(Files.readString(repositoryRoot.resolve(path))).as(path)
-					.doesNotContain("new hash", "unchanged establishing-test hash", "verifies the frozen hash",
-							"a content hash", "content hash after RED", "Git diff captured before implementation",
-							"Any change to an accepted normative OpenSpec spec → fresh Reviewer, regardless of risk.");
+		for (var role : List.of("builder_opus", "builder_sonnet_routine", "builder_sonnet_standard")) {
+			var content = Files.readString(repositoryRoot.resolve(".claude/agents/" + role + ".md")).replace("\r\n", "\n");
+			bodies.add(content.substring(content.indexOf("\n---", 4) + 4).strip()
+					.replace("under Claude Code", "under HOST")
+					.replace(" (Bash with dangerouslyDisableSandbox when sandboxing is enabled)", ""));
 		}
-	}
-
-	@Test
-	void tieredClosureAndGateOutputKeepCompleteTruthfulVerification() throws IOException {
-		assertPolicyTokens(List.of("docs/agents/close-archive.md"),
-				List.of("NORMAL", "CONTRACT", "CORE_RISK", "TRIVIAL", "without DOCS_CLOSE", "without archive"));
-		assertPolicyTokens(List.of("docs/AGENT_WORKFLOW_MULTIAGENT.md", "docs/agents/close-archive.md"),
-				GATE_OUTPUT_CLAUSES);
-		assertPolicyTokens(List.of("AGENTS.md", "docs/TESTING.md"),
-				List.of("TRIVIAL", "git diff --check", "mvnw.cmd -Dtest=RepositoryConventionsTest test",
-						"DEFAULT", "complete", "preflight"));
-	}
-
-	@Test
-	void gateOutputGuardRejectsOmittedExecutionAndFailureEvidence() {
-		var valid = String.join("\n", GATE_OUTPUT_CLAUSES);
-		assertThat(missingClauses(valid, GATE_OUTPUT_CLAUSES)).isEmpty();
-		for (var clause : GATE_OUTPUT_CLAUSES) {
-			assertThat(missingClauses(valid.replace(clause, "omitted"), GATE_OUTPUT_CLAUSES))
-					.as("missing gate evidence: %s", clause).contains(clause);
-		}
-	}
-
-	@Test
-	void testFreezeRequiresVerifiedRedReason() throws IOException {
-		assertPolicyTokens(List.of("docs/TESTING.md", ".codex/agents/builder_sol.toml",
-				".codex/agents/builder_luna_xhigh.toml", ".codex/agents/builder_luna_max.toml"),
-				List.of("before freeze", "each failing test", "requirement/acceptance-criterion",
-						"expected", "actual", "RED evidence", "BUILD_DONE", "wrong target", "wrong assertion",
-						"setup error", "rerun RED", "without reviewer permission", "After freeze", "TEST_SPEC_ERROR"));
-	}
-
-	@Test
-	void lostSessionsPreserveRoleEvidenceAndRepairBudget() throws IOException {
-		assertPolicyTokens(List.of("docs/AGENT_WORKFLOW_MULTIAGENT.md"),
-				List.of("cannot be resumed", "Main starts a fresh session", "same role", "configured model/effort",
-						"contract", "current diff", "RED/GREEN evidence", "open review items", "remaining repair budget",
-						"repair count", "session was replaced", "Session loss alone", "not an owner decision",
-						"Reviewer independence"));
-	}
-
-	private void assertPolicyTokens(List<String> paths, List<String> tokens) throws IOException {
-		var missing = new ArrayList<String>();
-		for (var path : paths) {
-			var content = Files.readString(repositoryRoot.resolve(path)).replace("`", "").replaceAll("\\s+", " ");
-			for (var token : tokens) {
-				if (!content.contains(token)) {
-					missing.add(path + ": " + token);
-				}
-			}
-		}
-		assertThat(missing).as("missing workflow safeguard markers").isEmpty();
+		assertThat(bodies.stream().distinct().toList()).hasSize(1);
 	}
 
 	@Test
@@ -648,7 +565,17 @@ class RepositoryConventionsTest {
 	}
 
 	private List<String> leanPolicyViolations(String guidance) {
-		return missingClauses(guidance, LEAN_POLICY_CLAUSES);
+		var violations = new ArrayList<String>();
+		var lower = guidance.toLowerCase().replaceAll("\\s+", " ");
+		if (!Pattern.compile("(core_risk|critical).{0,100}(independent|fresh reviewer)|(independent|fresh reviewer).{0,100}(core_risk|critical)")
+				.matcher(lower).find()) {
+			violations.add("critical changes require independent review");
+		}
+		if (Pattern.compile("(?:may|can|allowed to) approve (?:its|their|his|her|my) own (?:core_risk|critical)")
+				.matcher(lower).find()) {
+			violations.add("critical changes must not allow author self-approval");
+		}
+		return violations;
 	}
 
 	private List<String> missingClauses(String guidance, List<String> clauses) {
@@ -1065,11 +992,8 @@ class RepositoryConventionsTest {
 				|| approve > documentation || documentation > finalGate) {
 			violations.add("workflow must close documentation after APPROVE and before the final gate");
 		}
-		if (!containsAll(workflow, "two ordinary repair passes", "third repair", "Sol High")) {
-			violations.add("workflow must bound repair to two ordinary passes plus one reviewer-authorized pass");
-		}
 		if (!containsAll(workflow,
-				"implementation or test issue", "documentation or contract issue", "infrastructure issue")) {
+				"implementation", "test issue", "documentation", "contract issue", "infrastructure issue")) {
 			violations.add("workflow must route final-gate failures by ownership");
 		}
 		return violations;
@@ -1130,32 +1054,12 @@ class RepositoryConventionsTest {
 			}
 		}
 
-		var architect = roleConfigurations.getOrDefault("architect", "");
-		if (!containsAll(architect, "sole risk classifier", "risk_triggers", "PLAN, DOCS, REVIEW, REPAIR, DOCS_CLOSE, ARCHIVE")) {
-			violations.add("architect must own risk classification and all authorized phases");
-		}
-		for (var builderRole : List.of("builder_sol", "builder_luna_xhigh", "builder_luna_max")) {
-			var builder = roleConfigurations.getOrDefault(builderRole, "");
-			if (!containsAll(builder, "repair_round=1", "repair_round=2", "repair_round=3",
-					"third_repair_authorized=true", "Never start a fourth ordinary repair")) {
-				violations.add(builderRole + " must enforce the two-plus-one repair budget");
-			}
-			if (!containsAll(builder, "docker version", "escalated host access", "restricted sandbox",
-					"infrastructure retry")) {
-				violations.add(builderRole + " must retry Docker checks outside the Windows sandbox");
-			}
-		}
 		var reviewer = roleConfigurations.getOrDefault("reviewer", "");
-		if (!containsAll(reviewer, "CORE_RISK", "fresh thread", "semantic freeze", "full CI-01..CI-15 matrix")) {
-			violations.add("reviewer must independently review CORE_RISK with semantic freeze and the full invariant matrix");
-		}
 		if (!Pattern.compile("(?m)^\\s*sandbox_mode\\s*=\\s*\"read-only\"\\s*$").matcher(reviewer).find()) {
 			violations.add("reviewer must set sandbox_mode = \"read-only\"");
 		}
-		if (!containsAll(reviewer, "Repair rounds 1 and 2", "third_repair_authorized=true",
-				"blocker surviving round 3 must return ESCALATE")) {
-			violations.add("reviewer must authorize at most one third repair before escalation");
-		}
+		violations.addAll(leanPolicyViolations(workflow));
+		violations.addAll(leanPolicyViolations(reviewer));
 		var escalation = roleConfigurations.getOrDefault("escalation", "");
 		if (!Pattern.compile("(?m)^\\s*sandbox_mode\\s*=\\s*\"read-only\"\\s*$").matcher(escalation).find()) {
 			violations.add("escalation must set sandbox_mode = \"read-only\"");
@@ -1176,7 +1080,7 @@ class RepositoryConventionsTest {
 		}
 		if (!containsAll(workflow,
 				"PLAN_READY", "BUILD_DONE", "REPAIR", "APPROVE", "BLOCKED", "ESCALATE", "DONE",
-				"two ordinary repair passes", "third repair", "red_suspect = true")) {
+				"red_suspect = true")) {
 			violations.add("workflow must preserve the lean state, repair, and RED rerun contract");
 		}
 		if (!rootGuide.contains("docs/AGENT_WORKFLOW_MULTIAGENT.md") || !hasOrderedPreflight(workflow)) {

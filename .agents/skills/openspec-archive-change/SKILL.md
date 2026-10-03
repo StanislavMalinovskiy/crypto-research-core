@@ -10,6 +10,9 @@ metadata:
   generatedBy: "1.13.0"
 ---
 
+**Project authority:** Retain existing explicit bounded authorization; planning/exploration does not itself implement, and discovery answers or silence grant no new scope. In MULTIAGENT use the mandatory [workflow](../../../docs/AGENT_WORKFLOW_MULTIAGENT.md) for guarantee-based ordinary/critical routing, probe applicability, independent review, proven fixture correction, cumulative repair resources and next allowed action. DEFAULT keeps its own [workflow](../../../docs/AGENT_WORKFLOW.md). Select checks by dependencies/effects under [Testing](../../../docs/TESTING.md): isolated documents/tools use scoped checks, integration-triggering commits require the full gate, mixed scope the union. Report unrun/failed/skipped checks honestly; readiness or approval is not the completed goal.
+
+
 Archive a completed change in the experimental workflow.
 
 **Store selection:** If the user names a store (a store is a standalone OpenSpec repo registered on this machine) or the work lives in one, run `openspec store list --json` to discover registered store ids, then pass `--store <id>` on the commands that read or write specs and changes (`new change`, `status`, `instructions`, `list`, `show`, `validate`, `archive`, `doctor`, `context`, `schemas`, `view`). Once selected, treat `--store <id>` as sticky for the rest of the workflow. Every unscoped example of those commands below is shorthand: before running it, append the flag. For example, run `openspec status --change "<name>" --json --store "<id>"`, not the unscoped form shown below. Other commands do not take the flag. Hints printed by commands already carry the flag; keep it on follow-ups. Without a store, commands act on the nearest local `openspec/` root.
@@ -62,11 +65,11 @@ Archive a completed change in the experimental workflow.
 2. **Check project authority and completion**
 
    Follow the selected project workflow. In MULTIAGENT, Main supplies APPROVE,
-   completed DOCS_CLOSE, complete final-gate PASS and the scoped pre-archive
+   completed DOCS_CLOSE, applicable verification PASS and the scoped pre-archive
    checkpoint; Architect acts only in assigned ARCHIVE. Only in MULTIAGENT, read
    [docs/agents/close-archive.md](../../../docs/agents/close-archive.md) only before
    this closure work. DEFAULT Control uses docs/AGENT_WORKFLOW.md for its own
-   review, final documentation, complete gate and archive ownership; it does not
+   review, final documentation, applicable gate and archive ownership; it does not
    load the MULTIAGENT closure procedure or acquire its checkpoint/phase protocol.
    No generic confirmation, warning, manual move or skip-sync choice overrides
    these prerequisites.
@@ -140,7 +143,7 @@ Archive a completed change in the experimental workflow.
    A mismatch, missing required check or failed check blocks completion. In
    MULTIAGENT, use Main's scoped raw-byte recovery after concurrent-edit checks
    and return to its existing author/planning/review routes without resetting
-   repair budget. In DEFAULT, report the exact partial mutation and return to
+   cumulative time/resource accounting. In DEFAULT, report the exact partial mutation and return to
    Control under its existing review/repair rules; do not import the MULTIAGENT
    checkpoint or recovery protocol. In either mode, never hand-reverse accepted
    specs or conceal partial CLI mutation; preserve unrelated owner work.

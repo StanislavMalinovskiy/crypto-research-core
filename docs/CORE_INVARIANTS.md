@@ -8,20 +8,19 @@ requirements. Those sources remain authoritative for their stated responsibiliti
 checklist and a controlling source is a documentation defect that must be resolved before approval.
 
 Architects, builders, and reviewers apply only the invariants affected by a change, but they must not silently
-omit an applicable invariant. In MULTIAGENT, NORMAL/CONTRACT review reports only touched CI; CORE_RISK review
-reports the full CI-01..CI-15 matrix. Use:
+omit an applicable invariant. In MULTIAGENT, report affected and doubtful invariants with concrete evidence in existing artifacts; do not repeat untouched matrices in each message. Use:
 
 ```text
 Invariant | Applicable | Evidence | Verdict
 ```
 
-In the full matrix, `Not applicable` requires a short reason. NORMAL/CONTRACT need not list untouched CI.
+A doubtful invariant judged `Not applicable` needs a short reason; untouched CI need not be listed.
 A blanket statement that all invariants were checked is not evidence. DEFAULT retains its existing review
 responsibilities; these MULTIAGENT reporting tiers do not add its protocol to DEFAULT.
 
 ## Workflow classification and review
 
-Architect classifies risk using the single [MULTIAGENT trigger authority](AGENT_WORKFLOW_MULTIAGENT.md#architect-planning-and-risk).
+Main classifies ordinary work; Architect participates for architecture, material ambiguity or critical guarantees using the single [MULTIAGENT trigger authority](AGENT_WORKFLOW_MULTIAGENT.md#architect-planning-and-risk).
 This checklist defines no second trigger list. CI IDs guide evidence review without replacing that assessment
 or narrowing the controlling sources.
 
@@ -39,13 +38,11 @@ or narrowing the controlling sources.
 
 The current reviewing role follows this rule:
 
-- NORMAL / CONTRACT → same Architect thread.
-- Any CORE_RISK change → fresh Reviewer (new thread).
+- Ordinary NORMAL/CONTRACT → appropriate existing review, with same-thread Architect review when it participated and is eligible.
+- Any CORE_RISK change → fresh Reviewer (new thread), independent of author including Main and Architect.
 
 CORE_RISK takes precedence; an accepted normative-spec change alone does not require fresh review when no TR
-trigger exists. Architect assesses all TR triggers before choosing NORMAL/CONTRACT and fixes tier, risk and
-matched trigger evidence at PLAN_READY. New risk or scope evidence reopens Architect planning; ordinary repairs
-retain fixed risk. CI definitions and the mapping above do not change the trigger authority or Builder routing.
+trigger exists. Assess concrete changed guarantees and error consequences against all TR triggers; words or paths alone do not classify risk. Material uncertainty requires Architect. Reassessment records previous/new categories, reason and evidence; independent Reviewer confirms a downgrade. New contract scope reopens Architect planning before dependent work. CI definitions and the mapping above do not change the trigger authority or Builder routing.
 
 ## Integrity and durability
 

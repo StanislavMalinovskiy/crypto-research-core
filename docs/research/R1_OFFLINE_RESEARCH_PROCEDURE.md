@@ -1,5 +1,17 @@
 # R1 offline research procedure
 
+## Prospective general routing after the process reform
+
+These general rules apply only to new work after the verified workflow reform. All earlier grants, E1/E2 amendments, frozen protocol/holdout rules, census/probe attempts, budgets, stops, receipts and evidence below remain governed by their original contracts. No retroactive reclassification, renewed source access or census continuation is authorized.
+
+A bounded free or already approved-budget research probe without holdout access, outcome calculations or evidence admission uses a short description in this existing procedure: question, source, period, cash/request/byte/time/storage limits, recording location and stop conditions. Preserve cumulative resource accounting and produce a final receipt including gaps, errors and actual usage. UNKNOWN, incomplete coverage and negative findings are valid exploratory outcomes, never admitted evidence or D1/P1 passage.
+
+For future probes meeting all those conditions, this prospective block's OpenSpec applicability and dependency/effect-based checks replace the historical universal stricter-rule, stage-change/first-run and all-code complete-gate prerequisites below. Those prerequisites do not require a separate stage change or a full repository gate merely for such a qualified isolated probe. This replacement applies only to that future probe scope; authoritative D1/P1 work and every earlier grant, amendment, frozen run and evidence record retain their original rules unchanged.
+
+OpenSpec remains required for D1/P1 admission, system behavior or accepted requirements; reuse an existing change covering that exact scope. Classify changed guarantees and consequences, rather than calling every research tool critical. Architecture, material uncertainty and critical guarantees require Architect; critical and substantive research-rule changes require independent review regardless of author. Existing holdout, point-in-time, exact-arithmetic, accepted-evidence, migration and secret protections remain.
+
+Choose checks by actual dependencies/effects. Isolated tools use useful tool tests, receipt/source/budget/secret checks and diff checks, with meaningful regression RED for executable bugfixes or critical behavior. Documentation uses facts, consistency, links and requirements without artificial RED. Full integrity/Maven/OpenSpec/doctor/diff gate is required before each Java/test/build/DB/dependency/shared-runtime-instruction commit; mixed work uses the union. Report unrun/failed/skipped checks honestly and rerun affected checks after checked-input edits. No automatic Maven follows from an isolated probe. This paragraph does not change any historical exception below.
+
 | Field | Value |
 |---|---|
 | Status | `OWNER-APPROVED 2026-10-01` (`OD-4` of the [R1 protocol](R1_RESEARCH_PROTOCOL.md)); blocking until protocol freeze |

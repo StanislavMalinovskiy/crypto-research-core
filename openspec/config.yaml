@@ -10,7 +10,7 @@ context: |
   Read AGENTS.md and the selected workflow before planning or applying work.
   Read the affected change when the selected route requires one, and accepted specs, affected module documents and
   nearest module guides, applicable ADRs, and relevant code/tests before editing.
-  MULTIAGENT TRIVIAL and NORMAL require no OpenSpec change; DEFAULT retains its
+  MULTIAGENT TRIVIAL/NORMAL and bounded outcome-blind approved-budget probes require no dummy OpenSpec change; DEFAULT retains its
   existing OpenSpec policy. Follow the selected workflow's tier boundaries.
   Follow AGENTS.md task-impact triggers for Architecture, Tech Stack, Testing,
   Operations and Reproducibility; resolve missing or ambiguous references first.
@@ -34,7 +34,7 @@ rules:
 operations:
   apply:
     guidance:
-      - Preserve unrelated user changes. In MULTIAGENT Builder reports verification evidence without editing OpenSpec or documentation; Architect updates verified task checkboxes in DOCS_CLOSE after APPROVE. DEFAULT Control retains its workflow ownership. Never mark partial, deferred or unverified behavior complete.
+      - Preserve unrelated user changes. In MULTIAGENT Builder reports verification evidence without editing OpenSpec checkboxes; explicitly assigned owner-authorized documentation/instruction paths are permitted; Architect updates verified task checkboxes in DOCS_CLOSE after APPROVE. DEFAULT Control retains its workflow ownership. Never mark partial, deferred or unverified behavior complete.
   archive:
     guidance:
-      - Archive only through the authorized OpenSpec CLI after strict validation, Maven verification and the selected workflow's approval and closure requirements; in MULTIAGENT the scoped checkpoint, post-checks and recovery remain mandatory. DEFAULT retains its independent gate and ownership. No manual move or skip-sync bypass.
+      - Archive only through the authorized OpenSpec CLI after strict validation, applicable scope verification (full gate for integration-triggering changes) and the selected workflow's approval and closure requirements; in MULTIAGENT the scoped checkpoint, post-checks and recovery remain mandatory. DEFAULT retains its independent gate and ownership. No manual move or skip-sync bypass.

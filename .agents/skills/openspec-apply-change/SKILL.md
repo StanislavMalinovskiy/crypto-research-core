@@ -10,9 +10,12 @@ metadata:
   generatedBy: "1.13.0"
 ---
 
-Implement tasks from an OpenSpec change under the selected project workflow. In MULTIAGENT, stay within the assigned phase: Builder reports verified completion evidence without changing OpenSpec or documentation; Architect updates verified task checkboxes only in DOCS_CLOSE after APPROVE. In DEFAULT, Developer owns implementation and its complete local gate, while Control owns the contract, final documentation, review and completion gate under docs/AGENT_WORKFLOW.md; specialized MULTIAGENT phases/statuses do not apply. Partial, deferred or unverified behavior is never complete.
+**Project authority:** Retain existing explicit bounded authorization; planning/exploration does not itself implement, and discovery answers or silence grant no new scope. In MULTIAGENT use the mandatory [workflow](../../../docs/AGENT_WORKFLOW_MULTIAGENT.md) for guarantee-based ordinary/critical routing, probe applicability, independent review, proven fixture correction, cumulative repair resources and next allowed action. DEFAULT keeps its own [workflow](../../../docs/AGENT_WORKFLOW.md). Select checks by dependencies/effects under [Testing](../../../docs/TESTING.md): isolated documents/tools use scoped checks, integration-triggering commits require the full gate, mixed scope the union. Report unrun/failed/skipped checks honestly; readiness or approval is not the completed goal.
 
-**Project routing:** MULTIAGENT TRIVIAL and Architect-classified NORMAL do not use this change-based apply procedure. Return them to the existing Main or Architect/Builder contract without creating a dummy change or selecting an unrelated active change. CONTRACT/CORE_RISK retain the procedure below; DEFAULT retains its existing OpenSpec policy and Control/Developer responsibilities.
+
+Implement tasks from an OpenSpec change under the selected project workflow. In MULTIAGENT, stay within the assigned phase: Builder reports verified completion evidence without changing OpenSpec task checkboxes, editing documentation/instructions only when the bounded owner-authorized assignment explicitly includes those paths; Architect updates verified task checkboxes only in DOCS_CLOSE after APPROVE. In DEFAULT, Developer owns implementation and its complete local gate, while Control owns the contract, final documentation, review and completion gate under docs/AGENT_WORKFLOW.md; specialized MULTIAGENT phases/statuses do not apply. Partial, deferred or unverified behavior is never complete.
+
+**Project routing:** MULTIAGENT TRIVIAL and ordinary NORMAL do not use this change-based apply procedure. Return them to the existing Main or Architect/Builder contract without creating a dummy change or selecting an unrelated active change. CONTRACT/CORE_RISK retain the procedure below; DEFAULT retains its existing OpenSpec policy and Control/Developer responsibilities.
 
 **Store selection:** If the user names a store (a store is a standalone OpenSpec repo registered on this machine) or the work lives in one, run `openspec store list --json` to discover registered store ids, then pass `--store <id>` on the commands that read or write specs and changes (`new change`, `status`, `instructions`, `list`, `show`, `validate`, `archive`, `doctor`, `context`, `schemas`, `view`). Once selected, treat `--store <id>` as sticky for the rest of the workflow. Every unscoped example of those commands below is shorthand: before running it, append the flag. For example, run `openspec status --change "<name>" --json --store "<id>"`, not the unscoped form shown below. Other commands do not take the flag. Hints printed by commands already carry the flag; keep it on follow-ups. Without a store, commands act on the nearest local `openspec/` root.
 
@@ -103,7 +106,7 @@ Implement tasks from an OpenSpec change under the selected project workflow. In 
    - Task is unclear → ask for clarification
    - Implementation reveals a design issue → suggest updating artifacts
    - A task needs work beyond what the spec and tasks describe, or you are tempted to drop, narrow, defer, or accept exceptions to specified behavior to make it fit → surface the added scope and ask; do not absorb it silently
-   - Error or blocker encountered → report and wait for guidance
+   - Error encountered → diagnose/repair within authorized boundaries; preserve truthful evidence and report a concrete blocker only when missing authority or unresolved technical evidence prevents continuation
    - User interrupts
 
 7. **On completion or pause, show status**
@@ -142,7 +145,7 @@ Working on task 4/7: <task description>
 - Verified: Task 2
 ...
 
-Implementation evidence is ready for the selected project review. DEFAULT Control follows its own review, documentation and complete gate. MULTIAGENT retains APPROVE, DOCS_CLOSE, Main's full gate and checkpoint before archive.
+Implementation evidence is ready for the selected project review. DEFAULT Control follows its own review, documentation and complete gate. MULTIAGENT retains APPROVE, DOCS_CLOSE, Main's applicable verification gate and checkpoint before archive.
 ```
 
 **Output On Pause (Issue Encountered)**
@@ -171,8 +174,8 @@ What would you like to do?
 - If task is ambiguous, pause and ask before implementing
 - If implementation reveals issues, pause and suggest artifact updates
 - Keep code changes minimal and scoped to each task
-- Report each task's verification evidence; in MULTIAGENT never let Builder update task checkboxes or documentation, and in DEFAULT leave final documentation to Control
-- Pause on errors, blockers, or unclear requirements - don't guess
+- Report each task's verification evidence; in MULTIAGENT never let Builder update task checkboxes; documentation/instruction edits require explicitly assigned owner-authorized paths, and in DEFAULT leave final documentation to Control
+- Resolve technical errors within the bounded assignment; requirement ambiguity or missing authority blocks dependent work
 - When a task needs work beyond what the spec describes, surface the added scope and pause - never silently narrow, defer, or simplify away specified behavior
 - Only mark a task `- [x]` when its specified behavior is fully implemented, not when it is partially done or deferred
 - Use contextFiles from CLI output, don't assume specific file names

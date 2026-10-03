@@ -10,6 +10,9 @@ metadata:
   generatedBy: "1.13.0"
 ---
 
+**Project authority:** Retain existing explicit bounded authorization; planning/exploration does not itself implement, and discovery answers or silence grant no new scope. In MULTIAGENT use the mandatory [workflow](../../../docs/AGENT_WORKFLOW_MULTIAGENT.md) for guarantee-based ordinary/critical routing, probe applicability, independent review, proven fixture correction, cumulative repair resources and next allowed action. DEFAULT keeps its own [workflow](../../../docs/AGENT_WORKFLOW.md). Select checks by dependencies/effects under [Testing](../../../docs/TESTING.md): isolated documents/tools use scoped checks, integration-triggering commits require the full gate, mixed scope the union. Report unrun/failed/skipped checks honestly; readiness or approval is not the completed goal.
+
+
 Revise a change's existing planning artifacts and keep them coherent. Never edit code.
 
 **Store selection:** If the user names a store (a store is a standalone OpenSpec repo registered on this machine) or the work lives in one, run `openspec store list --json` to discover registered store ids, then pass `--store <id>` on the commands that read or write specs and changes (`new change`, `status`, `instructions`, `list`, `show`, `validate`, `archive`, `doctor`, `context`, `schemas`, `view`). Once selected, treat `--store <id>` as sticky for the rest of the workflow. Every unscoped example of those commands below is shorthand: before running it, append the flag. For example, run `openspec status --change "<name>" --json --store "<id>"`, not the unscoped form shown below. Other commands do not take the flag. Hints printed by commands already carry the flag; keep it on follow-ups. Without a store, commands act on the nearest local `openspec/` root.
@@ -63,7 +66,7 @@ Revise a change's existing planning artifacts and keep them coherent. Never edit
    - If the change is already coherent, say so and make no edits.
 
 5. **Confirm and apply, one artifact at a time**
-   - Show each proposed revision and why. Write only after the user confirms.
+   - Show each proposed revision and why. Write within existing explicit authorization; if that scope is not authorized, obtain confirmation before writing.
    - If the user rejects a revision, do not write it - leave that artifact unchanged.
    - When a substantial rewrite is needed, get that artifact's rules and template first:
      ```bash
@@ -87,5 +90,5 @@ After each invocation, show:
 - Use the artifact ids and paths reported by `openspec status`; never branch on hardcoded artifact names.
 - Edit only the concrete files in `existingOutputPaths`; never write to a glob `resolvedOutputPath`.
 - Do not advance the build frontier: no new artifacts, no new files under glob artifacts - that is `$openspec-continue-change (Codex) or /openspec-continue-change (other agents)`'s job.
-- Confirm every edit with the user before writing.
+- Preserve existing explicit bounded authorization; confirm only newly required scope or missing authority.
 - If the request changes the change's *intent* rather than refining it, first verify whether the optional `$openspec-new-change (Codex) or /openspec-new-change (other agents)` workflow is available. If it is, recommend starting fresh with `$openspec-new-change (Codex) or /openspec-new-change (other agents)` (the "Update vs. Start Fresh" heuristic). If it is unavailable, ask for a distinct unused change name and recommend `openspec new change "<new-change-name>"` instead.

@@ -10,7 +10,10 @@ metadata:
   generatedBy: "1.13.0"
 ---
 
-Verify that an implementation matches the change artifacts (specs, tasks, design). Follow the selected project review ownership and evidence contract. This skill neither authorizes archive nor replaces required review, documentation or complete gates. MULTIAGENT also requires its DOCS_CLOSE/checkpoint protocol; DEFAULT Control follows docs/AGENT_WORKFLOW.md without importing specialized roles, phases, statuses or closure procedures.
+**Project authority:** Retain existing explicit bounded authorization; planning/exploration does not itself implement, and discovery answers or silence grant no new scope. In MULTIAGENT use the mandatory [workflow](../../../docs/AGENT_WORKFLOW_MULTIAGENT.md) for guarantee-based ordinary/critical routing, probe applicability, independent review, proven fixture correction, cumulative repair resources and next allowed action. DEFAULT keeps its own [workflow](../../../docs/AGENT_WORKFLOW.md). Select checks by dependencies/effects under [Testing](../../../docs/TESTING.md): isolated documents/tools use scoped checks, integration-triggering commits require the full gate, mixed scope the union. Report unrun/failed/skipped checks honestly; readiness or approval is not the completed goal.
+
+
+Verify that an implementation matches the change artifacts (specs, tasks, design). Follow the selected project review ownership and evidence contract. This skill neither authorizes archive nor replaces required review, documentation or applicable gates. MULTIAGENT also requires its DOCS_CLOSE/checkpoint protocol; DEFAULT Control follows docs/AGENT_WORKFLOW.md without importing specialized roles, phases, statuses or closure procedures.
 
 **Store selection:** If the user names a store (a store is a standalone OpenSpec repo registered on this machine) or the work lives in one, run `openspec store list --json` to discover registered store ids, then pass `--store <id>` on the commands that read or write specs and changes (`new change`, `status`, `instructions`, `list`, `show`, `validate`, `archive`, `doctor`, `context`, `schemas`, `view`). Once selected, treat `--store <id>` as sticky for the rest of the workflow. Every unscoped example of those commands below is shorthand: before running it, append the flag. For example, run `openspec status --change "<name>" --json --store "<id>"`, not the unscoped form shown below. Other commands do not take the flag. Hints printed by commands already carry the flag; keep it on follow-ups. Without a store, commands act on the nearest local `openspec/` root.
 
@@ -147,7 +150,7 @@ Verify that an implementation matches the change artifacts (specs, tasks, design
 
    **Final Assessment**:
    - Report actionable findings and the applicable project review verdict or verification status, including unperformed checks. Never infer archive authorization from warnings-only or all-clear results.
-   - Missing required behavior, missing required scenario evidence or a failed required check blocks approval/completion; warnings cannot bypass that boundary. MULTIAGENT retains its review, DOCS_CLOSE, full gate and checkpoint; DEFAULT retains Control's review, final documentation and complete gate without that specialized protocol.
+   - Missing required behavior, missing required scenario evidence or a failed required check blocks approval/completion; warnings cannot bypass that boundary. MULTIAGENT retains its review, DOCS_CLOSE, applicable gate and checkpoint; DEFAULT retains Control's review, final documentation and applicable gate without that specialized protocol.
 
 **Verification Heuristics**
 

@@ -3,7 +3,7 @@
 DEFAULT is the normal, fail-closed workflow. It uses two user-controlled top-level sessions and no project subagents:
 
 - **Control** owns the active OpenSpec contract, planning decisions, final documentation, test-first review of the stable diff, completion gates and archive.
-- **Developer** owns specification-derived tests and implementation in one bounded pass, including targeted checks and the complete local gate.
+- **Developer** owns specification-derived tests and implementation in one bounded pass, including targeted checks and the applicable local gate.
 
 The project default model is `gpt-6.1-sol` with `medium` reasoning. This default does not enable project
 subagents or import MULTIAGENT role routing into DEFAULT.
@@ -16,7 +16,7 @@ Changed observable behavior requires a meaningful test derived from the active r
 
 After valid red, Developer must not weaken, disable, skip or narrow the establishing test, alter its expected result to fit the implementation, or add production behavior that exists only for a test artifact. SQL, migrations, persistence, locking and idempotency use real PostgreSQL through Testcontainers as required by [Testing strategy](TESTING.md).
 
-Documentation, comments, formatting, mechanical configuration, a pure rename or an internally covered refactoring may record that no new behavioral test is needed. Existing applicable checks and the complete gate still run.
+Documentation, comments, formatting, mechanical configuration, a pure rename or an internally covered refactoring may record that no new behavioral test is needed. Applicable scope checks still run; integration-triggering changes require the complete gate before each commit.
 
 ## Development pass
 
@@ -24,13 +24,13 @@ Documentation, comments, formatting, mechanical configuration, a pure rename or 
 2. Developer reads the required project sources, assesses test impact and adds all needed test evidence before implementation.
 3. When behavior changes, Developer runs the targeted test and records behavioral red evidence.
 4. Developer implements the smallest coherent change without changing the accepted red expectation.
-5. Developer runs relevant targeted green checks and the complete local gate.
+5. Developer runs relevant targeted green checks and the applicable local gate.
 6. Developer returns a concise evidence handoff naming changed files, red and green evidence when applicable, verification results and remaining risks.
-7. Control reviews test meaning before implementation details, reviews the stable diff and independently runs the required completion gates before updating final documentation and archiving the change.
+7. Control reviews test meaning before implementation details, reviews the stable diff and independently runs the applicable completion gates before updating final documentation and archiving the change.
 
 ## Complete local gate
 
-Run from the repository root without test skip or selection flags:
+Select checks by actual dependencies and effects. The full gate below is required before every commit affecting Java including tests, build configuration, database/migrations, dependencies or shared runtime launch/operations instructions. Isolated documentation or research tools use scoped facts, consistency, links and tool tests; mixed work uses the union. Report the selected checks and reasons; unrun, skipped or failed checks are never PASS. Rerun affected checks after checked inputs change. When required, run from the repository root without test skip or selection flags:
 
 ```powershell
 pwsh -NoProfile -File .codex/scripts/verify-test-integrity.ps1
