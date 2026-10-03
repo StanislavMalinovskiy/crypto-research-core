@@ -4,6 +4,19 @@ Defines outcome-blind, reproducible validation of the R1 D1 field inventory and 
 
 ## ADDED Requirements
 
+### Requirement: Separate offline PumpSwap development mapping
+The design4j dependency SHALL map only bounded offline development input into full-signature/instruction-path declared PumpSwap user/mint/pool/vault identities, exact transaction-token-owned deltas, separate supported classic-SPL transfer facts and explicit ambiguity. It SHALL pin the historical upstream IDL/SPL source commits/hashes, preserve unverified deployment applicability, immutable conflict rejection, deterministic fact/report lineage and false D1/run flags. Missing/changed/unsupported state SHALL remain null with a reason, never zero-filled, per-invocation execution, reserves or verified historical coverage. Only inline synthetic tests and the sole hash-pinned preholdout v1 `004.raw` smoke are allocated; no providers, holdout/outcomes, price/returns/ranking/selection, field promotion or old-root writes. Behavioral RED/GREEN, fresh independent full-CI review and Main's complete gate SHALL precede dependency completion; this SHALL NOT consume/reset exploratory repair history or complete D1.
+
+#### Scenario: Documentary role mapping has incomplete token state
+- **WHEN** a supported PumpSwap instruction matches the pinned declared layout but an owned token account has null pre-state or changed ownership/mint/decimals
+- **THEN** the mapper SHALL retain declared identities, exact separate transfer facts where supported, and null affected ownedDelta with deterministic ambiguity diagnostics
+- **AND** historical deployment applicability and D1 sufficiency SHALL remain unverified, with false authorization/D1 flags.
+
+#### Scenario: Repeated identity conflicts or unsupported route
+- **WHEN** an immutable identity repeats with differing content or a transfer lacks a unique descendant invocation association
+- **THEN** immutable conflict SHALL invalidate the result without partial facts, while unsupported/ambiguous association SHALL remain explicitly unassociated without guessed execution amounts
+- **AND** equal duplicates SHALL deduplicate once and reordered equal semantic inputs SHALL preserve factsHash without erasing byte-level input provenance.
+
 ### Requirement: Separately authorized exploratory public sample
 Under the owner's 2026-10-03 authorization and offline-procedure section 11, a fixed zero-paid public SQD probe SHALL produce only availability, field-presence, sample-coverage and volume/cost feasibility outputs labelled `EXPLORATORY`, `d1Evidence = false` and `d1Passed = false`. It SHALL NOT compute returns, PnL, profitability, rankings, selection, strategy outcomes or reconstruction; change frozen methodology/calibration/thresholds; promote inventory fields; or claim full-envelope completeness. Meaningful behavioral RED, targeted GREEN, the two inventory suites, integrity preflight, strict all-item validation, doctor, diff check and ONE fresh independent review SHALL precede source requests. The owner's localized exception SHALL omit the full Maven/Docker gate for this probe only and SHALL NOT relax authoritative D1/P1 closure or permit archive.
 
@@ -12,15 +25,15 @@ Under the owner's 2026-10-03 authorization and offline-procedure section 11, a f
 - **THEN** only the fixed bounded exploratory public sample SHALL be executable
 - **AND** its result SHALL retain false D1 flags, explicit unknowns and unchecked full-D1 tasks.
 
-### Requirement: Exploratory holdout and payload admission guard
-The probe SHALL exclude every raw fetch, count and inspection of `[2026-08-31T00:00:00Z, 2026-09-29T00:00:00Z)`. It SHALL use only design 4f's six fixed preholdout timestamp anchors, validated header-first single-slot requests and three fixed program filters; no previous raw sample SHALL be read. Every returned header SHALL match the admitted safe slot, timestamp and hash before any raw retention or row count. Missing/unsafe/forbidden time, extra blocks, malformed/partial/oversized responses SHALL produce an explicit incomplete sample with no retained raw body or published rows from that response. Logs/receipts SHALL contain only safe accounting/fixed error codes, never provider error bodies or secrets.
+### Requirement: Exploratory v1 holdout and payload admission guard
+The v1 probe SHALL exclude every raw fetch, count and inspection of `[2026-08-31T00:00:00Z, 2026-09-29T00:00:00Z)`. It SHALL use only design 4f's six fixed preholdout timestamp anchors, validated header-first single-slot requests and three fixed program filters; no previous raw sample SHALL be read. Every returned header SHALL match the admitted safe slot, timestamp and hash before any raw retention or row count. Missing/unsafe/forbidden time, extra blocks, malformed/partial/oversized responses SHALL produce an explicit incomplete sample with no retained raw body or published rows from that response. Logs/receipts SHALL contain only safe accounting/fixed error codes, never provider error bodies or secrets.
 
 #### Scenario: Provider returns a holdout block
 - **WHEN** a requested preholdout slot response includes a timestamp on September 28 or another forbidden/missing/mismatched header
 - **THEN** the response SHALL be rejected before raw-file retention and row counting
 - **AND** only its attempted-request/received-byte/error accounting SHALL remain, with no fallback or retry.
 
-### Requirement: Exploratory finite budget and replay provenance
+### Requirement: Exploratory v1 finite budget and replay provenance
 The fixed exploratory query/summary/configuration versions SHALL be `exploratory-sqd-v1`, `exploratory-counts-v1` and `exploratory-config-c14n-v1`. The Node-built-in-only probe SHALL bound aggregate execution to USD 0, 30 minutes, 80 attempts, 25,000,000 received bytes, 50,000,000 retained bytes, 2,000,000 bytes/response, 30 seconds/request, two seconds between starts, concurrency one and retries zero. It SHALL reserve response/disk capacity before requests, retain 30,000,000,000 bytes free, record 80-percent checkpoints and stop unfinished work at 100 percent. Files SHALL be exclusive outside git; prior output SHALL NOT be overwritten/resumed. The manifest SHALL identify exact selectors, exclusion, limits, code/runtime/source/query versions, raw SHA-256, safe gaps and unresolved strata. Offline replay SHALL verify raw hashes and reproduce the deterministic summary hash without network or writes. Full-D1 upper bounds SHALL remain unknown unless supported; sensitivities SHALL explicitly identify assumed populations/workload and omitted components.
 
 #### Scenario: Finite sample reaches its byte ceiling
@@ -33,12 +46,61 @@ The fixed exploratory query/summary/configuration versions SHALL be `exploratory
 - **THEN** offline replay SHALL return a fixed integrity error without a successful summary
 - **AND** a byte-identical admitted manifest SHALL reproduce the original deterministic sample-summary hash without re-fetching data.
 
+### Requirement: Exploratory v2 continuous sample and exact input diagnostics
+The separately owner-authorized v2 SHALL execute only design4g's four fixed preholdout ten-minute windows, with header-census-validated continuous lightweight six-program and fixed-Jito-System-transfer profiles plus twelve separately labelled sparse rich-size samples. It SHALL exclude all holdout raw fetches/counts, admit no payload outside its census/time range, preserve v1 behavior/frozen tests, and retain `EXPLORATORY`/false-D1 flags. Cursor continuation and deterministic cap bisection SHALL be finite, identity-safe and gap-explicit; no-progress/partial/conflicting/malformed/forbidden data SHALL NOT become completeness. Fees/transfers SHALL preserve exact raw integers; venue instruction shares and fee-payer/mint/account proxies SHALL NOT be called reconstructed trade, candidate or depth coverage. Unsupported transfer forms, historical tip-label applicability, fee separation, SOL/USD, visibility and tick/bin state SHALL remain explicit unknowns.
+
+#### Scenario: Lightweight window succeeds but rich sample is sparse
+- **WHEN** all census blocks are admitted for the two lightweight profiles but rich payloads cover only fixed sampled slots
+- **THEN** v2 SHALL report continuous lightweight coverage and sparse rich-size evidence separately
+- **AND** neither matched-instruction share nor an empty selection SHALL establish D1 depth coverage or historical source absence.
+
+#### Scenario: Large response requires finite smaller pages
+- **WHEN** a multi-slot v2 response exceeds 16,000,000 bytes
+- **THEN** its partial body SHALL be discarded and charged, and only bounded deterministic bisection of the unadmitted range MAY proceed
+- **AND** admitted slots SHALL NOT be duplicated, single-slot failure SHALL remain a gap, and network failures SHALL NOT trigger retries.
+
+#### Scenario: Counts-only recognized swap share
+- **WHEN** A contains recognized design4g swap prefixes, initialization/liquidity instructions, unknown variants and distinct CPI invocations
+- **THEN** v2 SHALL report unique recognized committed swap-instruction counts/shares separately from all-program instruction shares and explicit unknown/error counts
+- **AND** the Orca/CLMM/DLMM diagnostic share SHALL NOT be called reconstructed volume, historical depth coverage or the frozen D1 trigger denominator.
+
+### Requirement: Exploratory v2 generous finite limits and numerical sensitivity
+V2 SHALL enforce design4g's Node24-major support and fixed fresh root, USD0/120-minute/1,000-attempt/1GB-received/1.1GB-disk/16MB-response/45-second-request ceilings, sequential two-second spacing, zero same-query retries, capacity reservation/free-space floor and cumulative checkpoint/stop accounting. It SHALL process and replay bounded manifest-listed pages incrementally, verify hashes and publish only deterministic summaries. Available full-duration lightweight rates and sparse rich-size denominators SHALL produce exact rational/ceiling low/central/high numerical workload and hypothetical cash sensitivities under the named fractions/multipliers/tariffs, not unsupported full-D1 forecasts or proven bounds; missing denominators SHALL remain unavailable. Meaningful RED, four Node suites, targeted repository checks and ONE fresh independent full-CI review SHALL precede the one public run. The owner-authorized exploratory-only Maven/Docker exception SHALL NOT weaken confirmatory D1 closure, change methodology or authorize archive/spending.
+
+#### Scenario: Numerical workload assumptions do not prove full-D1 feasibility
+- **WHEN** v2 has usable sample rates but actual eligible populations, ancillary state and full-D1 tariffs remain unknown
+- **THEN** it SHALL show supported numeric low/central/high assumed-workload scenarios with formulas/omissions
+- **AND** `fullD1UpperBound` SHALL remain null, actual cash zero, full-D1 tasks unchecked and source-selection/outcome work unauthorized.
+
+#### Scenario: Replay or final budget is incomplete
+- **WHEN** a v2 page hash differs, a partial file is unresolved, or a finite ceiling stops the run
+- **THEN** the affected result SHALL remain explicitly incomplete or integrity-invalid without further provider calls
+- **AND** an identical valid manifest SHALL reproduce the original summary without loading all raw pages into memory.
+
+### Requirement: Separately gated exploratory v3 bounded retries
+Design4i's fresh v3 SHALL preserve v2 windows, selectors, admission, metrics, arithmetic, holdout exclusion and all aggregate ceilings. Only HTTP_ERROR with529/503/429 or the owned45-second transport-timer TIMEOUT with no status/200/529/503/429 SHALL permit same-canonical-query retry after body discard. At most four retries with15/45/120/300-second backoff and150 globally SHALL occur. Every attempt, wait and discarded byte SHALL be charged; rejected attempts SHALL NOT contribute coverage, rows or denominators. Valid decimal Retry-After seconds SHALL lengthen waits; invalid/unsupported supplied values SHALL stop the query. Insufficient wait plus45-second remaining room SHALL stop the run without an early retry. V3 SHALL use a fresh immutable root and fingerprinted retry policy; existing80 tests and v1/v2 evidence SHALL remain preserved. New meaningful RED/freeze, current-reviewer third-repair authorization, independent full-CI APPROVE and Main's procedure11 targeted gate SHALL precede the one public attempt; replanning SHALL NOT reset repair capacity or authorize archive.
+
+#### Scenario: Eligible failure recovers without duplicate admission
+- **WHEN** a safe fixed v3 query receives an eligible failure then a validated successful body within retry/budget limits
+- **THEN** the identical query SHALL retry after its full applicable delay, with every failed byte/attempt/wait recorded and charged
+- **AND** only the successful body SHALL be retained/admitted once; other statuses/errors SHALL remain terminal.
+
+#### Scenario: Retry-After and finite deadline cannot be bypassed
+- **WHEN** Retry-After exceeds schedule, is invalid/unsupported, or the next full wait plus45seconds cannot fit the remaining run allowance
+- **THEN** v3 SHALL honor the longer valid wait or stop explicitly before retrying
+- **AND** no header clamping, shortened deadline, uncharged wait, fifth retry or151st global retry SHALL occur.
+
+#### Scenario: Replay preserves complete retry accounting and old evidence
+- **WHEN** Main replays v3 offline or replays preserved v2 source bytes against the original v2 manifest
+- **THEN** v3 SHALL validate ordered retry history and reproduce its original summary/accounting/hashes without network/writes/waits, and v2 SHALL reproduce its original hashes/status
+- **AND** tampered retry order/timing/counters SHALL fail integrity; prior v1/v2 pre-run totals, separate v3 counters and exact cumulative post-run totals SHALL remain explicit without double charging or zeroing history; unmeasured profiles SHALL remain unknown with false D1 flags and unchecked confirmatory tasks.
+
 ### Requirement: Complete required-field accounting
-The inventory SHALL account for every frozen R1 section 8.1 field with explicit source references, covered dates, granularity, gaps, cost and retention evidence. It SHALL distinguish `CONFIRMED`, `DOCUMENTED`, `UNVERIFIED` and `UNAVAILABLE` field status. `CONFIRMED` SHALL denote an author-supplied, evidenced assertion subject to independent review, not a measured D1 availability result or a fact certified by the validator. Documentary capability SHALL NOT be reported as measured coverage. Missing, duplicate, unknown or malformed required-field records SHALL produce `INVENTORY_INVALID`; valid but unresolved fields SHALL produce `INVENTORY_BLOCKED` with every blocking reason retained in deterministic order.
+The inventory SHALL account for every frozen R1 section 8.1 field with explicit source references or an explicit unavailable reason, actual covered dates or declared unknowns, granularity or declared unknowns, gaps, cost and retention evidence. It SHALL distinguish `CONFIRMED`, `DOCUMENTED`, `UNVERIFIED` and `UNAVAILABLE` field status. `CONFIRMED` SHALL denote an author-supplied, evidenced assertion subject to independent review, not a measured D1 availability result or a fact certified by the validator. Missing, duplicate, unknown or malformed required-field records SHALL remain `INVENTORY_INVALID`. Design4h's default report-v2 SHALL distinguish field-accounting/source-admission blockers from every existing field-availability diagnostic, without suppressing unavailable fields or reporting documentary/modelled assertions as measured coverage. Valid unaccounted fields SHALL block completion; explicitly accounted insufficiency SHALL remain visible for the separate unchanged frozen D1 gate.
 
 #### Scenario: Trade table without historical depth
 - **WHEN** trade legs are documented but historical reserve/depth inputs remain unverified
-- **THEN** the report SHALL include the reserve/depth blocker
+- **THEN** the report SHALL include the reserve/depth availability diagnostic
 - **AND** it SHALL NOT present the trade table as proof of depth coverage or a passed D1 gate.
 
 #### Scenario: Missing and duplicate fields
@@ -48,7 +110,7 @@ The inventory SHALL account for every frozen R1 section 8.1 field with explicit 
 
 #### Scenario: Multiple unresolved prerequisites
 - **WHEN** a valid inventory has unknown source cost, unconfirmed retention and an unavailable field
-- **THEN** the report SHALL retain all three categories of blockers
+- **THEN** the report SHALL retain source cost/retention blockers and the unavailable-field availability diagnostic
 - **AND** it SHALL NOT discard unavailable fields.
 
 ### Requirement: Exact bounded source cost and retention
@@ -128,13 +190,28 @@ The validator SHALL read only its explicitly supplied inventory, bound input to 
 - **AND** it SHALL make zero provider calls and zero filesystem writes.
 
 ### Requirement: Inventory readiness is separate from extraction authorization
-A syntactically valid inventory SHALL be `INVENTORY_COMPLETE` only when every required field is confirmed over the frozen extraction envelope and all selected-source version, retention and cost prerequisites are present. Every report SHALL retain `runAuthorized = false` and `d1Passed = false`, including complete inventories. Before any D1 data run, the inventory SHALL receive the change's mandatory review and an updated Architect PLAN_READY SHALL name confirmed sources, exact query/export versions, reviewed scripts, output location and finite run ceilings. Bulk extraction SHALL follow inventory review. Frozen D1 gate thresholds, calibration and outcome-bearing work SHALL remain separately guarded by the accepted R1 protocol.
+A syntactically valid inventory SHALL report accounting completeness only when all12 fields satisfy design4h's explicit accounting contract; missing source references SHALL require an explicit `UNAVAILABLE` reason, and unknown coverage/granularity SHALL require an explanatory gap. `INVENTORY_COMPLETE` SHALL additionally require selected-source version, evidence, retention and exact cost prerequisites; no selected source SHALL retain an explicit source-admission blocker. Every field-shortfall code SHALL remain in deterministically ordered availability diagnostics even when accounting is complete. The corrected default SHALL identify `r1-d1-inventory-report-v2` while preserving input schema/canonicalization and its content fingerprint. Every report SHALL retain `runAuthorized = false` and `d1Passed = false`. Sufficient coverage SHALL be judged only by unchanged frozen R1 8.2/8.3 measurements, never inventory classification. Before any D1 data run, mandatory review and an updated Architect PLAN_READY SHALL name admitted sources, exact query/export versions, reviewed scripts, output location and finite run ceilings. Bulk extraction SHALL follow inventory review; frozen calibration/outcome guards remain unchanged.
 
 #### Scenario: Complete inventory does not permit extraction
-- **WHEN** every inventory prerequisite is confirmed
+- **WHEN** every field is explicitly accounted for and selected-source admission prerequisites are satisfied
 - **THEN** the report SHALL be `INVENTORY_COMPLETE` with `runAuthorized = false` and `d1Passed = false`
 - **AND** no data run SHALL start from that report alone.
-- **AND** its confirmed claims SHALL remain subject to independent evidence review rather than being reported as measured D1 coverage.
+- **AND** all remaining availability diagnostics and confirmed claims SHALL remain subject to separate sufficiency measurement and independent evidence review.
+
+#### Scenario: Explicit unavailable inputs do not disappear
+- **WHEN** source admission is satisfied and the complete12-field inventory explicitly records unavailable depth or partial coverage with reasons
+- **THEN** report-v2 SHALL permit accounting completion while retaining the existing unavailable/coverage/gap codes in availability diagnostics
+- **AND** it SHALL NOT assert that the frozen depth or other D1 threshold passed.
+
+#### Scenario: Historical visibility uses the frozen modeled default
+- **WHEN** observed historical visibility is unavailable and its field explicitly records that fact together with versioned C-3 MODELED60-second availability
+- **THEN** accounting SHALL NOT require fabricated observed latency or remove its availability diagnostic
+- **AND** the modeled default SHALL NOT be reported as measurement, calibration or D1 passage.
+
+#### Scenario: Frozen assertion correction is reviewed before editing
+- **WHEN** implementation of design4h requires changing an establishing assertion that encoded the superseded all-CONFIRMED or zero-gap readiness rule
+- **THEN** the current reviewer SHALL explicitly authorize only the named correction with requires_new_red=true before Builder edits it
+- **AND** meaningful new behavioral RED, unchanged unrelated assertions, fresh full-CI review and Main's complete gate SHALL precede completion.
 
 #### Scenario: Initial implementation slice
 - **WHEN** only the offline inventory slice has been implemented and reviewed

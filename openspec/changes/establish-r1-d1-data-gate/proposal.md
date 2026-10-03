@@ -17,7 +17,15 @@ R1 is frozen at `1.0.0`. The repository already retains measured SQD/public RPC 
 
 ## Capabilities
 
+Latest owner-authorized extension (2026-10-03): exploratory v2 uses four continuous ten-minute preholdout lightweight six-program/Jito-input windows and separate sparse rich-size samples under design 4g. Larger finite budgets, Node-major support and explicit numerical workload/cash sensitivities replace v1's inadequate response cap only for the fresh v2 root; v1 evidence and all frozen confirmatory methodology remain unchanged. No outcome calculation or historical candidate selection is allocated.
+
+Next separate offline slice (2026-10-03 delegated scope decision): design4h corrects the default inventory report to distinguish complete field accounting/source admission from measured field sufficiency, retaining every availability diagnostic and false authorization/D1 flags. This fixes the active change's overly strict all-CONFIRMED/zero-gap rule, not frozen R1 methodology. The current reviewer must authorize the exact affected frozen assertions before Builder edits; behavioral RED, fresh review and the complete repository gate remain mandatory. PumpSwap mapping is an authorized later dependency requiring its own bounded PLAN, not allocated here; v2 code/query/run contracts remain untouched.
+
+Separate delegated source step (Claude scope decision `a75d0cf1`, 2026-10-03): design4i allocates one fresh exploratory v3 with bounded same-query resilience only for HTTP529/503/429 and precisely defined transport timeouts. Preserve v2 evidence/replay, all80 frozen tests, identical windows/selectors/metrics/arithmetic/holdout and original aggregate ceilings; charge every retry/wait/error byte. New behavioral RED, current-reviewer third-repair authorization, independent full-CI review and Main's exploratory targeted gate precede the one source attempt. No inventory correction, mapper, paid/keyed source, full D1 passage or archive is included.
+
 ### New Capabilities
+
+Separate owner-authorized dependency (2026-10-03): design4j allocates a pure offline PumpSwap declared-role/token-ownedDelta/classic-SPL-transfer mapper using inline synthetic fixtures and only the pinned preholdout v1 `004.raw` for one read-only development smoke. Historical upstream IDL/SPL commits and hashes are pinned; deployment applicability stays unverified. No price/outcome/selection, provider request, field promotion or D1 evidence; meaningful RED, fresh full-CI review and complete Maven/Docker gate are required. Existing4h/v3 work and consumed repair capacity remain separate.
 
 - `r1-data-inventory`: Bounded offline validation and reproducible reporting of required-field availability, source evidence, retention and costs, plus the extraction authorization barrier.
 
@@ -29,4 +37,4 @@ None. The accepted `research-protocol` and `research-reproducibility` remain con
 
 - Research-only files under `tools/research/r1/` and task documentation under `docs/research/`; no application module is modified.
 - Reuse the repository's existing Node tooling and built-in test runner; no new package, production dependency, service, database, migration or module edge.
-- Non-goals: provider selection for live ingestion, credentials, paid calls, confirmatory source runs or bulk extraction in this slice, reconstruction or gate calculations, calibration edits, P1 outcomes, wallet ranking, execution, and changes to frozen R1/RED/golden evidence.
+- Non-goals: provider selection for live ingestion, credentials, paid calls, confirmatory source runs or bulk extraction in this slice, complete trade/price reconstruction or gate calculations beyond design4j's declared offline mapping dependency, calibration edits, P1 outcomes, wallet ranking, execution, and changes to frozen R1/RED/golden evidence.
