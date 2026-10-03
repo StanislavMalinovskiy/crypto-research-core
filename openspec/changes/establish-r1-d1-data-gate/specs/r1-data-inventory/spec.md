@@ -28,6 +28,23 @@ Every H1/H3 request SHALL include design4k's fixed half-open blockTime filter be
 ### Requirement: Finite Helius attempts and reproducible accounting
 H1 SHALL make exactly one bounded attempt with zero retries; H3 SHALL enforce design4k's generous finite caps, credit reservation on every attempt, sequential round-robin cursor work and finite eligible backoff without Retry-After bypass. Failed/partial bytes, waits and uncertain charges SHALL remain accounted, while failed responses SHALL provide no cursor/coverage. Exclusive external files/manifest lineage SHALL preserve previous roots and cumulative history. Offline replay SHALL verify raw SHA-256, deterministic admission/counts/attempt ordering and semantic hashes without requests, secrets, writes or waits; elapsed/rate/dashboard presentation SHALL remain operational metadata outside deterministic summary identity.
 
+For H3 only, delegated6a2882dc/eaf28793 SHALL replace the hard120-minute all-writes assertion with elapsed+full pending wait+60000<=6900000ms before source attempts, subject ONLY to the accepted capacity-check gap below, and a300000ms final-publication reserve within a nominal7200000ms Main-measured budget. Manifest/returned elapsed SHALL be explicitly labelled PRE_PUBLICATION/prePublicationElapsedMs with consistently scoped cumulative aliases. Main SHALL independently measure launch/all CLI writes/exit into the existing source log; replay COMPLETE SHALL mean semantic admission/reproduction only, not run-budget passage. No immutable file deletion/rewrite/marker or new state/publication protocol SHALL be introduced; H1 and every other cap/admission rule SHALL remain unchanged.
+
+#### Scenario: Owner accepts the exact elapsed-before-capacity-check limitation
+- **WHEN** helius-probe.cjs423's elapsed check precedes a store.free delay, under delegatedabc5bdb6 corrected68d30d32 KNOWN_LIMITATION_ACCEPTED
+- **THEN** that gap alone MAY permit at most one late full request after an unknown delay crossing115 or120min, with100reserved credits/60s timeout; strict zero late-start/fail-closed time enforcement SHALL NOT be claimed
+- **AND** synthetic6900000ms capacity delay/1attempt/TIME_LIMIT, unchanged independent resource/holdout/admission/order/replay checks, actual incomplete/replay dispositions and Main budget SHALL remain explicit; current Reviewer approval and Main full gate SHALL precede source release without a fourth repair/test edit/reset.
+
+#### Scenario: Final immutable publication exceeds the nominal time budget
+- **WHEN** admitted complete H3 data finish final publication after Main's independently measured7200000ms
+- **THEN** Main SHALL retain immutable EXPLORATORY data COMPLETE and record budget OVERRUN/no overall PASS without another source attempt, rewriting or fabricated prepublication timing
+- **AND** semantic replay SHALL reproduce the admitted data/hash, with budget unmeasured offline; H4 MAY use these data with the separate Main receipt's OVERRUN label, while interrupted/incomplete data SHALL remain incomplete/INCONCLUSIVE.
+
+#### Scenario: A source attempt cannot fit the revised cutoff
+- **WHEN** current elapsed plus the full required wait and60000ms request reservation exceed6900000ms, or a terminal disposition has occurred
+- **THEN** outside only the accepted elapsed-before-store.free gap H3 SHALL start no new source attempt/retry, and SHALL publish its honest existing data disposition; no source start after terminal disposition SHALL be allowed even under that exception
+- **AND** current Reviewer authorization/new behavioral RED SHALL precede any correction of the three superseded frozen timing tests; replanning SHALL NOT reset the consumed two repairs or authorize the final third pass.
+
 #### Scenario: Retry or cursor cannot fit the remaining allowance
 - **WHEN** the next reservation/full wait+request deadline cannot fit, a cursor repeats, or an immutable signature conflicts
 - **THEN** requests SHALL stop with explicit incomplete/integrity disposition and no quota reset, duplicate admission or fallback

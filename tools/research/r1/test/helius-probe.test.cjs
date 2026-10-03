@@ -131,3 +131,183 @@ test('replay bounds original recorded metadata separately from mutable manifest 
   d.store.files.set('manifest.json', Buffer.from(JSON.stringify(telemetry)));
   assert.equal((await p.replay(d.store)).summaryHash, r.summaryHash);
 });
+function addressOf(n) { const alphabet = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz'; let x = BigInt('0x' + Buffer.alloc(32, n).toString('hex')), out = '';
+  while (x) { out = alphabet[Number(x % 58n)] + out; x /= 58n; } return out; }
+const ranges3 = [[1775001600, 1782777600], [1782777600, 1785369600], [1785369600, 1787961600]];
+const fullRow = (extra = {}) => ({ slot: 410195947, transactionIndex: 18, blockTime: 1775001600,
+  transaction: { signatures: [signature], message: { accountKeys: [address], instructions: [] } }, meta: { err: null, fee: '__fee__', preBalances: [], postBalances: [] }, ...extra });
+const fullBody = (rows = [], token = null) => body(rows, token).toString().replaceAll('"__fee__"', '9007199254740993123');
+const fullBytes = (rows = [], token = null) => Buffer.from(fullBody(rows, token));
+const options3 = credits => ({ enabled: true, stage: 'H3', creditsRemaining: credits ?? '999990', output: p.OUTPUT3 });
+function deps3(handler) {
+  let time = 0; const d = deps(); d.preflight = { retainedBytes: 9000000, observedAt: '2026-10-03T12:00:00Z' };
+  d.now = () => time; d.wait = async ms => { time += ms; }; d.utcNow = () => Date.parse('2026-10-03T12:00:00Z') + time;
+  d.selectorRaw = Buffer.from(JSON.stringify({ header: { number: 410195947, timestamp: 1775001600 },
+    transactions: Array.from({ length: 36 }, (_, n) => ({ transactionIndex: n + 18, accountKeys: [addressOf(n + 1)] })) }));
+  d.selectorManifest = Buffer.from('synthetic selector manifest'); const selection = p.selectCohort(d.selectorRaw, digest(d.selectorRaw), d.selectorManifest, digest(d.selectorManifest));
+  d.selectorHashes = { rawHash: digest(d.selectorRaw), manifestHash: digest(d.selectorManifest), cohortHash: selection.cohortHash };
+  d.transport = async (q, o) => { const call = { q, start: time }; d.calls.push(call); time++;
+    const r = handler ? handler(q, d.calls.length, call) : fullBytes();
+    if (r.code) { o.onChunk(r.received ?? 0); return { attempted: true, ...r }; }
+    o.onChunk(r.length); return { code: null, status: 200, received: r.length, bytes: r, attempted: true }; };
+  return d;
+}
+test('H3 full-mode fixed filters and full response reject whole unsafe page before raw/counts', async () => {
+  const q = p.query3(addressOf(1), 0, null); assert.equal(q.body.params[1].transactionDetails, 'full');
+  assert.deepEqual(q.body.params[1], { commitment: 'finalized', transactionDetails: 'full', encoding: 'json', maxSupportedTransactionVersion: 1,
+    sortOrder: 'asc', limit: 1000, filters: { blockTime: { gte: 1775001600, lt: 1782777600 }, status: 'any', tokenAccounts: 'all' } });
+  const good = p.admit3(fullBytes([fullRow()]), q); assert.equal(good.code, null); assert.equal(good.rows.length, 1);
+  for (const blockTime of [null, undefined, 1788134400, 1790553600, 1782777600, 1775001599]) {
+    const d = deps3(() => fullBytes([fullRow(), fullRow({ blockTime })])), r = await p.runH3(options3(), d);
+    assert.equal(r.code, 'RESPONSE_INVALID'); assert.equal(r.summary.rows, 0); assert.equal(d.calls.length, 1);
+    assert.equal([...d.store.files.keys()].some(n => n.endsWith('.raw')), false); assert.ok(r.accounting.received > 0);
+  }
+  assert.equal(p.admit3(fullBytes([fullRow({ transaction: { signatures: ['invalid'], message: {} } })]), q).code, 'RESPONSE_INVALID');
+});
+test('H3 credit reservation and finite capacity stop before unfit starts without resetting H1', async () => {
+  const d = deps3(), r = await p.runH3(options3('99'), d); assert.equal(r.code, 'CREDIT_LIMIT'); assert.equal(d.calls.length, 0);
+  const limited = deps3(), stop = await p.runH3(options3('100'), limited); assert.equal(stop.code, 'CREDIT_LIMIT'); assert.equal(limited.calls.length, 1);
+  assert.equal(stop.accounting.creditsReserved, 100); assert.equal(stop.accounting.cumulative.pre.attempts, 100);
+  assert.equal(stop.accounting.cumulative.pre.received, 8505085); assert.equal(stop.accounting.cumulative.pre.elapsedMs, 196764);
+  assert.equal(stop.accounting.cumulative.post.attempts, 101); assert.equal(stop.accounting.cumulative.post.received, 8505085 + stop.accounting.received);
+  assert.ok(stop.summary.streams.some(s => s.status === 'UNQUERIED')); assert.equal(stop.summary.fullD1UpperBound, null);
+  const disk = deps3(); disk.preflight.retainedBytes = 7000000000; assert.equal((await p.runH3(options3(), disk)).code, 'DISK_LIMIT'); assert.equal(disk.calls.length, 0);
+});
+test('H3 actual transport keeps synthetic authentication out of successful/error outputs and bounds timeout/caps', async t => {
+  const secret = 'synthetic-h3-secret', server = http.createServer((req, res) => res.end(fullBytes([fullRow({ memo: secret })])));
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve)); t.after(() => new Promise(resolve => { server.closeAllConnections(); server.close(resolve); }));
+  const q = p.query3(addressOf(1), 0, null), r = await p.send(q, { loopback: `http://127.0.0.1:${server.address().port}`, secretLoader: () => secret });
+  assert.equal(r.code, 'SECRET_EXPOSURE'); assert.equal(r.bytes, undefined); assert.equal(JSON.stringify(r).includes(secret), false);
+  const tooLarge = await p.send(q, { loopback: `http://127.0.0.1:${server.address().port}`, secretLoader: () => secret, responseLimit: 10 }); assert.equal(tooLarge.code, 'RESPONSE_LIMIT');
+  const delayed = http.createServer((req, res) => res.write('partial')); await new Promise(resolve => delayed.listen(0, '127.0.0.1', resolve));
+  t.after(() => new Promise(resolve => { delayed.closeAllConnections(); delayed.close(resolve); }));
+  const timed = await p.send(q, { loopback: `http://127.0.0.1:${delayed.address().port}`, secretLoader: () => secret, deadlineMs: 15 });
+  assert.equal(timed.code, 'TIMEOUT'); assert.equal(timed.ownedDeadline, true); assert.equal(timed.bytes, undefined);
+});
+test('H3 fixed cohort round-robin membership dedup raw replay and H4 exact censored sensitivity', async () => {
+  const d = deps3(q => fullBytes([fullRow({ blockTime: q.body.params[1].filters.blockTime.gte,
+    transaction: { signatures: [signatureOf(ranges3.findIndex(r => r[0] === q.body.params[1].filters.blockTime.gte) + 1)], message: { accountKeys: [address], instructions: [] } } })]));
+  const r = await p.runH3(options3(), d); assert.equal(r.code, null); assert.equal(d.calls.length, 108);
+  assert.equal(r.summary.rows, 3); assert.equal(r.summary.membershipRows, 108); assert.equal(r.summary.statusCounts.success, 3);
+  assert.deepEqual(d.calls.slice(0, 3).map(c => c.q.body.params[1].filters.blockTime), ranges3.map(([gte, lt]) => ({ gte, lt })));
+  assert.ok(d.calls.every((c, n) => !n || c.start - d.calls[n - 1].start >= 250));
+  assert.equal(r.accounting.creditsReserved, 10800); assert.equal(r.summary.estimatedCredits, 1080); assert.equal(r.accounting.actualCredits, null);
+  const replay = await p.replay3(d.store, { utcNow: d.utcNow }); assert.equal(replay.code, null); assert.equal(replay.summaryHash, r.summaryHash);
+  const manifest = JSON.parse(d.store.files.get('manifest.json')); manifest.operational.elapsedMs += 123; d.store.files.set('manifest.json', Buffer.from(JSON.stringify(manifest)));
+  assert.equal((await p.replay3(d.store, { utcNow: d.utcNow })).summaryHash, r.summaryHash);
+  const f = p.forecast(replay.summary); assert.equal(f.fullD1UpperBound, null); assert.equal(f.completeAddresses, 36);
+  assert.equal(f.scenarios.find(s => s.wallets === 1000).pooled.transactions, '3600');
+  assert.equal(f.scenarios.find(s => s.wallets === 1000).pooled.estimatedCredits, '36000');
+  assert.equal(f.scenarios.find(s => s.wallets === 1000).months[0].walletHistoryFits, true);
+  const incomplete = deps3(), partial = await p.runH3(options3('100'), incomplete); assert.equal(p.forecast(partial.summary).scenarios, null);
+  const raw = [...d.store.files.keys()].find(n => n.endsWith('.raw')); d.store.files.set(raw, Buffer.from('tampered')); assert.equal((await p.replay3(d.store, { utcNow: d.utcNow })).code, 'INTEGRITY_ERROR');
+  const conflict = deps3((q, n) => fullBytes([fullRow({ blockTime: q.body.params[1].filters.blockTime.gte, memo: String(n) })]));
+  const bad = await p.runH3(options3(), conflict); assert.equal(bad.code, 'IMMUTABLE_CONFLICT'); assert.equal(conflict.calls.length, 2); assert.equal(bad.summary.rows, 1);
+});
+test('H3 same-query retries obey eligible failures backoff Retry-After and hard retry ceilings', async () => {
+  const d = deps3((q, n) => n < 4 ? { code: 'HTTP_ERROR', status: 529, received: 7 } : fullBytes());
+  const r = await p.runH3(options3(), d); assert.equal(r.code, null); assert.equal(r.accounting.retries, 3); assert.equal(r.accounting.attempts, 111);
+  assert.equal(r.accounting.creditsReserved, 11100); assert.equal(r.accounting.received, 21 + 108 * fullBytes().length);
+  for (const [n, wait] of [[1, 5000], [2, 15000], [3, 45000]]) {
+    assert.deepEqual(d.calls[n].q, d.calls[0].q); assert.ok(d.calls[n].start - d.calls[n - 1].start >= wait + 1);
+  }
+  assert.equal((await p.replay3(d.store, { utcNow: d.utcNow })).summaryHash, r.summaryHash);
+  for (const response of [{ code: 'HTTP_ERROR', status: 403, received: 3 }, { code: 'NETWORK_ERROR', received: 3 },
+    { code: 'HTTP_ERROR', status: 429, received: 3, retryAfterInvalid: true }, { code: 'HTTP_ERROR', status: 503, received: 3, retryAfter: '99999999999999999999999' }]) {
+    const refused = deps3(() => response), bad = await p.runH3(options3(), refused); assert.equal(refused.calls.length, 1); assert.equal(bad.status, 'INCOMPLETE');
+    assert.equal(bad.accounting.received, 3); assert.equal(bad.accounting.creditsReserved, 100);
+  }
+  const exhausted = deps3(() => ({ code: 'HTTP_ERROR', status: 503, received: 1 })); assert.equal((await p.runH3(options3(), exhausted)).code, 'HTTP_ERROR'); assert.equal(exhausted.calls.length, 4);
+  const honored = deps3((q, n) => n === 1 ? { code: 'HTTP_ERROR', status: 429, received: 1, retryAfter: '9' } : fullBytes());
+  assert.equal((await p.runH3(options3(), honored)).code, null); assert.ok(honored.calls[1].start >= 9001);
+  const cursor = deps3(q => fullBytes([fullRow({ blockTime: q.body.params[1].filters.blockTime.gte,
+    transaction: { signatures: [signatureOf(ranges3.findIndex(r => r[0] === q.body.params[1].filters.blockTime.gte) + 1)], message: { accountKeys: [address], instructions: [] } } })], '410195947:18'));
+  const stuck = await p.runH3(options3(), cursor); assert.equal(stuck.code, 'CURSOR_INVALID'); assert.equal(cursor.calls.length, 109);
+});
+test('H3 ordinary status lexemes hard budgets Retry-After headers and offline forecast checks', async t => {
+  const ordinalSignature = n => { const alphabet = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz', bytes = Buffer.alloc(64); bytes.writeUInt32BE(n, 60);
+    let x = BigInt('0x' + bytes.toString('hex')), out = '', zeros = 0; while (bytes[zeros] === 0) zeros++;
+    while (x) { out = alphabet[Number(x % 58n)] + out; x /= 58n; } return '1'.repeat(zeros) + out; };
+  const item = (q, n, err = null) => fullRow({ transactionIndex: n, blockTime: q.body.params[1].filters.blockTime.gte,
+    transaction: { signatures: [ordinalSignature(n)], message: { accountKeys: [address], instructions: [] } }, meta: { err, fee: '__fee__' } });
+  const statuses = deps3(q => { const offset = ranges3.findIndex(r => r[0] === q.body.params[1].filters.blockTime.gte) * 3;
+    return fullBytes([item(q, offset + 1, null), item(q, offset + 2, {}), item(q, offset + 3, 'unknown')]); });
+  const good = await p.runH3(options3(), statuses); assert.deepEqual(good.summary.statusCounts, { success: 3, failed: 3, unknown: 3 });
+  assert.ok([...statuses.store.files].some(([name, bytes]) => name.endsWith('.raw') && bytes.includes(Buffer.from('9007199254740993123'))));
+  const result = await p.replay3(statuses.store, { utcNow: statuses.utcNow }); assert.equal(result.code, null);
+  const projection = p.forecast(result.summary, result.accounting); assert.equal(projection.scenarios[0].pooled.transactions, '10800');
+  assert.ok(BigInt(projection.scenarios[0].pooled.retainedBytes) >= BigInt(projection.scenarios[0].pooled.retainedRawBytes));
+  assert.equal(projection.scenarios[0].pooled.pageRoundedCreditMinimum, '40000'); assert.equal(projection.sample.failedShare.numerator, '3');
+  assert.equal((await runCli(['--forecast', p.OUTPUT3 + '\\manifest.json'], { store: statuses.store, utcNow: statuses.utcNow })).fullD1UpperBound, null);
+  const altered = JSON.parse(statuses.store.files.get('manifest.json')); altered.records[0].received++;
+  statuses.store.files.set('manifest.json', Buffer.from(JSON.stringify(altered))); assert.equal((await p.replay3(statuses.store, { utcNow: statuses.utcNow })).code, 'INTEGRITY_ERROR');
+  const total = deps3((q, n) => fullBytes([item(q, n)], '410195947:' + n)), cap = await p.runH3(options3(), total);
+  assert.equal(cap.code, 'ATTEMPT_LIMIT'); assert.equal(total.calls.length, 1000); assert.equal(cap.accounting.creditsReserved, 100000);
+  assert.ok(JSON.parse(total.store.files.get('manifest.json')).checkpoints.some(c => c.name === 'attempts' && c.value === 800));
+  assert.equal((await p.replay3(total.store, { utcNow: total.utcNow })).summaryHash, cap.summaryHash);
+  const retryCap = deps3((q, n) => n % 4 === 0 ? fullBytes() : { code: 'HTTP_ERROR', status: 503, received: 1 });
+  const retryStop = await p.runH3(options3(), retryCap); assert.equal(retryStop.code, 'RETRY_LIMIT'); assert.equal(retryStop.accounting.retries, 150); assert.equal(retryCap.calls.length, 201);
+  const before = deps3(), write = before.store.write; before.store.write = (name, bytes) => { if (name === 'attempt.json') throw Error('synthetic'); write(name, bytes); };
+  const storage = await p.runH3(options3(), before); assert.equal(storage.code, 'STORAGE_ERROR'); assert.equal(before.calls.length, 0); assert.equal(storage.accounting.attempts, 0);
+  for (const header of [['5', '7'], 'Wed, 01 Jan 2030 00:00:00 GMT', '9', '8'.repeat(129)]) {
+    const server = http.createServer((req, res) => { res.statusCode = 503; res.setHeader('Retry-After', header); res.end('discarded'); });
+    await new Promise(resolve => server.listen(0, '127.0.0.1', resolve)); t.after(() => new Promise(resolve => { server.closeAllConnections(); server.close(resolve); }));
+    const response = await p.send(p.query3(addressOf(1), 0), { loopback: `http://127.0.0.1:${server.address().port}`, secretLoader: () => 'synthetic-secret' });
+    assert.equal(response.code, 'HTTP_ERROR'); assert.equal(response.bytes, undefined); assert.equal(response.retryAfterInvalid, header !== '9');
+    assert.equal(response.retryAfter, header === '9' ? '9' : null);
+  }
+});
+test('H3 prepublication elapsed has explicit scope and consistent cumulative aliases', async () => {
+  const d = deps3(), write = d.store.write; let boundary;
+  d.store.write = (name, bytes) => { if (name === 'summary.json') boundary = d.now(); write(name, bytes); if (name === 'summary.json' || name === 'manifest.json') d.wait(17); };
+  const r = await p.runH3(options3(), d);
+  assert.equal(r.accounting.elapsedScope, 'PRE_PUBLICATION'); assert.equal(r.accounting.prePublicationElapsedMs, boundary);
+  assert.equal(r.accounting.elapsedMs, boundary);
+  assert.equal(r.accounting.cumulative.step.elapsedMs, boundary);
+  assert.equal(r.accounting.cumulative.post.elapsedMs, 196764 + boundary);
+});
+test('H3 late final publication preserves semantic data while overall time budget stays independently measured', async () => {
+  const d = deps3(), write = d.store.write;
+  d.store.write = (name, bytes) => { write(name, bytes); if (name === 'manifest.json') d.wait(7200001); };
+  const r = await p.runH3(options3(), d);
+  assert.equal(r.code, null); assert.equal(r.status, 'COMPLETE'); assert.ok(r.summaryHash);
+  assert.equal(r.accounting.elapsedScope, 'PRE_PUBLICATION'); assert.ok(r.accounting.prePublicationElapsedMs < d.now());
+  const replay = await p.replay3(d.store, { utcNow: d.utcNow });
+  assert.equal(replay.code, null); assert.equal(replay.status, 'COMPLETE'); assert.equal(replay.summaryHash, r.summaryHash);
+  assert.equal(replay.runBudget, 'UNMEASURED'); assert.equal(p.forecast(replay.summary, replay.accounting).runBudget, 'UNMEASURED');
+  assert.equal(d.now() <= 7200000 ? 'PASS' : 'OVERRUN', 'OVERRUN'); assert.notEqual(replay.runBudget, 'PASS');
+});
+test('H3 failed transport terminal elapsed uses truthful prepublication scope', async () => {
+  const d = deps3(() => ({ code: 'HTTP_ERROR', status: 403, received: 3 })), write = d.store.write; let boundary;
+  d.store.write = (name, bytes) => { if (name === 'summary.json') boundary = d.now(); write(name, bytes); if (name === 'summary.json' || name === 'manifest.json') d.wait(17); };
+  const r = await p.runH3(options3(), d);
+  assert.equal(r.code, 'HTTP_ERROR'); assert.equal(d.calls.length, 1);
+  assert.equal(r.accounting.elapsedScope, 'PRE_PUBLICATION'); assert.equal(r.accounting.prePublicationElapsedMs, boundary);
+  assert.equal(r.accounting.elapsedMs, boundary); assert.equal(r.accounting.cumulative.step.elapsedMs, boundary);
+  assert.equal(r.accounting.cumulative.post.elapsedMs, 196764 + boundary);
+  assert.equal(r.accounting.received, 3); assert.equal(r.accounting.creditsReserved, 100);
+});
+test('H3 reserves full pending wait and timeout inside source cutoff and rechecks after wait', async () => {
+  const late = deps3(), lateWrite = late.store.write;
+  late.store.write = (name, bytes) => { lateWrite(name, bytes); if (name === 'attempt.json') late.wait(6840001); };
+  assert.equal((await p.runH3(options3(), late)).code, 'TIME_LIMIT'); assert.equal(late.calls.length, 0);
+  const retry = deps3(() => ({ code: 'HTTP_ERROR', status: 503, received: 1 })), retryWrite = retry.store.write;
+  retry.store.write = (name, bytes) => { retryWrite(name, bytes); if (name === 'attempt.json') retry.wait(6835000); };
+  const rejected = await p.runH3(options3(), retry); assert.equal(rejected.code, 'TIME_LIMIT'); assert.equal(retry.calls.length, 1);
+  assert.equal(retry.now(), 6835001, 'unfit full backoff must stop before waiting');
+  const oversleep = deps3(() => ({ code: 'HTTP_ERROR', status: 503, received: 1 })), wait = oversleep.wait;
+  oversleep.wait = async ms => { await wait(ms + 6900000); };
+  assert.equal((await p.runH3(options3(), oversleep)).code, 'TIME_LIMIT'); assert.equal(oversleep.calls.length, 1);
+});
+test('H3 scoped raw-write timing replay consistency and H4 never imply overall budget PASS', async () => {
+  const d = deps3(), write = d.store.write;
+  d.store.write = (name, bytes) => { write(name, bytes); if (name.endsWith('.raw')) d.wait(17); };
+  const r = await p.runH3(options3(), d), manifest = JSON.parse(d.store.files.get('manifest.json'));
+  assert.equal(r.accounting.elapsedScope, 'PRE_PUBLICATION'); assert.equal(r.accounting.prePublicationElapsedMs, d.now());
+  assert.deepEqual(manifest.accounting, r.accounting); assert.equal(manifest.operational.elapsedScope, 'PRE_PUBLICATION');
+  assert.equal(manifest.operational.prePublicationElapsedMs, r.accounting.elapsedMs);
+  assert.equal((await p.replay3(d.store, { utcNow: d.utcNow })).runBudget, 'UNMEASURED');
+  assert.equal(p.forecast(r.summary, r.accounting).runBudget, 'UNMEASURED');
+  manifest.accounting.prePublicationElapsedMs++; d.store.files.set('manifest.json', Buffer.from(JSON.stringify(manifest)));
+  assert.equal((await p.replay3(d.store, { utcNow: d.utcNow })).code, 'INTEGRITY_ERROR');
+});

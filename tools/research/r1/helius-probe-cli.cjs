@@ -6,6 +6,12 @@ async function runCli(args, deps = {}) {
   if (args.length === 2 && args[0] === '--replay' && args[1] === p.OUTPUT + '\\manifest.json') {
     try { return await p.replay(deps.store ?? p.fileStore()); } catch { return invalid('INTEGRITY_ERROR'); }
   }
+  if (args.length === 2 && ['--replay', '--forecast'].includes(args[0]) && args[1] === p.OUTPUT3 + '\\manifest.json') {
+    try { const result = await p.replay3(deps.store ?? p.fileStore(p.OUTPUT3), { utcNow: deps.utcNow }); if (args[0] === '--replay' || result.code) return result;
+      return { ...p.forecast(result.summary, result.accounting), code: null, status: result.status, summaryHash: result.summaryHash }; } catch { return invalid('INTEGRITY_ERROR'); }
+  }
+  if (args.length === 7 && args[0] === '--enable-free' && args[1] === '--stage' && args[2] === 'H3' && args[3] === '--credits-remaining' && args[5] === '--output' && args[6] === p.OUTPUT3)
+    return p.runH3({ enabled: true, stage: 'H3', creditsRemaining: args[4], output: args[6] }, deps);
   if (args.length !== 7 || args[0] !== '--enable-free' || args[1] !== '--stage' || args[2] !== 'H1' || args[3] !== '--credits-remaining' ||
     args[5] !== '--output' || args[6] !== p.OUTPUT) return invalid('ARGUMENTS_INVALID');
   return p.runProbe({ enabled: true, stage: 'H1', creditsRemaining: args[4], output: args[6] }, deps);
