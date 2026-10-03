@@ -42,3 +42,4 @@ build/
 
 ### Managed PostgreSQL workstation secrets ###
 /config/application-managed-secrets.properties
+.sdd/runtime/

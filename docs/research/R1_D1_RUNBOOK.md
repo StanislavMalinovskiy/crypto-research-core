@@ -40,14 +40,14 @@ All schema lists are unordered sets. Canonical encoding uses type tags, UTF-8 by
 
 ## Tool verification and inventory review
 
-Run the original frozen synthetic-fixture suite and the new candidate-evidence suite separately. The second command is allocated by section 1a and becomes available when Builder adds the new test file:
+The original frozen synthetic-fixture suite and candidate-evidence suite are implemented; run them separately:
 
 ```powershell
 node --test tools/research/r1/test/inventory.test.cjs
 node --test tools/research/r1/test/inventory-candidates.test.cjs
 ```
 
-Builder records new assertion-based RED/GREEN and `tests_changed_after_red`, preserving the original 41-test file; local tests are not an R1 data run. Initial section 1 already received APPROVE and Main's gate; its evidence remains in active tasks. The correction requires its own fresh Reviewer, stable input/documentary claims, frozen new tests and full CI-01..CI-15 matrix. Main then runs the complete repository gate: test-integrity preflight, Docker preflight, `mvnw.cmd clean verify`, both Node commands, strict all-item OpenSpec validation, doctor and `git diff --check`. Correction review/gate remain pending.
+Builder's candidate correction recorded assertion-based RED (8 executed, 6 behavioral failures), GREEN 8/8 plus the original 41/41, and `tests_changed_after_red = false`. Sections 1/1a received fresh APPROVE and Main's complete gate; evidence remains in active tasks. The latest source-planning refinement is incomplete and authorizes no new implementation/test or provider run. Main owns later complete gates: integrity/Docker preflight, `mvnw.cmd clean verify`, both Node commands, strict all-item validation, doctor and diff check.
 
 ## Existing source evidence and owner decisions
 
@@ -59,7 +59,7 @@ Official Alchemy/SQD/Helius retention publications were inspected on 2026-10-01 
 
 Section 2 remains blocked pending a new Architect PLAN with `reason = CONTRACT_CHANGED`. Complete these prerequisites in updated active artifacts before dependent tooling or any schema probe/source run:
 
-1. Resolve selected sources, exact source/query/export versions, independently reviewable field claims, applicable access/retention terms and defensible zero-paid cost bounds. Preserve the owner's PAYG denial; no paid run is eligible without a future explicit owner spending decision. Admit public RPC and retained historical Alchemy evidence only for their evidenced/reviewed scope; define supported venue inputs and layouts.
+1. Resolve exact selected source/query/export versions, supported retention, zero-paid access and complete filtered candidate-wallet/token-pool population/query manifests. Record exact tips/SOL-USD/observed visibility sources or `UNAVAILABLE`; preserve PAYG denial and all frozen field/gate requirements. Retained historical Alchemy facts do not authorize new account reads.
 2. Record the already owner-selected `C:\crypto-research-evidence\r1-d1`, exact lossless formats, runtime/libraries and reviewed scripts. Its parent exists; its new directory was not created during PLAN. Recheck free space before the run; the inspection recorded `124262658048` bytes. Do not reuse an earlier spike's permission.
 3. Declare finite cash/request/received-byte/wall-clock/storage ceilings and per-request timeouts/retry counts, with cumulative accounting across all runs. OD-2 caps remain USD 100, 14 days, 10 GB evidence and 30 GB free space; checkpoint at 80 percent of any ceiling and stop at 100 percent.
 4. Obtain updated strict-valid `PLAN_READY`, establish behavioral RED for source-specific calculations, and obtain the fresh Reviewer's APPROVE of the inventory and run scripts plus Main's complete pre-run gate. Recheck all first-run preconditions in offline procedure section 1.
@@ -67,9 +67,15 @@ Section 2 remains blocked pending a new Architect PLAN with `reason = CONTRACT_C
 
 ### Proposed sample and the full-stage boundary
 
-Design section 4c now proposes a finite sample using verified zero-paid options only: at most nine cases, 18 transactions, 36 total provider attempts including retries (zero new Alchemy, 18 public RPC, 18 SQD), 30-second request timeout, 64 MiB received, 100 MiB evidence, two hours and USD 0 cash. The previous 96-account/USD 3 draft is withdrawn. Exact sources/versions/layouts, terms, zero billable worst-case reservations and reviewed implementation remain prerequisites. This is not a run command or authorization. Reuse retained account receipts read-only; do not fall back to paid reads or unbounded tick/history expansion. Retain prior spike accounting separately and preserve cumulative OD-2 accounting for future D1 attempts.
+The owner limits the future R1 8.1 sample solely to volume/cost feasibility for the complete six-month filtered candidate-wallet and token-pool workload, including discovery, all required related histories and the extraction tail. Design 4c proposes at most eighteen fixed month/pricing-form windows and eighteen transaction receipts for size accounting: 36 total provider attempts including retries (zero new Alchemy, 18 public RPC, 18 SQD), 30-second timeout, 64 MiB received, 100 MiB evidence, two hours and USD 0. Exact population/query/window versions, terms and verified zero billable bounds remain unresolved; no executable command or new run permission is provided.
 
-A sample can test layout decodeability and receipt agreement; it cannot satisfy continuous whole-envelope thresholds or the 200 venue/month-stratified trades. If only sampled evidence is collected, D1 remains `INCONCLUSIVE` and another PLAN is required before full extraction/gate implementation. Do not silently narrow the frozen experiment to sampled periods or treat current-state observations as historical transitions.
+A sample estimates only filtered records/requests/bytes/storage/time/cash, with transparent expansion and missing components; it does not establish reconstruction, depth coverage, 200-trade agreement or D1 passage. Cost all candidate wallets and their relevant token pools under frozen R1 rules, not post-D1 ranked winners or all blocks. Do not omit pool activity between wallet trades, transfers/clustering/mint/price evidence, independent checks, overlapping selector charges, discovery or the tail. Unknown finite bounds prevent extraction. If any complete bound exceeds OD-2, stop before spending/full extraction and return the measured scope/estimate/excess with a concrete budget or narrower-experiment owner decision. PAYG denial applies independently. If only a sample is completed, D1 remains `INCONCLUSIVE`.
+
+### Later reserve reconstruction and field admission
+
+The later reviewed reconstruction plan uses exact pool-vault account balances immediately BEFORE/AFTER each transaction, mapped by full signature, complete account keys, vault/mint and versioned pool identity. Trader deltas, aggregate multi-leg deltas and slot-level parent/child archive reads are not interchangeable with those states; post-state cannot price an earlier cutoff. Required intervening swaps/liquidity changes remain in filtered pool history. Vault totals alone cannot reconstruct CLMM ticks/DLMM bins; count their missing depth by venue/month/reason against all candidate-pool triggers, applying the unchanged >=90 percent rule in the later full gate, never in this feasibility sample.
+
+For next-run admission tips, exact SOL/USD and observed historical visibility are `UNAVAILABLE` until exact supported sources are evidenced, as detailed in the field inventory; the current JSON's `UNVERIFIED` statuses/fingerprint are unchanged. Do not substitute zero tips, display floating-point USD, after-cutoff prices or fabricated latency. Frozen C-3 default 60 seconds remains versioned `MODELED` and does not supply measured visibility. No threshold at `1.0.0` changes.
 
 Later receipts belong under `docs/research/r1-receipts/`; raw/intermediate/analytic data stay outside git. Receipts record the exact command, UTC start/end/ranges, git state, source/query versions, protocol/freeze entry, requests, bytes, actual cost, row counts, errors/gaps, operator, local path and per-file SHA-256 manifest. Interrupted attempts and reruns are both recorded. Each reviewed run needs budget pre/post accounting, deterministic rerun checks and a secret scan of receipts/logs under offline procedure sections 4–6.
 

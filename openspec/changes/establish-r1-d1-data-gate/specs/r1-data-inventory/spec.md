@@ -43,6 +43,35 @@ The candidate inventory SHALL include unselected `alchemy-solana-account-archive
 - **THEN** Alchemy SHALL be present and linked to reserve/depth and mint-state fields with the measured sample scope and unresolved layout/transition limits retained
 - **AND** public RPC SHALL be present as the independent transaction candidate, all sources SHALL remain unselected, and validation SHALL report `INVENTORY_BLOCKED` with `runAuthorized = false` and `d1Passed = false`.
 
+### Requirement: Filtered-envelope feasibility before spending
+An R1 8.1 feasibility sample SHALL produce only volume/cost feasibility evidence for the complete frozen six-month extraction envelope, including its tail, filtered to outcome-blind candidate wallets and relevant pools of their tokens under the frozen universe rules. Estimates SHALL account for cohort/pool discovery, all required related histories, independent checks, overlaps, requests, received/retained bytes, throughput, tariffs and finite retries. All-block rates or post-D1 ranked winners SHALL NOT substitute for that workload. Unknown population, source version, retention, tariff or upper-bound evidence SHALL remain blocking. A complete bound above any applicable OD-2 resource ceiling SHALL stop work before spending/full extraction and return the concrete scope, estimate, excess and budget/narrower-experiment decision to the owner. The sample SHALL NOT demonstrate D1 coverage or passage, change frozen thresholds or authorize a provider call before a new PLAN_READY and mandatory review/gate/run preconditions.
+
+#### Scenario: Filtered workload differs from complete blocks
+- **WHEN** only broad program/full-block samples exist and the complete candidate-wallet/token-pool population or related-state volume is unknown
+- **THEN** the filtered whole-envelope estimate SHALL remain unresolved
+- **AND** an all-block byte-rate extrapolation SHALL NOT be reported as its complete cost bound.
+
+#### Scenario: Full workload exceeds the approved ceiling
+- **WHEN** the full filtered-envelope estimate including discovery, tail and ancillary evidence exceeds an applicable OD-2 ceiling
+- **THEN** work SHALL stop before spending or full extraction with the estimate, ceiling excess and precise owner decision recorded
+- **AND** R1 dates, universe and thresholds SHALL NOT be silently narrowed to fit the sample.
+
+### Requirement: Vault inputs preserve transaction state and missing-depth counts
+Later reserve reconstruction SHALL use raw vault-account balances immediately before/after the transaction, with full transaction identity, account/mint/pool mapping and exact integer amounts. Trader balances, slot-wide archive states or transaction aggregate deltas SHALL NOT be silently treated as intermediate leg reserves. Post-state SHALL NOT become evidence for a pre-transaction decision. Vault totals without required historical ticks/bins SHALL NOT establish CLMM/DLMM executable depth. The later full-envelope gate SHALL retain all candidate-pool trigger events in the frozen R1 8.2 denominator and explicitly count unavailable-depth shares by venue, month and reason; availability SHALL meet the unchanged >=90 percent rule or cost-modelled D1 SHALL be `INCONCLUSIVE/data insufficient`.
+
+#### Scenario: Vault sample lacks CLMM or DLMM state
+- **WHEN** pre/post vault balances are available but historical ticks/bins needed for a venue's pricing form are missing
+- **THEN** the affected triggers SHALL remain counted as missing depth in the complete denominator
+- **AND** neither their removal nor a sample's apparent coverage SHALL establish the frozen depth gate.
+
+### Requirement: Exact field source or explicit unavailability
+Next-run admission SHALL state an exact supported source with version, cutoff/time semantics, covered dates, cost and retention evidence for each of tips, SOL/USD and measured visibility latency, or SHALL record `UNAVAILABLE`. Unobservable tips SHALL NOT be assumed zero; non-exact display or after-cutoff prices SHALL NOT supply authoritative SOL/USD; historical block/retrieval times SHALL NOT be fabricated into measured visibility. The frozen C-3 default SHALL remain labelled `MODELED` with its version and SHALL NOT be presented as an observed source or a relaxed D1 threshold.
+
+#### Scenario: Three fields lack supported sources
+- **WHEN** no admitted historical tip attribution, exact point-in-time SOL/USD feed or observed source-visibility evidence is available
+- **THEN** all three next-run source dispositions SHALL be `UNAVAILABLE` with their missing evidence retained
+- **AND** the existing modeled default or documentary candidates SHALL NOT turn the inventory into a complete measured result.
+
 ### Requirement: Deterministic inventory identity
 Every structurally valid inventory report SHALL identify inventory schema and canonicalization versions and a SHA-256 content fingerprint. Equivalent field, source and evidence-list ordering SHALL produce identical ordered classifications, blockers and fingerprint. Changes to accepted inventory content SHALL produce distinguishable identity. The only supported canonicalization version SHALL be `r1-d1-inventory-c14n-v1`; another nonempty string version SHALL produce `INVENTORY_INVALID` with fixed code `UNSUPPORTED_CANONICALIZATION_VERSION` and no fingerprint. Supporting a different version SHALL require an approved contract update. The JSON numeric `freezeEntry` value `1` SHALL encode as the exact ASCII bytes `n1:1`; its string form SHALL be rejected. Documentary references SHALL record their URL, retrieval date and known content version or an explicit unknown version; missing version evidence SHALL remain visible.
 
