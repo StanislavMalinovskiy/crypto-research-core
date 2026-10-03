@@ -463,6 +463,8 @@ Report source-kind/anchor coverage, processed/skipped/missing payloads, occurren
 
 ## Risks / Trade-offs
 
+**Documentary owner-decision packet (2026-10-03; no execution allocation).** Delegated f47120c6-95a4-4c1a-979e-c68d718652ab and correction a60216af-b1fa-400f-bf53-0cc2722e96f3 authorize only this capture. Owner reports Dune Free, not usable query/API access; official post-trial Free export restrictions and unmeasured Helius program-universe completeness leave discovery blocked. Prices, retention and full-envelope bounds are not established. See the [source comparison appendix](../../../docs/research/r1-receipts/2026-10-03-offline-discovery-v1.md#documentary-source-comparison--2026-10-03) for dated primary references and owner options. No new task, permission, methodology change or reopened terminal branch; await owner decisions after review/checkpoint.
+
 - Unknown historical state/access/retention → blocked inventory; require evidence and replan before a run.
 - Published pricing changes → dated references, unknown costs unless currently confirmed, exact upper-bound accounting in later PLAN.
 - Documented field mistaken for measured completeness → distinct status, review of claims, `d1Passed = false` in every inventory report.
