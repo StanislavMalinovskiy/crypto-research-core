@@ -1,0 +1,144 @@
+{
+  "schemaVersion": "r1-d1-inventory-v1",
+  "canonicalizationVersion": "r1-d1-inventory-c14n-v1",
+  "protocolVersion": "1.0.0",
+  "freezeEntry": 1,
+  "envelope": { "from": "2026-04-01T00:00:00Z", "to": "2026-09-29T04:02:00Z" },
+  "sources": [
+    {
+      "id": "dune-solana-dex", "selected": false, "sourceVersion": null, "queryVersion": null,
+      "costUpperMicrousd": null,
+      "retention": { "status": "UNVERIFIED", "evidence": [
+        { "url": "https://dune.com/sql-api-terms", "retrievedAt": "2026-10-01T09:43:29Z", "version": "2026-05-13",
+          "claim": "SQL API terms meter exports by data points. This reference does not confirm permission for the intended retained research exports or a complete-envelope cost." }
+      ] },
+      "evidence": [
+        { "url": "https://docs.dune.com/data-catalog/curated/dex-trades/solana/solana-dex-trades", "retrievedAt": "2026-10-01T09:43:29Z", "version": null,
+          "claim": "Dune is unconnected. DEX documentation describes route segments and transaction/instruction positions. Raw token quantities use UINT256; display and USD values use DOUBLE. Full-envelope availability, depth reconstruction and exact pricing remain unverified." },
+        { "url": "https://dune.com/sql-api-terms", "retrievedAt": "2026-10-01T09:43:29Z", "version": "2026-05-13",
+          "claim": "Export credits depend on data points and byte size. Subscription access and a complete-source upper cost remain unresolved; no query has run." }
+      ]
+    },
+    {
+      "id": "sqd-solana-portal", "selected": false, "sourceVersion": null, "queryVersion": null,
+      "costUpperMicrousd": null, "retention": { "status": "UNVERIFIED", "evidence": [
+        { "url": "https://cloud.sqd.dev/terms.pdf", "retrievedAt": "2026-10-01T16:11:32Z", "version": null,
+          "claim": "Undated Cloud terms describe software-use licensing. Applicability to public Portal and permission to retain exported chain data for reproducibility remain unverified." }
+      ] },
+      "evidence": [
+        { "url": "https://docs.sqd.dev/en/data/solana/solana-mainnet", "retrievedAt": "2026-10-01T09:43:29Z", "version": null,
+          "claim": "Portal documents slot-addressed Solana history from genesis and transaction/instruction plus pre/post balances; legacy archives retain about 30 days. Documentation does not establish complete historical pricing state or full-envelope measured coverage." },
+        { "url": "https://docs.sqd.dev/en/portal/pricing", "retrievedAt": "2026-10-01T09:43:29Z", "version": null,
+          "claim": "Published plans are prelaunch: billing is not live and paid access uses early access. Starter is listed at USD 99 monthly; available access, total D1 cost and retention permission are not confirmed." },
+        { "url": "https://docs.sqd.dev/en/data/solana/solana-mainnet", "retrievedAt": "2026-10-01T16:11:32Z", "version": null,
+          "claim": "Separate retained local observation, not a documentation claim: old/midpoint/recent SQD samples have sampled reconciliation with independent public RPC. Join by full signature, not filtered ordinals. Old Raydium ten-slot tail has no full transaction-payload cross-check; recent PumpSwap HTTP 529, continuation behavior and full-envelope gaps remain unresolved. Local child-slot sample: C:/crypto-research-evidence/provider-s2-sep28b/provider-feasibility/006.raw, SHA-256 0cabe2acea6178358ac7c18033fc12c6a4a8eda452479ee984bcd9d4a7869f14. This is not full-envelope D1 agreement." }
+      ]
+    },
+    {
+      "id": "alchemy-solana-account-archive", "selected": false, "sourceVersion": null, "queryVersion": null,
+      "costUpperMicrousd": null, "retention": { "status": "UNVERIFIED", "evidence": [
+        { "url": "https://legal.alchemy.com/", "retrievedAt": "2026-10-01T16:11:32Z", "version": "2025-06-27",
+          "claim": "Terms permit internal licensed-volume use and authorized downloads; scraping and limit circumvention are prohibited. Applicable account agreement and retained RPC-export permission for this research remain unverified." }
+      ] },
+      "evidence": [
+        { "url": "https://www.alchemy.com/docs/solana/account-archive", "retrievedAt": "2026-10-01T16:11:32Z", "version": null,
+          "claim": "Account Archive documents historical getAccountInfo since July 2025, no pruning and state at or before a requested finalized slot. Generic historical bytes do not prove supported venue layouts, mint transitions or full-envelope D1 completeness." },
+        { "url": "https://www.alchemy.com/docs/solana/account-archive", "retrievedAt": "2026-10-01T16:11:32Z", "version": null,
+          "claim": "Separate retained local B observation: 12/12 reads for one PumpSwap pool and two vaults at parent slot 429644638 and child 429644639; six repeat comparisons match and context slots match. Sampled vault balances reconcile with independent child receipts. Pool layout remains undecodable/incomplete; formal S3 remains unfulfilled, with no CLMM/tick decoder, mint-transition or full-envelope proof. Matrix INCONCLUSIVE. C:/crypto-research-evidence/provider-ab-1/b-history/raw.bin SHA-256 4c22a24aab2178eff415710226197159160011fe88d0394ac735f38da5e37a87; summary.json SHA-256 49281f6865852feb7c33d75157c1c2db1a4e7caafdd9c7e1b42644ec8e35c4ef. Prior paid authorization is exhausted; this observation grants no new PAYG permission." }
+      ]
+    },
+    {
+      "id": "solana-public-rpc", "selected": false, "sourceVersion": null, "queryVersion": null,
+      "costUpperMicrousd": null, "retention": { "status": "UNVERIFIED", "evidence": [] },
+      "evidence": [
+        { "url": "https://solana.com/docs/rpc/http/gettransaction", "retrievedAt": "2026-10-01T16:11:32Z", "version": null,
+          "claim": "getTransaction documents transaction receipts. Endpoint access limits, frozen adapter/query versions, cost completeness and permission for reproducible retained exports remain unresolved." },
+        { "url": "https://solana.com/docs/rpc/http/getblock", "retrievedAt": "2026-10-01T16:11:32Z", "version": null,
+          "claim": "Separate retained local observation: complete finalized blocks and transaction receipts reconcile sampled SQD metadata, instructions and balances using full signatures. Child slot 429644639: C:/crypto-research-evidence/provider-s2-rpc-cm-2/provider-feasibility/002.raw SHA-256 7f028de71b26e8f8fa9ca05ee5cef8647863226bf4cef74301deb0a7ff4a6cae. Sampled agreement does not satisfy the 200 venue/month-stratified trades or full-envelope checks, and getBlock does not establish complete historical account state." }
+      ]
+    },
+    {
+      "id": "helius-free-wallet-history",
+      "selected": false,
+      "sourceVersion": null,
+      "queryVersion": null,
+      "costUpperMicrousd": null,
+      "retention": {
+        "status": "UNVERIFIED",
+        "evidence": [
+          {
+            "url": "https://www.helius.dev/terms",
+            "retrievedAt": "2026-10-03T11:46:45Z",
+            "version": "2026-09-28",
+            "claim": "Applicable retained chain-export rights remain unknown. Delegated e928ceb5-6768-45d9-a454-e26ef87f78ed permits only bounded local EXPLORATORY H1/H3 retention, expiring 14 days after each run ends, with no resale or publication. This is not legal confirmation or full D1 retention admission."
+          }
+        ]
+      },
+      "evidence": [
+        {
+          "url": "https://www.helius.dev/docs/rpc/gettransactionsforaddress",
+          "retrievedAt": "2026-10-03T11:46:45Z",
+          "version": null,
+          "claim": "Full-mode getTransactionsForAddress documents transaction instructions, metadata and address/ATA history. Complete filtered discovery, supported venue decoding, dataset revision and full-envelope coverage remain unknown; H1 signatures do not measure these fields."
+        },
+        {
+          "url": "https://www.helius.dev/docs/billing/credits",
+          "retrievedAt": "2026-10-03T11:46:45Z",
+          "version": null,
+          "claim": "Documented signatures cost 10 credits flat; full history costs 10*max(1,ceil(returned/100)). getTransaction costs 1 credit and is a prospective independent 200-receipt source requiring a separate full CORE_RISK PLAN. No 200 calls or complete D1 cost bound are admitted."
+        },
+        {
+          "url": "https://www.helius.dev/docs/billing/plans",
+          "retrievedAt": "2026-10-03T11:46:45Z",
+          "version": null,
+          "claim": "Free lists USD 0 and 1000000 monthly credits. Current entitlement, actual debit and isolated remaining quota require operator reconciliation; documentary tariff is not complete-envelope affordability or permission for paid upgrades/autoscaling."
+        }
+      ]
+    }
+  ],
+  "fields": [
+    {"id":"trade-legs","status":"DOCUMENTED","sourceIds":["dune-solana-dex","sqd-solana-portal","solana-public-rpc","helius-free-wallet-history"],"coveredFrom":null,"coveredTo":null,"granularity":"documented route leg / raw transaction instruction","gaps":["Envelope and supported-venue reconstruction unmeasured","Helius raw instruction semantics and full-envelope venue coverage unverified"], "evidence": [
+      {"url":"https://docs.dune.com/data-catalog/curated/dex-trades/solana/solana-dex-trades","retrievedAt":"2026-10-01T09:43:29Z","version":null,"claim":"Route-leg rows are documented. Retained SQD/public RPC samples have agreement; full-envelope economic-trade grouping, canonical instruction paths, independent agreement and depth remain unresolved."},
+      {"url":"https://www.helius.dev/docs/rpc/gettransactionsforaddress","retrievedAt":"2026-10-03T11:46:45Z","version":null,"claim":"Full transaction instructions and innerInstructions are documentary trade-leg inputs; venue layouts, economic grouping and reconstruction remain unverified."}
+    ] },
+    {"id":"spl-transfers","status":"DOCUMENTED","sourceIds":["sqd-solana-portal","solana-public-rpc","helius-free-wallet-history"],"coveredFrom":null,"coveredTo":null,"granularity":"documented per-transaction token balance","gaps":["Complete SPL transfer decoding and envelope coverage unverified","Helius SPL transfer decoding and full-envelope coverage unverified"], "evidence": [
+      {"url":"https://docs.sqd.dev/en/data/solana/solana-mainnet","retrievedAt":"2026-10-01T09:43:29Z","version":null,"claim":"Token pre/post balances and instructions are documented; transfer-event decoding and completeness are not established by balance changes."},
+      {"url":"https://www.helius.dev/docs/rpc/gettransactionsforaddress","retrievedAt":"2026-10-03T11:46:45Z","version":null,"claim":"Instructions and preTokenBalances/postTokenBalances document candidate SPL inputs; balance changes alone do not identify decoded transfers."}
+    ] },
+    {"id":"sol-transfers","status":"DOCUMENTED","sourceIds":["sqd-solana-portal","solana-public-rpc","helius-free-wallet-history"],"coveredFrom":null,"coveredTo":null,"granularity":"documented per-transaction native balance","gaps":["SOL transfer decoding, fees and tips attribution unverified","Helius SOL transfer decoding and tip attribution unverified"], "evidence": [
+      {"url":"https://docs.sqd.dev/en/data/solana/solana-mainnet","retrievedAt":"2026-10-01T09:43:29Z","version":null,"claim":"Native pre/post balances are documented; net balance changes do not establish individual SOL transfers or their attribution."},
+      {"url":"https://www.helius.dev/docs/rpc/gettransactionsforaddress","retrievedAt":"2026-10-03T11:46:45Z","version":null,"claim":"Instructions and preBalances/postBalances document native inputs; net changes alone do not identify transfers or tips."}
+    ] },
+    {"id":"base-priority-fees","status":"DOCUMENTED","sourceIds":["sqd-solana-portal","solana-public-rpc","helius-free-wallet-history"],"coveredFrom":null,"coveredTo":null,"granularity":"documented per-transaction fee","gaps":["Exact base and priority fee separation unverified","Helius total meta.fee does not resolve exact base/priority split"], "evidence": [
+      {"url":"https://docs.sqd.dev/en/data/solana/solana-mainnet","retrievedAt":"2026-10-01T09:43:29Z","version":null,"claim":"An integer transaction fee is documented; exact fee decomposition across the historical envelope remains unresolved."},
+      {"url":"https://www.helius.dev/docs/rpc/gettransactionsforaddress","retrievedAt":"2026-10-03T11:46:45Z","version":null,"claim":"meta.fee documents the total transaction fee; exact base and priority decomposition remains unresolved."}
+    ] },
+    {"id":"tips","status":"UNVERIFIED","sourceIds":[],"coveredFrom":null,"coveredTo":null,"granularity":null,"gaps":["Independent tip accounts and attribution source unidentified"], "evidence": [
+
+    ] },
+    {"id":"reserves-depth","status":"DOCUMENTED","sourceIds":["alchemy-solana-account-archive","sqd-solana-portal","helius-free-wallet-history"],"coveredFrom":null,"coveredTo":null,"granularity":null,"gaps":["Sampled vault balances only; full-envelope CLMM ticks, bonding-curve inputs and pool layout decoding unverified","Helius transaction vault balances only; CLMM ticks and DLMM bins unresolved"], "evidence": [
+      {"url":"https://www.alchemy.com/docs/solana/account-archive","retrievedAt":"2026-10-01T16:11:32Z","version":null,"claim":"Local B matrix vault amounts agree with sampled SQD/public RPC child receipts; this is not a complete historical pool-state decoder or full-envelope depth measurement. Formal S3 remains unfulfilled."},
+      {"url":"https://www.helius.dev/docs/rpc/gettransactionsforaddress","retrievedAt":"2026-10-03T11:46:45Z","version":null,"claim":"Transaction vault pre/post token balances are candidate reserve inputs only; CLMM ticks, DLMM bins and complete historical account state are not established."}
+    ] },
+    {"id":"liquidity-events","status":"UNVERIFIED","sourceIds":[],"coveredFrom":null,"coveredTo":null,"granularity":null,"gaps":["Venue-specific liquidity additions/removals decoding unverified"], "evidence": [
+
+    ] },
+    {"id":"mint-decimals-freeze","status":"UNVERIFIED","sourceIds":["sqd-solana-portal","alchemy-solana-account-archive"],"coveredFrom":null,"coveredTo":null,"granularity":null,"gaps":["Historical mint-transition coverage, freeze authority/state and independent decimals evidence unresolved"], "evidence": [
+      {"url":"https://docs.sqd.dev/en/data/solana/solana-mainnet","retrievedAt":"2026-10-01T09:43:29Z","version":null,"claim":"Token balance postDecimals is documented; it does not prove historical mint freeze state or complete authoritative mint metadata."},
+      {"url":"https://www.alchemy.com/docs/solana/account-archive","retrievedAt":"2026-10-01T16:11:32Z","version":null,"claim":"Historical account bytes are a mint-state candidate. The retained pool/vault B sample contains no proven full-envelope mint freeze transitions."}
+    ] },
+    {"id":"executable-entry-exit","status":"UNVERIFIED","sourceIds":["alchemy-solana-account-archive","sqd-solana-portal"],"coveredFrom":null,"coveredTo":null,"granularity":null,"gaps":["CLMM/tick, bonding-curve and pool layout inputs plus full-envelope executable pricing and loss-of-exit coverage unresolved"], "evidence": [
+      {"url":"https://www.alchemy.com/docs/solana/account-archive","retrievedAt":"2026-10-01T16:11:32Z","version":null,"claim":"Retained sampled vault balances are candidate inputs; they do not establish complete executable venue pricing, pool layout decoding or loss-of-exit evidence."}
+    ] },
+    {"id":"sol-usd","status":"UNVERIFIED","sourceIds":[],"coveredFrom":null,"coveredTo":null,"granularity":null,"gaps":["Exact historical SOL/USD source unidentified; display DOUBLE values are insufficient"], "evidence": [
+
+    ] },
+    {"id":"block-time","status":"DOCUMENTED","sourceIds":["dune-solana-dex","sqd-solana-portal","solana-public-rpc","helius-free-wallet-history"],"coveredFrom":null,"coveredTo":null,"granularity":"documented block timestamp","gaps":["Full-envelope timestamp completeness and agreement unmeasured","Helius blockTime may be null; complete-envelope timestamp agreement unmeasured"], "evidence": [
+      {"url":"https://docs.dune.com/data-catalog/curated/dex-trades/solana/solana-dex-trades","retrievedAt":"2026-10-01T09:43:29Z","version":null,"claim":"A UTC block_time column is documented. Retained SQD/public RPC sample timestamps agree, but full-envelope historical timestamp coverage and agreement remain unmeasured."},
+      {"url":"https://www.helius.dev/docs/rpc/gettransactionsforaddress","retrievedAt":"2026-10-03T11:46:45Z","version":null,"claim":"blockTime documents estimated Unix production time, possibly null; full-envelope timestamp coverage remains unmeasured."}
+    ] },
+    {"id":"visibility-latency","status":"UNVERIFIED","sourceIds":[],"coveredFrom":null,"coveredTo":null,"granularity":null,"gaps":["Measured source visibility latency unavailable; no live receipt observations"], "evidence": [
+
+    ] }
+  ]
+}

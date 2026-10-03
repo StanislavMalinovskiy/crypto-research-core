@@ -12,6 +12,11 @@ Design4k SHALL allocate only future H1/H3 Free getTransactionsForAddress entitle
 - **THEN** the affected source step SHALL stop explicitly without method/host/key/purchase/paid fallback
 - **AND** published history/tariffs or a prior key-name/dashboard observation SHALL NOT establish current entitlement, retention permission or D1 source admission.
 
+#### Scenario: H1-only attestation and bounded disk reconciliation
+- **WHEN** H1 uses f038's explicitly accepted same-day OWNER_PASTED_TEXT and design4k's fixed metadata-only CLI preflight
+- **THEN** its manifest SHALL distinguish that evidence from screenshot/autoscaling verification and record measured cumulative sizes before any key read/request, with absent directories explicitly zero and scan errors/cap overflow stopping calls
+- **AND** Main SHALL independently verify the10GB cumulative ceiling; H3 SHALL still require fresh post-H1 dashboard/no-paid-tariff and actual debit reconciliation, without treating H1 attestation as confirmed entitlement or retention rights.
+
 ### Requirement: Helius holdout and secret admission boundary
 Every H1/H3 request SHALL include design4k's fixed half-open blockTime filter before transport. The entire forbidden2026-08-31..2026-09-29 interval SHALL be excluded from fetches/counts; a page with missing/invalid/out-of-range time SHALL be rejected entirely before raw retention or row publication. Only transport-at-request-time SHALL load CRYPTO_HELIUS_API_KEY from its ignored properties file; authenticated URLs, keys and provider errors SHALL never enter output/identity/logs/receipts. Missing or invalid transaction-error state SHALL remain unknown, not success or FAILED_TRANSACTION. No outcome/price/ranking/selection/reconstruction or field promotion SHALL occur.
 
