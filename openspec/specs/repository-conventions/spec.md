@@ -415,10 +415,15 @@ Repository guidance SHALL expose a root router of at most 150 lines using real r
 
 #### Scenario: Rule-preservation review
 - **WHEN** root obligations are relocated
-- **THEN** each row of the existing instruction-diet audit rule ledger SHALL have a concrete retained, relocated or explicitly reconciled disposition in the active design
+- **THEN** each row of the historical instruction-diet audit rule ledger, retained in git history as `docs/agents/instruction-diet-audit.md` at commit `e7593814afef6ce47dc46c41e20628eebe50a85c`, SHALL have a concrete retained, relocated or explicitly reconciled disposition in the active design
 - **AND** a duplicate rendering MAY be removed only while the complete obligation remains reachable
 - **AND** moving a safety rule SHALL NOT reduce its scope, approval requirements or evidence standard unless an explicit owner-authorized normative change records the exact changed rule, resulting location and reason
 - **AND** workflow-simplification SHALL preserve instruction-diet routing and all safeguards except the expressly authorized tier, review, RED evidence, closure-applicability and telemetry changes.
+
+#### Scenario: Historical ledger outside the working tree
+- **WHEN** an agent performs rule-preservation review and `docs/agents/instruction-diet-audit.md` is absent from the working tree
+- **THEN** it SHALL read the ledger from commit `e7593814afef6ce47dc46c41e20628eebe50a85c`
+- **AND** the absence of the working-tree file SHALL NOT waive, narrow or replace the per-row disposition obligation.
 
 ### Requirement: Conditional closure procedure
 MULTIAGENT SHALL keep ordinary PLAN, BUILD and REVIEW in its existing workflow and SHALL load `docs/agents/close-archive.md` only for DOCS_CLOSE, complete final gate, archive, archive recovery or post-archive work.

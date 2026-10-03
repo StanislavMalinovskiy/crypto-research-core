@@ -2,7 +2,7 @@
 
 ## Scope
 
-This runbook covers local validation of the [candidate inventory](../../tools/research/r1/inventory-candidates.json), including section 1a's offline candidate correction in the active [D1 tasks](../../openspec/changes/establish-r1-d1-data-gate/tasks.md). The [field inventory](R1_D1_FIELD_INVENTORY.md) records Alchemy, SQD, public RPC and unconnected Dune evidence and limitations. This local validation is not a D1 source data run or an extraction command. No provider call is allocated here.
+This runbook covers local validation of the [candidate inventory](../../tools/research/r1/inventory-candidates.json), including section 1a's verified correction in the active [D1 tasks](../../openspec/changes/establish-r1-d1-data-gate/tasks.md), and the separately owner-authorized exploratory command below. The [field inventory](R1_D1_FIELD_INVENTORY.md) retains source evidence/limitations. Inventory validation is not a source run; only the explicit exploratory section allocates a provider command after its tests and review.
 
 The [frozen R1 protocol](R1_RESEARCH_PROTOCOL.md), [freeze entry 1](R1_PROTOCOL_FREEZE.md) and owner-approved [offline procedure](R1_OFFLINE_RESEARCH_PROCEDURE.md) govern the later data work. The current implementation uses CommonJS and Node built-ins only; Node `v20.18.0` was observed on 2026-10-01. It needs no npm install, provider account or credentials. Runtime changes before data work require a planning decision under the active [design](../../openspec/changes/establish-r1-d1-data-gate/design.md).
 
@@ -47,7 +47,7 @@ node --test tools/research/r1/test/inventory.test.cjs
 node --test tools/research/r1/test/inventory-candidates.test.cjs
 ```
 
-Builder's candidate correction recorded assertion-based RED (8 executed, 6 behavioral failures), GREEN 8/8 plus the original 41/41, and `tests_changed_after_red = false`. Sections 1/1a received fresh APPROVE and Main's complete gate; evidence remains in active tasks. The latest source-planning refinement is incomplete and authorizes no new implementation/test or provider run. Main owns later complete gates: integrity/Docker preflight, `mvnw.cmd clean verify`, both Node commands, strict all-item validation, doctor and diff check.
+Builder's candidate correction recorded assertion-based RED (8 executed, 6 behavioral failures), GREEN 8/8 plus the original 41/41, and `tests_changed_after_red = false`. Sections 1/1a received fresh APPROVE and Main's complete gate; evidence remains in active tasks. Confirmatory source planning is incomplete; only the separate exploratory section below now allocates new implementation/tests and a reviewed sample. Main owns later confirmatory complete gates: integrity/Docker preflight, `mvnw.cmd clean verify`, both Node commands, strict all-item validation, doctor and diff check.
 
 ## Existing source evidence and owner decisions
 
@@ -55,7 +55,7 @@ The [provider research note](../notes/SOLANA_PROVIDER_SPIKE_RESEARCH_2026-09-27.
 
 Official Alchemy/SQD/Helius retention publications were inspected on 2026-10-01 and are linked with their dates in the field inventory. They did not establish the applicable local chain-data export-retention permission; keep it unverified. The owner selected `C:\crypto-research-evidence\r1-d1` and explicitly declined Alchemy PAYG D1 spending on 2026-10-01: "Не разрешаю пока". New PAYG calls and paid-run PLAN_READY remain prohibited until a future explicit owner decision. Historical paid access and exhausted A/B permission do not authorize new calls. These local validation commands create no extractor or provider probe.
 
-## Before the first D1 source run
+## Before the first confirmatory D1 source run
 
 Section 2 remains blocked pending a new Architect PLAN with `reason = CONTRACT_CHANGED`. Complete these prerequisites in updated active artifacts before dependent tooling or any schema probe/source run:
 
@@ -80,3 +80,20 @@ For next-run admission tips, exact SOL/USD and observed historical visibility ar
 Later receipts belong under `docs/research/r1-receipts/`; raw/intermediate/analytic data stay outside git. Receipts record the exact command, UTC start/end/ranges, git state, source/query versions, protocol/freeze entry, requests, bytes, actual cost, row counts, errors/gaps, operator, local path and per-file SHA-256 manifest. Interrupted attempts and reruns are both recorded. Each reviewed run needs budget pre/post accounting, deterministic rerun checks and a secret scan of receipts/logs under offline procedure sections 4–6.
 
 Only measured evidence can establish the unchanged R1 sections 8.2/8.3 gate over the complete envelope. Unfinished evidence on budget exhaustion is `INCONCLUSIVE`, not evidence of no edge. Outcome-bearing quantities remain blocked until measured D1 passage and calibration `1.1.0`; holdout additionally follows its freeze/rerun rules. After sections 1 and 1a, keep the D1 change active and section 2 unchecked. Final closure requires full-stage evidence, independent APPROVE and authorized workflow closure/archive phases.
+
+## Exploratory public SQD run — owner-authorized 2026-10-03
+
+The [procedure section 11](R1_OFFLINE_RESEARCH_PROCEDURE.md#11-exploratory-probe--owner-authorized-2026-10-03) explicitly permits this separate sample without satisfying the confirmatory prerequisites above. Design 4f fixes every selector/version/limit. Node `v24.19.0` is the observed and planned runtime; no installation/dependency/key is required. Before execution Main verifies behavioral RED/GREEN, both inventory suites, integrity preflight, strict all-item OpenSpec validation, doctor, diff check and ONE fresh independent Reviewer APPROVE of the combined diff/full CI matrix. The owner-approved exception omits Maven/Docker only for this exploratory work.
+
+After those preconditions pass, run once from the repository root:
+
+```powershell
+node tools/research/r1/exploratory-probe-cli.cjs --enable-public --output C:\crypto-research-evidence\r1-d1\exploratory-sqd-v1
+node tools/research/r1/exploratory-probe-cli.cjs --replay C:\crypto-research-evidence\r1-d1\exploratory-sqd-v1\manifest.json
+```
+
+Tools are implemented and reviewed; Main executed the public command once on 2026-10-03 and then offline replay, as documented in the [actual receipt](r1-receipts/2026-10-03-exploratory-sqd-v1.md). Status is `EXPLORATORY/INCOMPLETE`, USD 0; our per-response cap stopped August 28 PumpSwap and left the final Raydium stratum unexecuted. Do not rerun: default is disabled and the existing output directory is rejected without overwrite/resume. The runtime/query are fixed in design 4f: six preholdout single-slot anchors and three program filters, no wallet discovery, prior raw samples, outcome calculations or holdout data. The entire `[2026-08-31T00:00:00Z, 2026-09-29T00:00:00Z)` is forbidden even for raw fetches/counts; unexpected timestamps/slots stop a sample without retaining or counting the body.
+
+Record actual status, per-stratum counts/field presence, complete/unexecuted ranges, UTC/git/script/config/query provenance, per-file SHA-256 and deterministic replay hash; receipt/log secret scan and cumulative accounting must pass before publishing a small receipt in an assigned DOCS phase. Hard ceilings are USD 0, 30 minutes, 80 requests, 25,000,000 received bytes, 50,000,000 disk bytes, 2,000,000/response, 30 seconds/request, two seconds between starts, concurrency 1, retries 0, 30 GB remaining free; checkpoint at 80 percent and stop at 100 percent. No paid Alchemy, keys, redirect/fallback, automatic rerun or threshold change.
+
+Every result is `EXPLORATORY`, `d1Evidence = false`, `d1Passed = false`. Public free access and a sample's presence do not establish full-D1 retention/capacity/coverage. Report full-D1 upper bound as unknown, with transparent same-workload sensitivities and missing candidate-wallet/token/pool population, discovery, ancillary state/checks/tail and September costs explicit. The unchanged inventory and section 2 stay blocked; this run never closes or archives D1.

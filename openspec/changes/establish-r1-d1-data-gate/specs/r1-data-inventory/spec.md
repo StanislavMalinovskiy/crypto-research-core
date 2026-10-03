@@ -4,6 +4,35 @@ Defines outcome-blind, reproducible validation of the R1 D1 field inventory and 
 
 ## ADDED Requirements
 
+### Requirement: Separately authorized exploratory public sample
+Under the owner's 2026-10-03 authorization and offline-procedure section 11, a fixed zero-paid public SQD probe SHALL produce only availability, field-presence, sample-coverage and volume/cost feasibility outputs labelled `EXPLORATORY`, `d1Evidence = false` and `d1Passed = false`. It SHALL NOT compute returns, PnL, profitability, rankings, selection, strategy outcomes or reconstruction; change frozen methodology/calibration/thresholds; promote inventory fields; or claim full-envelope completeness. Meaningful behavioral RED, targeted GREEN, the two inventory suites, integrity preflight, strict all-item validation, doctor, diff check and ONE fresh independent review SHALL precede source requests. The owner's localized exception SHALL omit the full Maven/Docker gate for this probe only and SHALL NOT relax authoritative D1/P1 closure or permit archive.
+
+#### Scenario: Exploratory probe proceeds while D1 remains blocked
+- **WHEN** design 4f's targeted checks and independent review pass but full-D1 population/retention/cost prerequisites remain unknown
+- **THEN** only the fixed bounded exploratory public sample SHALL be executable
+- **AND** its result SHALL retain false D1 flags, explicit unknowns and unchecked full-D1 tasks.
+
+### Requirement: Exploratory holdout and payload admission guard
+The probe SHALL exclude every raw fetch, count and inspection of `[2026-08-31T00:00:00Z, 2026-09-29T00:00:00Z)`. It SHALL use only design 4f's six fixed preholdout timestamp anchors, validated header-first single-slot requests and three fixed program filters; no previous raw sample SHALL be read. Every returned header SHALL match the admitted safe slot, timestamp and hash before any raw retention or row count. Missing/unsafe/forbidden time, extra blocks, malformed/partial/oversized responses SHALL produce an explicit incomplete sample with no retained raw body or published rows from that response. Logs/receipts SHALL contain only safe accounting/fixed error codes, never provider error bodies or secrets.
+
+#### Scenario: Provider returns a holdout block
+- **WHEN** a requested preholdout slot response includes a timestamp on September 28 or another forbidden/missing/mismatched header
+- **THEN** the response SHALL be rejected before raw-file retention and row counting
+- **AND** only its attempted-request/received-byte/error accounting SHALL remain, with no fallback or retry.
+
+### Requirement: Exploratory finite budget and replay provenance
+The fixed exploratory query/summary/configuration versions SHALL be `exploratory-sqd-v1`, `exploratory-counts-v1` and `exploratory-config-c14n-v1`. The Node-built-in-only probe SHALL bound aggregate execution to USD 0, 30 minutes, 80 attempts, 25,000,000 received bytes, 50,000,000 retained bytes, 2,000,000 bytes/response, 30 seconds/request, two seconds between starts, concurrency one and retries zero. It SHALL reserve response/disk capacity before requests, retain 30,000,000,000 bytes free, record 80-percent checkpoints and stop unfinished work at 100 percent. Files SHALL be exclusive outside git; prior output SHALL NOT be overwritten/resumed. The manifest SHALL identify exact selectors, exclusion, limits, code/runtime/source/query versions, raw SHA-256, safe gaps and unresolved strata. Offline replay SHALL verify raw hashes and reproduce the deterministic summary hash without network or writes. Full-D1 upper bounds SHALL remain unknown unless supported; sensitivities SHALL explicitly identify assumed populations/workload and omitted components.
+
+#### Scenario: Finite sample reaches its byte ceiling
+- **WHEN** remaining received/disk capacity cannot reserve the next response or a request times out
+- **THEN** further requests SHALL stop with explicit incomplete accounting
+- **AND** neither ceiling resets, automatic retry, paid fallback nor a D1 success claim SHALL occur.
+
+#### Scenario: Replay detects changed raw evidence
+- **WHEN** a manifest-listed raw file has changed or is missing
+- **THEN** offline replay SHALL return a fixed integrity error without a successful summary
+- **AND** a byte-identical admitted manifest SHALL reproduce the original deterministic sample-summary hash without re-fetching data.
+
 ### Requirement: Complete required-field accounting
 The inventory SHALL account for every frozen R1 section 8.1 field with explicit source references, covered dates, granularity, gaps, cost and retention evidence. It SHALL distinguish `CONFIRMED`, `DOCUMENTED`, `UNVERIFIED` and `UNAVAILABLE` field status. `CONFIRMED` SHALL denote an author-supplied, evidenced assertion subject to independent review, not a measured D1 availability result or a fact certified by the validator. Documentary capability SHALL NOT be reported as measured coverage. Missing, duplicate, unknown or malformed required-field records SHALL produce `INVENTORY_INVALID`; valid but unresolved fields SHALL produce `INVENTORY_BLOCKED` with every blocking reason retained in deterministic order.
 

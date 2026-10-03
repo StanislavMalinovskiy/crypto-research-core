@@ -35,8 +35,6 @@
 | [docs/GLOSSARY.md](docs/GLOSSARY.md) | Развёрнутый глоссарий проекта |
 | [docs/modules/README.md](docs/modules/README.md) | Карта документации логических модулей |
 | [docs/adr/README.md](docs/adr/README.md) | Журнал архитектурных решений |
-| [docs/notes/AGENT_ORCHESTRATION_RESEARCH.md](docs/notes/AGENT_ORCHESTRATION_RESEARCH.md) | Непринятые идеи и вопросы по развитию агентного конвейера |
-| [docs/notes/THINK.md](docs/notes/THINK.md) | Черновые идеи и вопросы |
 | [docs/notes/EXTERNAL_AUDIT_REVIEW_2026-09-20.md](docs/notes/EXTERNAL_AUDIT_REVIEW_2026-09-20.md) | Оценка Control первого внешнего аудита; non-normative |
 | [docs/notes/GLM_5_3_MAX_EXTERNAL_AUDIT_REVIEW_2026-09-20.md](docs/notes/GLM_5_3_MAX_EXTERNAL_AUDIT_REVIEW_2026-09-20.md) | Оценка Control аудита GLM 5.3 MAX; non-normative |
 
@@ -160,6 +158,8 @@ mvnw.cmd clean verify
 openspec validate --all --strict --no-interactive
 openspec doctor
 ```
+
+Интеграционные тесты используют PostgreSQL через Testcontainers, поэтому Docker Desktop должен быть запущен. Если `docker version` вне sandbox не подключается к engine, агент может сам запустить Docker Desktop (`C:\Program Files\Docker\Docker\Docker Desktop.exe`), подождать, пока `docker version` начнёт отвечать, и продолжить проверку, не спрашивая владельца. Если Docker так и не стал доступен, проверка получает статус BLOCKED с точной командой и причиной.
 
 GitHub Actions выполняет тот же контракт для push и pull request в стабильном job `quality-gate`. Maven-отчёты сохраняются в workflow artifact `maven-test-reports`.
 
