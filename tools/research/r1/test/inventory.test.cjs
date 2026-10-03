@@ -37,8 +37,9 @@ test('complete inventory at exact ceiling never authorizes extraction or passes 
   assert.deepEqual(report.blockers, []);
   assert.equal(report.runAuthorized, false); assert.equal(report.d1Passed, false);
   assert.match(report.fingerprint, /^sha256:[a-f0-9]{64}$/);
-  assert.deepEqual(Object.keys(report).sort(), ['blockers', 'canonicalizationVersion', 'classification',
-    'd1Passed', 'fingerprint', 'runAuthorized', 'schemaVersion', 'selectedCostUpperMicrousd']);
+  assert.deepEqual(Object.keys(report).sort(), ['accountingComplete', 'availabilityDiagnostics', 'availabilityStatus',
+    'blockers', 'canonicalizationVersion', 'classification', 'd1Passed', 'fingerprint', 'reportVersion',
+    'runAuthorized', 'schemaVersion', 'selectedCostUpperMicrousd']);
 });
 test('one micro-USD over ceiling and values beyond Number precision are exact', () => {
   const input = complete(); input.sources[0].costUpperMicrousd = '100000001';
@@ -59,14 +60,14 @@ test('all cost retention and unavailable-field blockers survive together', () =>
   assert.equal(report.selectedCostUpperMicrousd, null);
   assert.ok(codes(report).includes('SOURCE_COST_UNKNOWN'));
   assert.ok(codes(report).includes('SOURCE_RETENTION_UNCONFIRMED'));
-  assert.ok(report.blockers.some(b => b.code === 'FIELD_NOT_CONFIRMED' && b.fieldId === 'reserves-depth'));
+  assert.ok(report.availabilityDiagnostics.some(b => b.code === 'FIELD_NOT_CONFIRMED' && b.fieldId === 'reserves-depth'));
 });
 test('documented trade legs cannot establish depth or measured completeness', () => {
   const input = complete(); input.fields[0].status = 'DOCUMENTED'; input.fields[5].status = 'UNVERIFIED';
   const report = validateInventory(input);
-  assert.equal(report.classification, 'INVENTORY_BLOCKED');
+  assert.equal(report.classification, 'INVENTORY_COMPLETE');
   for (const fieldId of ['trade-legs', 'reserves-depth'])
-    assert.ok(report.blockers.some(b => b.code === 'FIELD_NOT_CONFIRMED' && b.fieldId === fieldId));
+    assert.ok(report.availabilityDiagnostics.some(b => b.code === 'FIELD_NOT_CONFIRMED' && b.fieldId === fieldId));
   assert.equal(report.d1Passed, false);
 });
 test('unknown selected versions and documentary revisions remain blockers', () => {
@@ -74,8 +75,9 @@ test('unknown selected versions and documentary revisions remain blockers', () =
   input.sources[0].evidence[0].version = null; input.fields[0].evidence[0].version = null;
   const report = validateInventory(input);
   assert.equal(report.classification, 'INVENTORY_BLOCKED');
-  for (const code of ['SOURCE_VERSION_UNKNOWN', 'QUERY_VERSION_UNKNOWN', 'SOURCE_EVIDENCE_VERSION_UNKNOWN',
-    'FIELD_EVIDENCE_VERSION_UNKNOWN']) assert.ok(codes(report).includes(code));
+  for (const code of ['SOURCE_VERSION_UNKNOWN', 'QUERY_VERSION_UNKNOWN', 'SOURCE_EVIDENCE_VERSION_UNKNOWN'])
+    assert.ok(codes(report).includes(code));
+  assert.ok(report.availabilityDiagnostics.some(b => b.code === 'FIELD_EVIDENCE_VERSION_UNKNOWN'));
 });
 test('unselected costs do not inflate sum but candidates remain in fingerprint', () => {
   const input = complete(), original = validateInventory(input);
@@ -139,11 +141,14 @@ test('maximum legal inventory retains all blockers within report limits with no 
   global.fetch = () => assert.fail('no network calls');
   try {
     const result = runCli(['--inventory', 'synthetic'], io);
-    assert.equal(result.exitCode, 2); assert.ok(result.report.blockers.length >= 32 * 4 + 12 * 4);
-    assert.ok(result.report.blockers.length <= 2048);
+    const lists = [result.report.blockers, result.report.availabilityDiagnostics];
+    assert.equal(result.exitCode, 2); assert.ok(lists.flat().length >= 32 * 4 + 12 * 4);
+    assert.ok(lists.flat().length <= 2048);
     assert.ok(Buffer.byteLength(JSON.stringify(result.report) + '\n') <= 262144);
-    const keys = result.report.blockers.map(b => b.code + '\0' + (b.sourceId || b.fieldId || ''));
-    assert.deepEqual(keys, [...keys].sort()); assert.equal(new Set(keys).size, keys.length);
+    for (const list of lists) {
+      const keys = list.map(b => b.code + '\0' + (b.sourceId || b.fieldId || ''));
+      assert.deepEqual(keys, [...keys].sort()); assert.equal(new Set(keys).size, keys.length);
+    }
   } finally { global.fetch = originalFetch; }
 });
 test('incomplete coverage known gaps and missing selected supplier all block', () => {
@@ -151,7 +156,9 @@ test('incomplete coverage known gaps and missing selected supplier all block', (
   input.fields[1].gaps.push('gap'); input.sources[0].selected = false;
   const report = validateInventory(input);
   assert.equal(report.classification, 'INVENTORY_BLOCKED');
-  for (const code of ['FIELD_COVERAGE_INCOMPLETE', 'FIELD_GAPS', 'FIELD_SELECTED_SOURCE_MISSING']) assert.ok(codes(report).includes(code));
+  assert.ok(codes(report).includes('SOURCE_SELECTION_MISSING'));
+  for (const code of ['FIELD_COVERAGE_INCOMPLETE', 'FIELD_GAPS', 'FIELD_SELECTED_SOURCE_MISSING'])
+    assert.ok(report.availabilityDiagnostics.some(b => b.code === code));
 });
 const invalidCases = [
   ['missing field', i => i.fields.pop()], ['duplicate field', i => i.fields[1] = i.fields[0]],
@@ -183,7 +190,7 @@ for (const [name, mutate] of invalidCases) test(`closed schema rejects ${name} s
   assert.match(report.code, /^[A-Z_]+$/); assert.equal(JSON.stringify(report).includes('secret'), false);
 });
 test('CLI returns complete blocked invalid exit codes and bounds actual reads', () => {
-  for (const [modify, exitCode] of [[() => {}, 0], [i => i.fields[0].status = 'UNVERIFIED', 2]]) {
+  for (const [modify, exitCode] of [[() => {}, 0], [i => i.fields[0].status = 'UNVERIFIED', 0]]) {
     const input = complete(); modify(input); const io = fakeFs(JSON.stringify(input));
     const result = runCli(['--inventory', 'synthetic.json'], io);
     assert.equal(result.exitCode, exitCode); assert.equal(io.state.opens, 1);

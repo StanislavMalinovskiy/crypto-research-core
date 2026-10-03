@@ -69,8 +69,8 @@ test('all twelve fields retain unknown full-envelope coverage and blocked D1 sta
   assert.equal(input.fields.length, 12);
   for (const field of input.fields) {
     assert.notEqual(field.status, 'CONFIRMED'); assert.equal(field.coveredFrom, null); assert.equal(field.coveredTo, null);
-    assert.ok(report.blockers.some(b => b.code === 'FIELD_NOT_CONFIRMED' && b.fieldId === field.id));
-    assert.ok(report.blockers.some(b => b.code === 'FIELD_COVERAGE_INCOMPLETE' && b.fieldId === field.id));
+    assert.ok(report.availabilityDiagnostics.some(b => b.code === 'FIELD_NOT_CONFIRMED' && b.fieldId === field.id));
+    assert.ok(report.availabilityDiagnostics.some(b => b.code === 'FIELD_COVERAGE_INCOMPLETE' && b.fieldId === field.id));
   }
   assert.equal(input.fields.find(f => f.id === 'trade-legs').status, 'DOCUMENTED');
   assert.equal(input.fields.find(f => f.id === 'block-time').status, 'DOCUMENTED');

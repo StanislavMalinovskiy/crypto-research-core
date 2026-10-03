@@ -6,7 +6,7 @@ const FIELD_IDS = ['trade-legs', 'spl-transfers', 'sol-transfers', 'base-priorit
   'reserves-depth', 'liquidity-events', 'mint-decimals-freeze', 'executable-entry-exit',
   'sol-usd', 'block-time', 'visibility-latency'];
 const INVALID_CODES = new Set(['SCHEMA_INVALID', 'DATE_INVALID', 'MONEY_INVALID', 'URL_INVALID',
-  'DUPLICATE_RECORD', 'INPUT_LIMIT', 'BLOCKER_LIMIT', 'UNSUPPORTED_CANONICALIZATION_VERSION']);
+  'DUPLICATE_RECORD', 'INPUT_LIMIT', 'BLOCKER_LIMIT', 'REPORT_LIMIT', 'UNSUPPORTED_CANONICALIZATION_VERSION']);
 function invalid(code) {
   return { classification: 'INVENTORY_INVALID', code, runAuthorized: false, d1Passed: false };
 }
@@ -107,7 +107,8 @@ function encode(value) {
 function validateInventory(input) {
   try {
     schema(input);
-    const blockers = [], add = (code, type, value) => blockers.push(type ? { code, [type]: value } : { code });
+    const blockers = [], availabilityDiagnostics = [];
+    const add = (code, type, value) => blockers.push(type ? { code, [type]: value } : { code });
     let cost = 0n, costKnown = true;
     for (const source of input.sources.filter(s => s.selected)) {
       const block = code => add(code, 'sourceId', source.id);
@@ -123,8 +124,12 @@ function validateInventory(input) {
     }
     if (cost > 100000000n) add('COST_ABOVE_CEILING');
     const selected = new Set(input.sources.filter(s => s.selected).map(s => s.id));
+    if (selected.size === 0) add('SOURCE_SELECTION_MISSING');
     for (const field of input.fields) {
-      const block = code => add(code, 'fieldId', field.id);
+      const block = code => availabilityDiagnostics.push({ code, fieldId: field.id });
+      if ((field.sourceIds.length === 0 && (field.status !== 'UNAVAILABLE' || field.gaps.length === 0)) ||
+        ((field.coveredFrom === null || field.coveredTo === null || field.granularity === null) && field.gaps.length === 0))
+        add('FIELD_ACCOUNTING_INCOMPLETE', 'fieldId', field.id);
       if (field.status !== 'CONFIRMED') block('FIELD_NOT_CONFIRMED');
       if (!field.sourceIds.some(supplier => selected.has(supplier))) block('FIELD_SELECTED_SOURCE_MISSING');
       if (field.coveredFrom === null || field.coveredTo === null || compareInstants(field.coveredFrom, FROM) > 0 ||
@@ -134,16 +139,22 @@ function validateInventory(input) {
       if (field.evidence.length === 0) block('FIELD_EVIDENCE_MISSING');
       if (field.evidence.some(ref => ref.version === null)) block('FIELD_EVIDENCE_VERSION_UNKNOWN');
     }
-    demand(blockers.length <= 2048, 'BLOCKER_LIMIT');
-    blockers.sort((a, b) => {
+    demand(blockers.length + availabilityDiagnostics.length <= 2048, 'BLOCKER_LIMIT');
+    const compare = (a, b) => {
       const left = a.code + '\0' + (a.sourceId || a.fieldId || ''), right = b.code + '\0' + (b.sourceId || b.fieldId || '');
       return left < right ? -1 : left > right ? 1 : 0;
-    });
+    };
+    blockers.sort(compare); availabilityDiagnostics.sort(compare);
     const bytes = Buffer.concat([encode(SCHEMA), encode(CANONICALIZATION), encode(input)]);
-    return { schemaVersion: SCHEMA, canonicalizationVersion: CANONICALIZATION,
+    const report = { schemaVersion: SCHEMA, canonicalizationVersion: CANONICALIZATION,
+      reportVersion: 'r1-d1-inventory-report-v2',
+      accountingComplete: !blockers.some(b => b.code === 'FIELD_ACCOUNTING_INCOMPLETE'), availabilityDiagnostics,
+      availabilityStatus: availabilityDiagnostics.length ? 'DECLARED_INCOMPLETE_UNMEASURED' : 'DECLARED_COMPLETE_UNMEASURED',
       classification: blockers.length ? 'INVENTORY_BLOCKED' : 'INVENTORY_COMPLETE',
       fingerprint: 'sha256:' + createHash('sha256').update(bytes).digest('hex'),
       selectedCostUpperMicrousd: costKnown ? cost.toString() : null, blockers, runAuthorized: false, d1Passed: false };
+    demand(Buffer.byteLength(JSON.stringify(report) + '\n') <= 262144, 'REPORT_LIMIT');
+    return report;
   } catch (code) { return invalid(INVALID_CODES.has(code) ? code : 'SCHEMA_INVALID'); }
 }
 module.exports = { validateInventory };
