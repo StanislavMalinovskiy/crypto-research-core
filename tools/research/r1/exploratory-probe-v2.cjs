@@ -3,7 +3,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 const v1 = require('./exploratory-probe.cjs');
 const { parse, canonical, digest, fingerprint, integer } = v1;
-const OUTPUT = 'C:\\crypto-research-evidence\\r1-d1\\exploratory-sqd-v2';
+function createProbe(version = 2, resilience = null) {
+const OUTPUT = `C:\\crypto-research-evidence\\r1-d1\\exploratory-sqd-v${version}`;
 const WINDOWS = Object.freeze(['2026-04-01T00:00:00Z', '2026-06-01T00:00:00Z', '2026-07-01T00:00:00Z', '2026-08-01T00:00:00Z']);
 const PROGRAMS = Object.freeze([...v1.PROGRAMS, 'whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc',
   'CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK', 'LBUZKhRxPF3XUpBCjp4YzTKgLccjZhTSDM9YuVaPwxo']);
@@ -24,7 +25,7 @@ const SOURCES = Object.freeze(['https://raw.githubusercontent.com/pump-fun/pump-
   'https://raw.githubusercontent.com/raydium-io/raydium-clmm/master/programs/amm/src/lib.rs',
   'https://raw.githubusercontent.com/MeteoraAg/dlmm-sdk/main/idls/dlmm.json', 'https://www.anchor-lang.com/docs/basics/idl']);
 const LIMITS = Object.freeze({ attempts: 1000, received: 1000000000, disk: 1100000000, response: 16000000,
-  elapsed: 7200000, deadline: 45000, interval: 2000, concurrency: 1, retries: 0, cashMicrousd: '0', free: 30000000000 });
+  elapsed: 7200000, deadline: 45000, interval: 2000, concurrency: 1, retries: version === 3 ? 4 : 0, cashMicrousd: '0', free: 30000000000 });
 const FIELDS = Object.freeze({ block: v1.CONFIG.fields.block, transaction: 'transactionIndex signatures feePayer fee computeUnitsConsumed err',
   instruction: 'transactionIndex instructionAddress programId data isCommitted error',
   richTransaction: v1.CONFIG.fields.transaction + ' feePayer fee computeUnitsConsumed', richInstruction: v1.CONFIG.fields.instruction,
@@ -33,8 +34,8 @@ const OMITTED = Object.freeze(['candidate wallet/token/pool population and mappi
   'related history joins', 'account/tick/bin state', 'independent checks', 'SOL/USD', 'observed visibility',
   'base/priority fee separation', 'non-Jito and separate-bundle tips', 'historical Jito label availability',
   'retention and continued free capacity', 'tail/regime variation']);
-const CONFIG = Object.freeze({ queryVersion: 'exploratory-sqd-v2', summaryVersion: 'exploratory-counts-v2',
-  canonicalizationVersion: 'exploratory-config-c14n-v2', projectionVersion: 'exploratory-workload-sensitivity-v1',
+const CONFIG = Object.freeze({ queryVersion: `exploratory-sqd-v${version}`, summaryVersion: `exploratory-counts-v${version}`,
+  canonicalizationVersion: `exploratory-config-c14n-v${version}`, projectionVersion: 'exploratory-workload-sensitivity-v1',
   runtimeMajor: 24, source: v1.CONFIG.source, base: v1.CONFIG.base, api: v1.CONFIG.api, output: OUTPUT, windows: WINDOWS,
   windowSeconds: 600, maximumSlots: 3000, pageSlots: 32, splitDepth: 5, richOffsets: [0, 300, 599], programs: PROGRAMS,
   jito: JITO, jitoVersion: 'jito-document-list-2026-10-03', jitoSource: 'https://docs.jito.wtf/lowlatencytxnsend/#gettipaccounts',
@@ -48,7 +49,8 @@ const CONFIG = Object.freeze({ queryVersion: 'exploratory-sqd-v2', summaryVersio
     { name: 'high', fraction: ['1', '1'], ancillary: '10', tariffUsdPerGB: '10' }],
   formulas: { rich: 'ceil(T*transactions/second*richBytes/transaction*fraction*ancillary)', light: 'ceil(T*bytes/second)',
     requests: 'ceil(projectedBytes/16000000):capacity-only lower estimate', runtime: 'ceil(T*measuredPageElapsedMs/coveredSeconds)',
-    cash: 'ceil(projectedRichBytes*tariffUsdPerGB*1000000/1000000000)', rounding: 'ceiling only' }, omissions: OMITTED });
+    cash: 'ceil(projectedRichBytes*tariffUsdPerGB*1000000/1000000000)', rounding: 'ceiling only' }, omissions: OMITTED,
+  ...(resilience ? { retryPolicy: resilience.POLICY, priorRuns: resilience.PRIOR } : {}) });
 const FLAGS = Object.freeze({ classification: 'EXPLORATORY', d1Evidence: false, d1Passed: false });
 const fail = code => { throw Error(code); };
 const invalid = code => ({ ...FLAGS, status: 'INCOMPLETE', code });
@@ -242,7 +244,7 @@ function sensitivity(windows) {
     rateFractions: { transaction: tr.map(x => x?.map(String) || null), richBytes: rich.map(x => x?.map(String) || null) }, omitted: OMITTED, actualCashMicrousd: '0' };
 }
 function budget(overrides = {}, start = 0) { return v1.budget({ ...LIMITS, response: LIMITS.response + 1, ...overrides }, start); }
-function send(q, options = {}) { return validQuery(q) ? v1.sendBounded(q, options, LIMITS) : Promise.resolve({ code: 'QUERY_INVALID', received: 0 }); }
+function send(q, options = {}) { return validQuery(q) ? v1.sendBounded(q, { ...options, ...(resilience ? { retryMetadata: true } : {}) }, LIMITS) : Promise.resolve({ code: 'QUERY_INVALID', received: 0 }); }
 const fileStore = output => v1.exclusiveStore(output, OUTPUT, LIMITS.response, CONFIG.metadataCap, 4);
 function merge(target, stats, identities) {
   for (const key of ['processedSlots', 'exactFeeInputs', 'unknownSignatureLinks', 'uniqueInstructions', 'matchedTotal', 'recognizedTotal', 'other', 'failed', 'uncommitted', 'malformed', 'transfers', 'associatedTransfers', 'unknownTransfers']) target[key] += stats[key];
@@ -295,7 +297,7 @@ async function collect(request) {
         while (cursor <= to) {
           const expected = inside.filter(h => h.number >= cursor && h.number <= to); if (!expected.length) return true;
           const q = query(kind, anchor, cursor, to), r = await request(q, b => admit(b, q, expected));
-          stats.requests += r.attempted ? 1 : 0; stats.bytes += r.received || 0; stats.elapsedMs += r.elapsedMs || 0;
+          stats.requests += r.attempts ?? (r.attempted ? 1 : 0); stats.bytes += r.received || 0; stats.elapsedMs += r.elapsedMs || 0;
           if (r.code === 'RESPONSE_LIMIT' && cursor < to && depth < 5) {
             stats.gaps.push({ from: cursor, to, code: 'CAP_SPLIT' }); const mid = Math.floor((cursor + to) / 2);
             const left = await page(cursor, mid, depth + 1); if (terminal) return false; const right = await page(mid + 1, to, depth + 1); return left && right;
@@ -327,7 +329,7 @@ async function collect(request) {
     richDisposition: 'sparse rich-size/input samples, never continuous rich coverage', tipDisposition: 'current-document attribution only', unknowns: OMITTED };
 }
 const codes = new Set(['RESPONSE_LIMIT', 'RESPONSE_INVALID', 'HTTP_ERROR', 'PARTIAL_RESPONSE', 'TIMEOUT', 'NETWORK_ERROR', 'ATTEMPT_LIMIT',
-  'RECEIVED_LIMIT', 'DISK_LIMIT', 'TIME_LIMIT', 'FREE_SPACE_LIMIT', 'STORAGE_ERROR', 'UNEXECUTED']);
+  'RECEIVED_LIMIT', 'DISK_LIMIT', 'TIME_LIMIT', 'FREE_SPACE_LIMIT', 'STORAGE_ERROR', 'UNEXECUTED', ...(resilience ? ['RETRY_AFTER_INVALID'] : [])]);
 function complete(summary) { return summary.windows.every(w => w.censusComplete && ['A', 'B', 'C'].every(k => w[k].complete)); }
 async function runProbe(options = {}, injected = {}) {
   if (options.enabled !== true) return invalid('DISABLED');
@@ -345,38 +347,67 @@ async function runProbe(options = {}, injected = {}) {
       catch (e) { if (e.code !== 'ENOENT' && e.message !== 'FILE_MISSING') retainedKnown = false; } return partial || { name, size: 0, hash: null }; }
   }
   if (write('attempt.json', attempt)) return { ...invalid('STORAGE_ERROR'), accounting: { ...b.state, retained: b.state.disk, retainedKnown } };
-  const request = async (q, validate) => {
+  const retryState = { retries: 0, groups: 0 };
+  let roomFree = null;
+  function room(wait = 0) {
+    roomFree = null;
+    b.tick(now());
+    if (wait === null || BigInt(Math.max(0, now() - start)) + BigInt(wait) + BigInt(LIMITS.deadline) > BigInt(LIMITS.elapsed)) return 'TIME_LIMIT';
+    if (b.state.attempts >= LIMITS.attempts) return 'ATTEMPT_LIMIT';
+    if (b.state.received + LIMITS.response + 1 > LIMITS.received) return 'RECEIVED_LIMIT';
+    if (b.state.disk + LIMITS.response + 1 > LIMITS.disk) return 'DISK_LIMIT';
+    try { roomFree = store.free() - CONFIG.metadataReserve; if (roomFree - LIMITS.response - 1 < LIMITS.free) return 'FREE_SPACE_LIMIT'; } catch { return 'STORAGE_ERROR'; }
+    return null;
+  }
+  const requestOnce = async (q, validate, meta = null) => {
     if (stopped) return { code: 'UNEXECUTED', attempted: false };
     const requestBegan = now();
     if (lastStart !== null) await sleep(Math.max(0, LIMITS.interval - (now() - lastStart)));
-    let code; try { code = b.reserve(now(), store.free() - CONFIG.metadataReserve); } catch { code = 'STORAGE_ERROR'; }
-    if (code) { records.push({ request: q, code, attempted: false, received: 0, elapsedMs: 0, status: null }); stopped = true; return { code, attempted: false }; }
+    let code; try { code = resilience ? room() : null; if (!code) code = b.reserve(now(), store.free() - CONFIG.metadataReserve); } catch { code = 'STORAGE_ERROR'; }
+    if (code) { const r = { request: q, code, attempted: false, received: 0, elapsedMs: meta ? now() - requestBegan : 0, status: null,
+      ...(meta ? { ...meta, startMs: now() - start, endMs: now() - start } : {}) };
+      if (meta) { try { r.freeBytes = store.free() - CONFIG.metadataReserve; } catch { r.freeBytes = null; } }
+      records.push(r); stopped = true; return r; }
     lastStart = now(); const r = { request: q, code: null, attempted: true, received: 0, elapsedMs: 0, status: null }; records.push(r);
+    if (meta) Object.assign(r, meta, { startMs: now() - start, freeBytes: store.free() - CONFIG.metadataReserve, requestDeadlineMs: LIMITS.deadline });
     let response; try { response = await transport(q, { responseLimit: LIMITS.response, deadlineMs: Math.min(LIMITS.deadline, LIMITS.elapsed - (now() - start)),
       onChunk(n) { if (!Number.isSafeInteger(n) || n < 0 || r.received + n > LIMITS.response + 1) fail('NETWORK_ERROR'); r.received += n; b.charge(n, 0); } }); }
     catch { response = { code: 'NETWORK_ERROR' }; }
     r.elapsedMs = Math.max(0, now() - requestBegan); r.status = Number.isInteger(response.status) ? response.status : null; b.tick(now());
+    if (meta) { r.endMs = now() - start; if (response.deadlineOwned === true) r.deadlineOwned = true;
+      if (response.retryAfterInvalid === true || response.retryAfter !== undefined && (typeof response.retryAfter !== 'string' || response.retryAfter.length > 128 || !/^[\x20-\x7e\t]*$/.test(response.retryAfter))) r.retryAfterInvalid = true;
+      else if (response.retryAfter !== undefined) r.retryAfter = response.retryAfter; }
     if (b.state.elapsed >= LIMITS.elapsed) r.code = 'TIME_LIMIT';
     else if (response.code) r.code = codes.has(response.code) ? response.code : 'NETWORK_ERROR';
-    let observed; if (!r.code) { observed = validate(response.bytes); r.code = observed.code; }
-    if (r.code) { if (['TIME_LIMIT', 'STORAGE_ERROR'].includes(r.code)) stopped = true; return { ...r }; }
+    let observed; if (!r.code) { observed = validate(response.bytes); r.code = observed.code;
+      if (meta && !r.code && response.bytes.length !== r.received) r.code = 'NETWORK_ERROR'; }
+    if (r.code) { if (['TIME_LIMIT', 'STORAGE_ERROR'].includes(r.code)) stopped = true; return r; }
     const name = `${String(records.length).padStart(4, '0')}.raw`, failed = write(name, response.bytes);
     if (failed) { r.code = 'STORAGE_ERROR'; r.failedRaw = failed; stopped = true; return { ...r }; }
     r.raw = name; r.hash = digest(response.bytes); r.size = response.bytes.length;
-    return { ...observed, attempted: true, received: r.received, elapsedMs: r.elapsedMs, size: r.size };
+    return { ...observed, ...r, ...(meta ? { record: r } : {}) };
   };
+  const request = resilience ? (q, validate) => resilience.retryGroup(q, { now, sleep, room(wait) { const code = room(wait); return { code, freeBytes: roomFree }; },
+    attempt: meta => requestOnce(q, validate, meta),
+    prevent(meta, code) { const r = { request: q, ...meta, code, attempted: false, received: 0, elapsedMs: 0, status: null, startMs: now() - start, endMs: now() - start };
+      try { r.freeBytes = store.free() - CONFIG.metadataReserve; } catch { r.freeBytes = null; }
+      records.push(r); if (code !== 'RETRY_AFTER_INVALID') stopped = true; return r; } }, retryState) : requestOnce;
   try {
     const summary = await collect(request); b.tick(now());
+    if (resilience && b.state.elapsed >= LIMITS.elapsed) stopped = true;
     const status = complete(summary) && !stopped && /^[a-f0-9]{40,64}$/.test(source.commit || '') && typeof source.dirty === 'boolean' ? 'COMPLETE' : 'INCOMPLETE';
     const summaryBytes = Buffer.from(JSON.stringify(summary) + '\n'), summaryHash = fingerprint(CONFIG.summaryVersion, summary);
-    const scriptHashes = Object.fromEntries(['exploratory-probe.cjs', 'exploratory-probe-v2.cjs', 'exploratory-probe-v2-cli.cjs'].map(name => [name, digest(fs.readFileSync(path.join(__dirname, name)))]));
-    const accounting = { ...b.state, retained: b.state.disk, retainedKnown, concurrency: 1, retries: 0 };
+    const scripts = ['exploratory-probe.cjs', 'exploratory-probe-v2.cjs', `exploratory-probe-v${version}-cli.cjs`, ...(resilience ? ['exploratory-probe-v3.cjs'] : [])];
+    const scriptHashes = Object.fromEntries(scripts.map(name => [name, digest(fs.readFileSync(path.join(__dirname, name)))]));
+    const accounting = { ...b.state, retained: b.state.disk, retainedKnown, concurrency: 1, retries: retryState.retries };
+    if (resilience) accounting.cumulative = resilience.cumulative(accounting);
     const manifest = { ...FLAGS, status, config: CONFIG, configHash: cfgHash(), summaryHash, summaryFileHash: digest(summaryBytes),
       attemptFileHash: digest(attempt), records, accounting, source, scriptHashes, runtime: process.version,
       startedAt: new Date(start).toISOString(), endedAt: new Date(now()).toISOString(), protocolVersion: '1.0.0', freezeEntry: 1,
-      change: 'establish-r1-d1-data-gate', command: `node tools/research/r1/exploratory-probe-v2-cli.cjs --enable-public --output ${OUTPUT}` };
+      change: 'establish-r1-d1-data-gate', command: `node tools/research/r1/exploratory-probe-v${version}-cli.cjs --enable-public --output ${OUTPUT}` };
     let manifestBytes; for (let i = 0; i < 8; i++) { manifestBytes = Buffer.from(JSON.stringify(manifest) + '\n');
       accounting.retained = b.state.disk + summaryBytes.length + manifestBytes.length; accounting.disk = accounting.retained;
+      if (resilience) accounting.cumulative = resilience.cumulative(accounting);
       if (accounting.disk * 5 >= LIMITS.disk * 4 && !accounting.checkpoints.includes('disk')) accounting.checkpoints.push('disk'); }
     manifestBytes = Buffer.from(JSON.stringify(manifest) + '\n');
     if (summaryBytes.length > CONFIG.metadataCap || manifestBytes.length > CONFIG.metadataCap || accounting.retained > LIMITS.disk
@@ -389,24 +420,52 @@ async function replay(store) {
   try {
     const manifestBytes = store.read('manifest.json'); if (manifestBytes.length > CONFIG.metadataCap) fail('INTEGRITY_ERROR'); const m = parse(manifestBytes, false);
     if (canonical(m.config) !== canonical(CONFIG) || m.configHash !== cfgHash() || m.classification !== 'EXPLORATORY' || m.d1Evidence !== false || m.d1Passed !== false
-      || !['COMPLETE', 'INCOMPLETE'].includes(m.status) || !Array.isArray(m.records) || m.records.length > 1001 || m.accounting.retainedKnown !== true
+      || !['COMPLETE', 'INCOMPLETE'].includes(m.status) || !Array.isArray(m.records) || m.records.length > (resilience ? 2001 : 1001) || m.accounting.retainedKnown !== true
       || digest(store.read('attempt.json')) !== m.attemptFileHash) fail('INTEGRITY_ERROR');
     let index = 0, received = 0, retained = store.read('attempt.json').length; const seen = new Set();
-    const summary = await collect(async (q, validate) => {
+    const retryState = { retries: 0, groups: 0 }, time = { value: 0, lastStart: -LIMITS.interval }, rb = budget({}, 0); rb.charge(0, retained);
+    const readOnce = (q, validate) => {
       const r = m.records[index]; if (!r) return { code: 'UNEXECUTED', attempted: false };
       if (canonical(r.request) !== canonical(q) || !validQuery(q) || !Number.isSafeInteger(r.received) || r.received < 0 || r.received > LIMITS.response + 1
         || r.failedRaw || r.code === 'STORAGE_ERROR' || r.code !== null && !codes.has(r.code)) fail('INTEGRITY_ERROR'); index++; received += r.received;
+      if (resilience) {
+        rb.tick(r.startMs); if (r.attempted && rb.reserve(r.startMs, r.freeBytes)) fail('INTEGRITY_ERROR'); rb.charge(r.received, 0); rb.tick(r.endMs);
+        if (!r.attempted && r.received !== 0 || !Number.isSafeInteger(r.elapsedMs) || r.elapsedMs < 0 || r.status !== null && !Number.isInteger(r.status)) fail('INTEGRITY_ERROR');
+      }
       if (!r.raw) { if (!r.code) fail('INTEGRITY_ERROR'); return { ...r }; }
       if (r.code || !/^\d{4}\.raw$/.test(r.raw) || seen.has(r.raw)) fail('INTEGRITY_ERROR'); seen.add(r.raw);
       const bytes = store.read(r.raw); retained += bytes.length;
-      if (bytes.length > LIMITS.response || bytes.length !== r.size || digest(bytes) !== r.hash) fail('INTEGRITY_ERROR');
-      const observed = validate(bytes); if (observed.code) fail('INTEGRITY_ERROR'); return { ...observed, attempted: r.attempted, received: r.received, elapsedMs: r.elapsedMs, size: r.size };
-    });
+      if (bytes.length > LIMITS.response || bytes.length !== r.size || digest(bytes) !== r.hash || resilience && bytes.length !== r.received) fail('INTEGRITY_ERROR');
+      const observed = validate(bytes); if (observed.code) fail('INTEGRITY_ERROR');
+      if (resilience) { rb.charge(0, bytes.length); return { ...observed, ...r, record: { ...r } }; }
+      return { ...observed, attempted: r.attempted, received: r.received, elapsedMs: r.elapsedMs, size: r.size };
+    };
+    const summary = await collect((q, validate) => !resilience ? readOnce(q, validate) : !m.records[index] ? { code: 'UNEXECUTED', attempted: false }
+      : resilience.replayGroup(q, { time, peek: () => m.records[index], take: () => readOnce(q, validate),
+        room(at, wait, beforeWait = false) {
+          const next = m.records[index], free = beforeWait ? next?.preWaitFreeBytes : next?.freeBytes;
+          const finish = code => beforeWait ? { code, freeBytes: free } : code;
+          if (at + wait + LIMITS.deadline > LIMITS.elapsed) return finish('TIME_LIMIT');
+          if (rb.state.attempts >= LIMITS.attempts) return finish('ATTEMPT_LIMIT');
+          if (rb.state.received + LIMITS.response + 1 > LIMITS.received) return finish('RECEIVED_LIMIT');
+          if (rb.state.disk + LIMITS.response + 1 > LIMITS.disk) return finish('DISK_LIMIT');
+          if (free === null) return finish('STORAGE_ERROR');
+          return finish(!Number.isSafeInteger(free) || free - LIMITS.response - 1 < LIMITS.free ? 'FREE_SPACE_LIMIT' : null);
+        } }, retryState));
     const summaryBytes = store.read('summary.json'), summaryHash = fingerprint(CONFIG.summaryVersion, summary); retained += summaryBytes.length + manifestBytes.length;
     if (index !== m.records.length || received > LIMITS.received || retained > LIMITS.disk || received !== m.accounting.received || retained !== m.accounting.retained
       || summaryBytes.length > CONFIG.metadataCap || digest(summaryBytes) !== m.summaryFileHash || summaryHash !== m.summaryHash
       || summaryBytes.toString('utf8') !== JSON.stringify(summary) + '\n' || m.status === 'COMPLETE' && !complete(summary)) fail('INTEGRITY_ERROR');
-    return { ...FLAGS, status: m.status, code: null, summaryHash, manifestHash: digest(manifestBytes), summary };
+    if (resilience) {
+      const duration = Date.parse(m.endedAt) - Date.parse(m.startedAt); rb.tick(duration); rb.charge(0, summaryBytes.length + manifestBytes.length);
+      if (!Number.isSafeInteger(duration) || duration < time.value || duration > LIMITS.elapsed || m.accounting.elapsed !== duration
+        || m.accounting.attempts !== rb.state.attempts || m.accounting.disk !== rb.state.disk || m.accounting.retries !== retryState.retries
+        || m.accounting.cashMicrousd !== '0' || m.accounting.concurrency !== 1 || canonical(m.accounting.checkpoints) !== canonical(rb.state.checkpoints)
+        || canonical(m.accounting.cumulative) !== canonical(resilience.cumulative(m.accounting))) fail('INTEGRITY_ERROR');
+    }
+    return { ...FLAGS, status: m.status, code: null, summaryHash, manifestHash: digest(manifestBytes), summary, ...(resilience ? { accounting: m.accounting } : {}) };
   } catch { return invalid('INTEGRITY_ERROR'); }
 }
-module.exports = { OUTPUT, WINDOWS, PROGRAMS, JITO, CONFIG, query, admit, transfer, inspect, sensitivity, budget, send, fileStore, runProbe, replay };
+return { OUTPUT, WINDOWS, PROGRAMS, JITO, CONFIG, query, admit, transfer, inspect, sensitivity, budget, send, fileStore, runProbe, replay };
+}
+module.exports = { ...createProbe(), createV3: resilience => createProbe(3, resilience) };

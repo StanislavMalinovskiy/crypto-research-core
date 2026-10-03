@@ -162,15 +162,23 @@ function sendBounded(spec, options = {}, caps = LIMITS) {
   const limit = Math.min(options.responseLimit ?? caps.response, caps.response);
   const deadline = Math.min(options.deadlineMs ?? caps.deadline, caps.deadline);
   return new Promise(resolve => {
-    let done = false, received = 0, status = null, res, timer; const chunks = [];
+    let done = false, received = 0, status = null, res, timer, retryAfter, retryAfterInvalid = false; const chunks = [];
     const finish = (code, bytes) => {
       if (done) return; done = true; clearTimeout(timer);
       if (code) { res?.destroy(); req.destroy(); }
-      resolve({ code, status, received, ...(code ? {} : { bytes }) });
+      const eligibleHeader = code === 'HTTP_ERROR' && [529, 503, 429].includes(status) || code === 'TIMEOUT' && [null, 200, 529, 503, 429].includes(status);
+      resolve({ code, status, received, ...(code ? {} : { bytes }), ...(options.retryMetadata ? {
+        ...(eligibleHeader && retryAfter !== undefined ? { retryAfter } : {}), ...(eligibleHeader && retryAfterInvalid ? { retryAfterInvalid: true } : {}),
+        ...(code === 'TIMEOUT' ? { deadlineOwned: true } : {}) } : {}) });
     };
     const req = client.request(url, { method: spec.method, agent: false,
       headers: { Accept: 'application/json', ...(spec.body ? { 'Content-Type': 'application/json' } : {}) } }, response => {
       res = response; status = res.statusCode;
+      if (options.retryMetadata) {
+        const values = []; for (let i = 0; i < res.rawHeaders.length; i += 2) if (res.rawHeaders[i].toLowerCase() === 'retry-after') values.push(res.rawHeaders[i + 1]);
+        if (values.length > 1 || values.length === 1 && (Buffer.byteLength(values[0]) > 128 || !/^[\x20-\x7e\t]*$/.test(values[0]))) retryAfterInvalid = true;
+        else if (values.length === 1) retryAfter = values[0];
+      }
       res.on('readable', () => {
         if (done) return;
         try {
@@ -207,7 +215,7 @@ function checkedPath(output, requireDirectory = false, expected = OUTPUT) {
 }
 function fileStore(output) { return exclusiveStore(output, OUTPUT, LIMITS.response, 1000000, 3); }
 function exclusiveStore(output, expected, responseCap, metadataCap, digits) {
-  if (expected !== OUTPUT && expected !== 'C:\\crypto-research-evidence\\r1-d1\\exploratory-sqd-v2') fail('UNSAFE_PATH');
+  if (![OUTPUT, 'C:\\crypto-research-evidence\\r1-d1\\exploratory-sqd-v2', 'C:\\crypto-research-evidence\\r1-d1\\exploratory-sqd-v3'].includes(expected)) fail('UNSAFE_PATH');
   const check = required => checkedPath(output, required, expected); check(false);
   const nameOk = name => ['manifest.json', 'summary.json', 'attempt.json'].includes(name) || new RegExp(`^\\d{${digits}}\\.raw$`).test(name);
   return {
