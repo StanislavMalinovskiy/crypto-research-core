@@ -25,6 +25,8 @@ Separate delegated source step (Claude scope decision `a75d0cf1`, 2026-10-03): d
 
 ### New Capabilities
 
+Owner-next-task Helius planning (2026-10-03, relayed through the retained Claude owner file): after the four separate batch commits and clean-tree boundary, design4k plans H1 Free entitlement, H2 terms disposition, H3 fixed outcome-blind wallet-history sample, H4 transparent volume/credit sensitivities and H5 an unselected candidate snapshot. No implementation, secret read or provider call occurs during PLAN. The requested local H1/H3 light-process exception is not effective while it conflicts with controlling CORE_RISK role instructions; baseline RED/fresh full-CI review/complete gate remain required. Confirmatory200 checks retain the full process and need a later implementation-ready allocation. H6 leaves the SQD and mapper stops unchanged, without inferring universal source failure.
+
 Separate owner-authorized dependency (2026-10-03): design4j allocates a pure offline PumpSwap declared-role/token-ownedDelta/classic-SPL-transfer mapper using inline synthetic fixtures and only the pinned preholdout v1 `004.raw` for one read-only development smoke. Historical upstream IDL/SPL commits and hashes are pinned; deployment applicability stays unverified. No price/outcome/selection, provider request, field promotion or D1 evidence; meaningful RED, fresh full-CI review and complete Maven/Docker gate are required. Existing4h/v3 work and consumed repair capacity remain separate.
 
 - `r1-data-inventory`: Bounded offline validation and reproducible reporting of required-field availability, source evidence, retention and costs, plus the extraction authorization barrier.

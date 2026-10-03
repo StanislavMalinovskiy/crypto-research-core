@@ -4,6 +4,43 @@ Defines outcome-blind, reproducible validation of the R1 D1 field inventory and 
 
 ## ADDED Requirements
 
+### Requirement: Separately bounded Helius Free exploratory history
+Design4k SHALL allocate only future H1/H3 Free getTransactionsForAddress entitlement/volume steps, H2 terms disposition, offline H4 sensitivity and unselected H5 inventory candidate. It SHALL preserve owner provenance, fixed preholdout004-derived addresses, USD0/Free-only/cumulative finite credits/attempts/bytes/disk/time/retries, false D1 flags and unchanged frozen protocol. The requested light-process exception SHALL remain ineffective while conflicting with controlling CORE_RISK role instructions; baseline RED/freeze/fresh full-CI review/Main complete gate and the explicitly published Helius-access/H2 admission preconditions SHALL precede calls. Confirmatory200 receipts SHALL require a separate full CORE_RISK allocation. PLAN SHALL NOT read secrets, call providers, implement scripts/procedure or reopen SQD/mapper tasks.
+
+#### Scenario: Free entitlement or retention is unresolved
+- **WHEN** H1 is refused, actual Free debit is unknown/unexpected, or H2 lacks the delegated exploratory-retention decision
+- **THEN** the affected source step SHALL stop explicitly without method/host/key/purchase/paid fallback
+- **AND** published history/tariffs or a prior key-name/dashboard observation SHALL NOT establish current entitlement, retention permission or D1 source admission.
+
+### Requirement: Helius holdout and secret admission boundary
+Every H1/H3 request SHALL include design4k's fixed half-open blockTime filter before transport. The entire forbidden2026-08-31..2026-09-29 interval SHALL be excluded from fetches/counts; a page with missing/invalid/out-of-range time SHALL be rejected entirely before raw retention or row publication. Only transport-at-request-time SHALL load CRYPTO_HELIUS_API_KEY from its ignored properties file; authenticated URLs, keys and provider errors SHALL never enter output/identity/logs/receipts. Missing or invalid transaction-error state SHALL remain unknown, not success or FAILED_TRANSACTION. No outcome/price/ranking/selection/reconstruction or field promotion SHALL occur.
+
+#### Scenario: Page contains forbidden time or leaked authentication
+- **WHEN** a page contains a holdout/out-of-range/null-time row or the actual authentication value
+- **THEN** the whole page SHALL be discarded before any raw write/count
+- **AND** safe attempted/received-byte/error accounting SHALL remain without publishing provider content or silently continuing.
+
+### Requirement: Finite Helius attempts and reproducible accounting
+H1 SHALL make exactly one bounded attempt with zero retries; H3 SHALL enforce design4k's generous finite caps, credit reservation on every attempt, sequential round-robin cursor work and finite eligible backoff without Retry-After bypass. Failed/partial bytes, waits and uncertain charges SHALL remain accounted, while failed responses SHALL provide no cursor/coverage. Exclusive external files/manifest lineage SHALL preserve previous roots and cumulative history. Offline replay SHALL verify raw SHA-256, deterministic admission/counts/attempt ordering and semantic hashes without requests, secrets, writes or waits; elapsed/rate/dashboard presentation SHALL remain operational metadata outside deterministic summary identity.
+
+#### Scenario: Retry or cursor cannot fit the remaining allowance
+- **WHEN** the next reservation/full wait+request deadline cannot fit, a cursor repeats, or an immutable signature conflicts
+- **THEN** requests SHALL stop with explicit incomplete/integrity disposition and no quota reset, duplicate admission or fallback
+- **AND** unexecuted/censored wallet ranges SHALL remain unknown/lower-bound, not complete histories.
+
+#### Scenario: Replay has identical evidence but different execution timing
+- **WHEN** raw/config/code lineage and semantic counters match but live elapsed/rate differs from offline processing
+- **THEN** replay SHALL preserve deterministic semantic summary hash without requiring byte-identical receipt packaging or reconstructed live timing
+- **AND** changed/missing raw evidence SHALL fail integrity rather than receive fabricated counts.
+
+### Requirement: Helius sensitivity and candidate are not D1 passage
+H4 SHALL report exact rational/ceiling sample min/pooled/max wallet-history sensitivities for the fixed populations and1–3Free-month assumptions, retaining censored denominators and missing full-envelope discovery/pool/ancillary/holdout/tail/state costs. fullD1UpperBound SHALL remain null. H5 SHALL preserve the old inventory snapshot/frozen tests and add only a separate unselected candidate with explicit unknown coverage/cost/retention and vault-only depth limitations. H6 SHALL preserve historical SQD529 cause uncertainty, v3NOT_RUN and mapperUNAPPROVED status without universal source-failure inference; section2 SHALL remain unchecked and D1 unarchived.
+
+#### Scenario: Wallet-history sample fits a Free-month scenario
+- **WHEN** an assumed wallet-only forecast fits one or more monthly Free allowances
+- **THEN** it SHALL be labelled sample sensitivity, not a defensible complete D1 cost/coverage bound or run extension
+- **AND** unknown required inputs, fixed fourteen-day execution ceiling and full confirmatory gates SHALL remain unchanged.
+
 ### Requirement: Separate offline PumpSwap development mapping
 The design4j dependency SHALL map only bounded offline development input into full-signature/instruction-path declared PumpSwap user/mint/pool/vault identities, exact transaction-token-owned deltas, separate supported classic-SPL transfer facts and explicit ambiguity. It SHALL pin the historical upstream IDL/SPL source commits/hashes, preserve unverified deployment applicability, immutable conflict rejection, deterministic fact/report lineage and false D1/run flags. Missing/changed/unsupported state SHALL remain null with a reason, never zero-filled, per-invocation execution, reserves or verified historical coverage. Only inline synthetic tests and the sole hash-pinned preholdout v1 `004.raw` smoke are allocated; no providers, holdout/outcomes, price/returns/ranking/selection, field promotion or old-root writes. Behavioral RED/GREEN, fresh independent full-CI review and Main's complete gate SHALL precede dependency completion; this SHALL NOT consume/reset exploratory repair history or complete D1.
 
