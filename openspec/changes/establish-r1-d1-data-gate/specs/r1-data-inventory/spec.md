@@ -66,6 +66,24 @@ H4 SHALL report exact rational/ceiling sample min/pooled/max wallet-history sens
 ### Requirement: Separate offline PumpSwap development mapping
 The design4j dependency SHALL map only bounded offline development input into full-signature/instruction-path declared PumpSwap user/mint/pool/vault identities, exact transaction-token-owned deltas, separate supported classic-SPL transfer facts and explicit ambiguity. It SHALL pin the historical upstream IDL/SPL source commits/hashes, preserve unverified deployment applicability, immutable conflict rejection, deterministic fact/report lineage and false D1/run flags. Missing/changed/unsupported state SHALL remain null with a reason, never zero-filled, per-invocation execution, reserves or verified historical coverage. Only inline synthetic tests and the sole hash-pinned preholdout v1 `004.raw` smoke are allocated; no providers, holdout/outcomes, price/returns/ranking/selection, field promotion or old-root writes. Behavioral RED/GREEN, fresh independent full-CI review and Main's complete gate SHALL precede dependency completion; this SHALL NOT consume/reset exploratory repair history or complete D1.
 
+The separately authorized design4j err-only exception SHALL use its pinned conservative closed subset: explicit null means success; `AccountInUse` or exactly `{InstructionError:[i,{Custom:c}]}` with integer i0..255/c0..4294967295 and no extra keys means FAILED_TRANSACTION. Missing, malformed and unsupported values SHALL remain UNKNOWN via existing UNSUPPORTED_DATA/context, never inferred success/failure or discarded ambiguity. Historical STOP/counters SHALL remain recorded; exactly one exception requires current Reviewer TEST_SPEC_ERROR/new RED, full independent review and Main complete gate, with no additional source/smoke/discovery permission.
+
+The later design4j conditional-admission exception SHALL preserve the arbitrary-input numeric-rounding repro as unfixed/BLOCK and SHALL allocate no further code/test repair. Only its four pinned immutable manifests and419listed raw hashes MAY be audited once using the existing lossless parser, sequentially under fixed file/byte/time caps, with numeric err lexemes constrained to nonnegative dot/exponent-free u32 and InstructionError index u8; unsupported states SHALL remain UNKNOWN/counted. Complete hash-valid zero-violation audit plus independent current Reviewer APPROVE SHALL be required for EXPLORATORY KNOWN_LIMITATION_ACCEPTED of only that exact hashset, never arbitrary/provider/production/D1 correctness or discovery authorization.
+
+#### Scenario: Conditional audit fails or input changes
+- **WHEN** an audit violation/incomplete/integrity failure occurs, Reviewer returns BLOCK or a different raw is proposed
+- **THEN** failure/BLOCK SHALL leave4j STOP/UNAPPROVED without another repair; a different raw SHALL require its own new bounded contract and the same audit, not automatic admission
+- **AND** immutable roots, existing error/ambiguity semantics, preholdout/source-retention restrictions, false D1 flags and spent repair counters SHALL remain unchanged.
+
+#### Scenario: Error state is absent or unsupported
+- **WHEN** transaction err is missing, an unsupported string/variant or an invalid type/payload under the pinned subset
+- **THEN** existing invocation/transfer records SHALL retain UNSUPPORTED_DATA and deterministic unknown-state diagnostic context without successful ownedDelta or committed-successful transfer claims
+- **AND** unchanged identity/conflict/order/balance rules, bounds, declared-layout uncertainty and false D1 flags SHALL remain.
+
+#### Scenario: Error state belongs to the supported subset
+- **WHEN** err is explicitly null, AccountInUse or the exactly validated InstructionError/Custom form
+- **THEN** only explicit null SHALL permit existing success-dependent mapping; supported error forms SHALL retain FAILED_TRANSACTION, with no guessed payload or unsupported-enum membership.
+
 #### Scenario: Documentary role mapping has incomplete token state
 - **WHEN** a supported PumpSwap instruction matches the pinned declared layout but an owned token account has null pre-state or changed ownership/mint/decimals
 - **THEN** the mapper SHALL retain declared identities, exact separate transfer facts where supported, and null affected ownedDelta with deterministic ambiguity diagnostics

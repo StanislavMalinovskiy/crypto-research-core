@@ -41,6 +41,14 @@ function amount(value) { if (value === null || value === undefined) return null;
 function pathCompare(a, b) { for (let i = 0; i < Math.min(a.length, b.length); i++) if (a[i] !== b[i]) return a[i] - b[i]; return a.length - b.length; }
 const cmp = (a, b) => a < b ? -1 : a > b ? 1 : 0;
 const identity = (sig, path) => sig === null ? null : { chain: CONFIG.chain, signature: sig, instructionAddress: path };
+function transactionReason(err) {
+  if (err === null) return null;
+  if (err === 'AccountInUse') return 'FAILED_TRANSACTION';
+  const tuple = err && typeof err === 'object' && !Array.isArray(err) && Object.keys(err).length === 1 && err.InstructionError;
+  const custom = Array.isArray(tuple) && tuple.length === 2 && tuple[1];
+  return tuple && Number.isInteger(tuple[0]) && tuple[0] >= 0 && tuple[0] <= 255 && custom && typeof custom === 'object' && !Array.isArray(custom) &&
+    Object.keys(custom).length === 1 && Number.isInteger(custom.Custom) && custom.Custom >= 0 && custom.Custom <= 4294967295 ? 'FAILED_TRANSACTION' : 'UNSUPPORTED_DATA';
+}
 function mapBlock(input, expectedRawHash) {
   try {
     requireValue(Buffer.isBuffer(input) || input instanceof Uint8Array); requireValue(input.byteLength <= CONFIG.limits.input, 'INPUT_LIMIT');
@@ -54,17 +62,20 @@ function mapBlock(input, expectedRawHash) {
       if (b[name] === undefined) b[name] = []; requireValue(Array.isArray(b[name])); requireValue(b[name].length <= CONFIG.limits[name], 'INPUT_LIMIT');
       for (const row of b[name]) obj(row);
     }
-    const diagnostics = new Map(), txBySignature = new Map(), links = new Map(), instructions = new Map(), tokens = new Map();
+    const diagnostics = new Map(), txBySignature = new Map(), links = new Map(), instructions = new Map(), tokens = new Map(), transactionReasons = new Map();
+    const typedTransactions = JSON.parse(lines[0]).transactions ?? []; // Error integer types only; balance quantity lexemes remain untouched.
     const diag = (code, context = null) => { const d = { code, context }, key = canonical(d); diagnostics.set(key, d);
       requireValue(diagnostics.size <= CONFIG.limits.diagnostics, 'OUTPUT_LIMIT'); };
     const unique = (map, key, row) => { if (map.has(key)) requireValue(canonical(map.get(key)) === canonical(row), 'IMMUTABLE_CONFLICT'); else map.set(key, row); };
-    for (const tx of b.transactions) {
+    for (const [ordinal, tx] of b.transactions.entries()) {
       const index = safeInt(tx.transactionIndex); requireValue(Array.isArray(tx.signatures) && tx.signatures.length <= 128);
       for (const sig of tx.signatures) signature(sig);
       const sig = tx.signatures[0] ?? null, content = { ...tx }; delete content.transactionIndex;
       if (sig !== null) unique(txBySignature, sig, content);
       else diag('AMBIGUOUS_SIGNATURE');
-      if (sig !== null && tx.err !== null) diag('FAILED_TRANSACTION', { signature: sig });
+      if (sig !== null) { const reason = transactionReason(typedTransactions[ordinal].err);
+        if (transactionReasons.has(sig)) requireValue(transactionReasons.get(sig) === reason, 'IMMUTABLE_CONFLICT'); transactionReasons.set(sig, reason);
+        if (reason) diag(reason, reason === 'UNSUPPORTED_DATA' ? { signature: sig, transactionError: 'UNKNOWN' } : { signature: sig }); }
       if (!links.has(index)) links.set(index, sig); else if (links.get(index) !== sig) { links.set(index, null); diag('AMBIGUOUS_SIGNATURE'); }
     }
     const link = index => links.get(safeInt(index)) ?? null;
@@ -89,14 +100,13 @@ function mapBlock(input, expectedRawHash) {
       unique(tokens, canonical([sig, sig === null ? safeInt(t.transactionIndex) : null, row.account]), row);
       if (sig === null) diag('AMBIGUOUS_SIGNATURE', { account: row.account });
     }
-    const txFailed = sig => sig !== null && txBySignature.get(sig)?.err !== null;
     const ordered = [...instructions.values()].sort((a, z) => cmp(a.signature ?? '', z.signature ?? '') || pathCompare(a.instructionAddress, z.instructionAddress) || cmp(canonical(a), canonical(z)));
     const tokenStates = [...tokens.values()].sort((a, z) => cmp(a.signature ?? '', z.signature ?? '') || cmp(a.account, z.account) || cmp(canonical(a), canonical(z)));
     const state = (sig, account) => tokens.get(canonical([sig, null, account]));
     const stable = t => t && ['Mint', 'Owner', 'Decimals', 'Amount'].every(k => t['pre' + k] !== null && t['post' + k] !== null) &&
       t.preMint === t.postMint && t.preOwner === t.postOwner && t.preDecimals === t.postDecimals;
-    const failure = i => i.signature === null ? 'AMBIGUOUS_SIGNATURE' : txFailed(i.signature) ? 'FAILED_TRANSACTION' :
-      i.error !== null && i.error !== undefined ? 'FAILED_INSTRUCTION' : i.isCommitted !== true ? 'UNCOMMITTED_INSTRUCTION' : null;
+    const failure = i => i.signature === null ? 'AMBIGUOUS_SIGNATURE' : transactionReasons.get(i.signature) ?? (
+      i.error !== null && i.error !== undefined ? 'FAILED_INSTRUCTION' : i.isCommitted !== true ? 'UNCOMMITTED_INSTRUCTION' : null);
     const invocations = [];
     for (const i of ordered.filter(x => x.programId === PUMP)) {
       const id = identity(i.signature, i.instructionAddress), invocation = { identity: id, instructionAddress: i.instructionAddress,

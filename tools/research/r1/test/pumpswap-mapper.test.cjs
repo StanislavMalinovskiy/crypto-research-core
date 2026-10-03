@@ -65,7 +65,7 @@ test('classic transfers retain exact facts and proper descendant association onl
   assert.ok(diagnostic(run(x), 'UNSUPPORTED_TRANSFER'));
 });
 test('failed uncommitted unknown and unsupported layouts remain explicit invocation records', () => {
-  for (const [mutate, code] of [[b => b.transactions[0].err = 'synthetic', 'FAILED_TRANSACTION'],
+  for (const [mutate, code] of [[b => b.transactions[0].err = 'synthetic', 'UNSUPPORTED_DATA'],
     [b => b.instructions[0].error = 'synthetic', 'FAILED_INSTRUCTION'], [b => b.instructions[0].isCommitted = false, 'UNCOMMITTED_INSTRUCTION'],
     [b => b.instructions[0].data = b58(Buffer.alloc(24, 1)), 'UNSUPPORTED_VARIANT'],
     [b => b.instructions[0].accounts.pop(), 'UNSUPPORTED_LAYOUT'], [b => b.instructions[0].accounts[11] = address(30), 'UNSUPPORTED_TOKEN_PROGRAM'],
@@ -74,6 +74,37 @@ test('failed uncommitted unknown and unsupported layouts remain explicit invocat
     assert.equal(r.invocations.length, 1); assert.ok(diagnostic(r, code)); assert.equal(r.invocations[0].reason, code);
   }
   const b = fixture(); b.transactions[0].signatures = []; assert.ok(diagnostic(run(b), 'AMBIGUOUS_SIGNATURE'));
+});
+test('pinned supported transaction errors fail while explicit null alone permits success facts', () => {
+  for (const err of [null, 'AccountInUse', { InstructionError: [0, { Custom: 0 }] }, { InstructionError: [255, { Custom: 4294967295 }] }]) {
+    const b = fixture(); b.transactions[0].err = err; b.instructions.push(transfer(b)); const r = run(b);
+    assert.equal(r.invocations.length, 1); assert.equal(r.transfers.length, 1); assert.equal(r.tokenStates.length, 4);
+    if (err === null) { assert.equal(r.status, 'OFFLINE_MAPPING_COMPLETE'); assert.equal(r.invocations[0].reason, null);
+      assert.equal(r.transfers[0].reason, null); assert.equal(r.ownedDeltas.length, 2); }
+    else { assert.equal(r.invocations[0].reason, 'FAILED_TRANSACTION'); assert.equal(r.transfers[0].reason, 'FAILED_TRANSACTION');
+      assert.equal(r.ownedDeltas.length, 0); assert.ok(diagnostic(r, 'FAILED_TRANSACTION')); assert.equal(diagnostic(r, 'UNSUPPORTED_DATA'), false); }
+  }
+});
+test('missing malformed and unsupported err retain unknown rows without successful owned legs or transfers', () => {
+  const invalid = [undefined, '', 'synthetic', 'AccountNotFound', 1, false, [], {}, { Other: 1 }, { InstructionError: [] },
+    { InstructionError: [0, { Custom: 1 }, 2] }, { InstructionError: [-1, { Custom: 1 }] }, { InstructionError: [256, { Custom: 1 }] },
+    { InstructionError: [0.5, { Custom: 1 }] }, { InstructionError: ['0', { Custom: 1 }] }, { InstructionError: [0, null] },
+    { InstructionError: [0, []] }, { InstructionError: [0, {}] }, { InstructionError: [0, { Custom: -1 }] },
+    { InstructionError: [0, { Custom: 4294967296 }] }, { InstructionError: [0, { Custom: 1.5 }] }, { InstructionError: [0, { Custom: '1' }] },
+    { InstructionError: [0, { Custom: true }] }, { InstructionError: [0, { Custom: 1, Other: 2 }] },
+    { InstructionError: [0, { Custom: 1 }], Other: 2 }, { InstructionError: [0, 'InvalidArgument'] }];
+  for (const err of invalid) {
+    const b = fixture(); b.transactions[0].err = err; b.instructions.push(transfer(b)); const r = run(b);
+    assert.equal(r.status, 'OFFLINE_MAPPING_PARTIAL'); assert.equal(r.invocations.length, 1); assert.equal(r.transfers.length, 1);
+    assert.equal(r.invocations[0].reason, 'UNSUPPORTED_DATA'); assert.equal(r.transfers[0].reason, 'UNSUPPORTED_DATA');
+    assert.equal(r.transfers[0].amount, null); assert.equal(r.transfers[0].associatedInvocation, null); assert.equal(r.ownedDeltas.length, 0);
+    assert.equal(r.tokenStates.length, 4); assert.equal(diagnostic(r, 'FAILED_TRANSACTION'), false);
+    assert.ok(r.diagnostics.some(d => d.code === 'UNSUPPORTED_DATA' && d.context?.signature === signature && d.context?.transactionError === 'UNKNOWN'));
+    const q = run({ ...b, instructions: [...b.instructions].reverse(), tokenBalances: [...b.tokenBalances].reverse() }); assert.equal(q.factsHash, r.factsHash);
+  }
+  const missingSignature = fixture(); delete missingSignature.transactions[0].err; missingSignature.transactions[0].signatures = [];
+  missingSignature.instructions.push(transfer(missingSignature)); const r = run(missingSignature);
+  assert.equal(r.invocations[0].reason, 'AMBIGUOUS_SIGNATURE'); assert.equal(r.transfers[0].reason, 'AMBIGUOUS_SIGNATURE'); assert.equal(r.ownedDeltas.length, 0);
 });
 test('equal immutable duplicates deduplicate and conflicts invalidate without partial facts', () => {
   const b = fixture(), original = run(b); assert.equal(original.status, 'OFFLINE_MAPPING_COMPLETE');
