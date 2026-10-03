@@ -4,6 +4,40 @@ Defines outcome-blind, reproducible validation of the R1 D1 field inventory and 
 
 ## ADDED Requirements
 
+### Requirement: Hash-derived offline provisional discovery
+Design4l SHALL implement only the three new bounded offline discovery paths, reusing unchanged mapper/helpers over the fixed conditional4j hashset. It SHALL read SQD v1/v2's94 raw files only after exact manifest/raw proof, and SHALL NOT read/project Helius raw, infer candidates from fee payers, repair the old mapper guard, add decoders or call providers. Provisional observations SHALL remain distinct from R1§5.1 RECONSTRUCTED candidates and all D1 authorization/evidence/pass flags SHALL remain false.
+
+#### Scenario: Parent bytes become an eligible child input
+- **WHEN** a pinned successful SQD payload contains a complete JSONL block within design4l limits
+- **THEN** its child SHALL be an unchanged contiguous original-byte slice with parent/hash/offset/length/child-hash lineage and independent lossless error-lexeme audit before unchanged mapBlock
+- **AND** missing proof, unsafe filesystem path, numeric-lexeme violation or parse failure SHALL reject with DISCOVERY_INVALID/no provisional rows, never round, rewrite, filter fields or automatically admit a new raw.
+
+#### Scenario: Payload format or mapper state cannot support discovery
+- **WHEN** source metadata is resolver/header/census, a retained request lacks successful payload, or mapper rejects an audited child
+- **THEN** the report SHALL explicitly retain RESOLVER_ONLY/HEADER_ONLY_NO_PAYLOAD/request failure evidence or DISCOVERY_INCOMPLETE with the mapper code and no provisional rows as applicable
+- **AND** it SHALL NOT map oversized/RPC-shaped inputs, invent missing status/balances, claim zero field availability or silently allocate another adapter/repair.
+
+### Requirement: Provisional owned-address evidence and retained gaps
+Discovery SHALL retain all mapper invocation/ownedDelta/token-state/transfer/diagnostic observations with exact financial strings, source-child lineage, unknowns and source-scoped coverage. Address evidence SHALL use only nonnull declaredTrader, never payer/index proxies. DECLARED_OWNER_WITH_EXACT_DELTAS SHALL require no invocation error, both ownedDelta sides present and no vault-check reason; otherwise the declared address SHALL remain unresolved. Both SHALL remain unverified as actual traders, economic trades, eligible wallets or reconstructed universe; empty address output SHALL be valid. Missing transaction.err SHALL remain separately diagnosable without changing the mapper's UNKNOWN semantics.
+
+#### Scenario: Non-DEX or unsupported transfer is present
+- **WHEN** a mapped record contains an unassociated classic-SPL transfer or unsupported System/Token2022 instruction
+- **THEN** discovery SHALL retain its facts or explicit reason/identity/raw reference, independent of candidate/trade membership
+- **AND** unlinked native balances, missing complete funder history, quote eligibility, fees/tips, SOLUSD, layout applicability and visibility SHALL remain explicit gaps, never reconstructed or zero-filled by balance arithmetic.
+
+#### Scenario: Duplicate evidence or conflicting observation arrives
+- **WHEN** equal source-scoped observations recur or distinct child observations share an event identity
+- **THEN** equal observations SHALL deduplicate with every lineage retained, while distinct observations SHALL remain separate and conflicting roles/delta content SHALL be a counted unresolved gap
+- **AND** ordering/permutation SHALL preserve deterministic semantic identity without provider-filter ordinals, best-evidence guessing or complete-history claims.
+
+### Requirement: Offline range, resource and publication boundaries
+Discovery SHALL enforce design4l's fixed preholdout range/cutoff/default60s MODELED C-3 before mapping/counts, independent read/row/address/output/runtime/cumulative-disk caps, expiry and no secrets/network/writes. New behavioral RED/freeze/GREEN, fresh full-CI review and Main's complete gate SHALL precede one offline run plus one identical reproduction; old124 tests/mapper stops and repair counters SHALL remain untouched. Pyth/Jito alternatives SHALL remain documentary/unverified with no source implementation or price/tip/retention confirmation; fullD1UpperBound/fullD1Fits SHALL remain null.
+
+#### Scenario: Future, forbidden or unbounded evidence is encountered
+- **WHEN** query/header time is missing/out-of-range/holdout, modeled availability exceeds cutoff, or a fixed cap is exceeded
+- **THEN** admission SHALL stop explicitly before child rows/counts or provisional publication, without truncation, fallback or guessed availability
+- **AND** failed/partial diagnostic evidence SHALL be bounded and distinguish semantic data status from independently measured end-to-end budget; no general mapper/D1 PASS or new raw permission SHALL follow.
+
 ### Requirement: Separately bounded Helius Free exploratory history
 Design4k SHALL allocate only future H1/H3 Free getTransactionsForAddress entitlement/volume steps, H2 terms disposition, offline H4 sensitivity and unselected H5 inventory candidate. It SHALL preserve owner provenance, fixed preholdout004-derived addresses, USD0/Free-only/cumulative finite credits/attempts/bytes/disk/time/retries, false D1 flags and unchanged frozen protocol. The requested light-process exception SHALL remain ineffective while conflicting with controlling CORE_RISK role instructions; baseline RED/freeze/fresh full-CI review/Main complete gate and the explicitly published Helius-access/H2 admission preconditions SHALL precede calls. Confirmatory200 receipts SHALL require a separate full CORE_RISK allocation. PLAN SHALL NOT read secrets, call providers, implement scripts/procedure or reopen SQD/mapper tasks.
 

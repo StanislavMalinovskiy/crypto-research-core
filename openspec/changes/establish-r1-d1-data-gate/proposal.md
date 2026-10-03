@@ -37,6 +37,8 @@ None. The accepted `research-protocol` and `research-reproducibility` remain con
 
 ## Impact
 
+Delegated continuation `751c871b-53b5-4d98-a3bb-9b5bb60a29b2` (2026-10-03, after conditional4j checkpoint1c035b4/clean tree) allocates design4l: narrow offline SQD provisional declared-owner discovery and actionable coverage/gaps, never the reconstructed §5.1 candidate universe. Reuse the unchanged mapper only after hash-derived child-input audits; Helius RPC/signature pages remain metadata-only context, not fee-payer candidates or an invented adapter. Empty results are valid when admitted samples lack transaction status/owned-balance proof. Short Pyth/Jito documentary gaps accompany this plan; no price/tip implementation, signup, source call, old guard repair or methodology change.
+
 - Research-only files under `tools/research/r1/` and task documentation under `docs/research/`; no application module is modified.
 - Reuse the repository's existing Node tooling and built-in test runner; no new package, production dependency, service, database, migration or module edge.
 - Non-goals: provider selection for live ingestion, credentials, paid calls, confirmatory source runs or bulk extraction in this slice, complete trade/price reconstruction or gate calculations beyond design4j's declared offline mapping dependency, calibration edits, P1 outcomes, wallet ranking, execution, and changes to frozen R1/RED/golden evidence.
