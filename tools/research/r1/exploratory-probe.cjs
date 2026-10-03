@@ -145,6 +145,13 @@ function budget(overrides = {}, start = 0) {
 }
 function send(spec, options = {}) {
   if (!validQuery(spec)) return Promise.resolve({ code: 'QUERY_INVALID', received: 0 });
+  return sendBounded(spec, options, LIMITS);
+}
+// V2 supplies its own closed query validator before entering this finite I/O seam.
+function sendBounded(spec, options = {}, caps = LIMITS) {
+  if (!spec || !['GET', 'POST'].includes(spec.method) || !spec.url?.startsWith(BASE)
+    || ![BASE + 'finalized-stream'].includes(spec.url) && !new RegExp('^' + BASE.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + 'timestamps/[0-9]+/block$').test(spec.url))
+    return Promise.resolve({ code: 'QUERY_INVALID', received: 0 });
   let url = spec.url, client = https;
   if (options.loopback) {
     let local; try { local = new URL(options.loopback); } catch { return Promise.resolve({ code: 'QUERY_INVALID', received: 0 }); }
@@ -152,8 +159,8 @@ function send(spec, options = {}) {
       return Promise.resolve({ code: 'QUERY_INVALID', received: 0 });
     url = local.origin + new URL(spec.url).pathname; client = http;
   }
-  const limit = Math.min(options.responseLimit ?? LIMITS.response, LIMITS.response);
-  const deadline = Math.min(options.deadlineMs ?? LIMITS.deadline, LIMITS.deadline);
+  const limit = Math.min(options.responseLimit ?? caps.response, caps.response);
+  const deadline = Math.min(options.deadlineMs ?? caps.deadline, caps.deadline);
   return new Promise(resolve => {
     let done = false, received = 0, status = null, res, timer; const chunks = [];
     const finish = (code, bytes) => {
@@ -186,8 +193,8 @@ function send(spec, options = {}) {
     if (spec.body) req.write(JSON.stringify(spec.body)); req.end();
   });
 }
-function checkedPath(output, requireDirectory = false) {
-  if (output !== OUTPUT || process.platform !== 'win32') fail('UNSAFE_PATH');
+function checkedPath(output, requireDirectory = false, expected = OUTPUT) {
+  if (output !== expected || process.platform !== 'win32') fail('UNSAFE_PATH');
   let ancestor = path.resolve(output);
   while (true) {
     try {
@@ -198,24 +205,26 @@ function checkedPath(output, requireDirectory = false) {
   }
   return output;
 }
-function fileStore(output) {
-  checkedPath(output);
-  const nameOk = name => ['manifest.json', 'summary.json', 'attempt.json'].includes(name) || /^\d{3}\.raw$/.test(name);
+function fileStore(output) { return exclusiveStore(output, OUTPUT, LIMITS.response, 1000000, 3); }
+function exclusiveStore(output, expected, responseCap, metadataCap, digits) {
+  if (expected !== OUTPUT && expected !== 'C:\\crypto-research-evidence\\r1-d1\\exploratory-sqd-v2') fail('UNSAFE_PATH');
+  const check = required => checkedPath(output, required, expected); check(false);
+  const nameOk = name => ['manifest.json', 'summary.json', 'attempt.json'].includes(name) || new RegExp(`^\\d{${digits}}\\.raw$`).test(name);
   return {
-    create() { checkedPath(output); if (fs.existsSync(output)) fail('OUTPUT_EXISTS'); fs.mkdirSync(path.dirname(output), { recursive: true }); checkedPath(output); fs.mkdirSync(output); },
-    free() { checkedPath(output); let ancestor = output; while (!fs.existsSync(ancestor)) ancestor = path.dirname(ancestor);
+    create() { check(false); if (fs.existsSync(output)) fail('OUTPUT_EXISTS'); fs.mkdirSync(path.dirname(output), { recursive: true }); check(false); fs.mkdirSync(output); },
+    free() { check(false); let ancestor = output; while (!fs.existsSync(ancestor)) ancestor = path.dirname(ancestor);
       const stat = fs.statfsSync(ancestor, { bigint: true }); const free = stat.bavail * stat.bsize;
       return Number(free > BigInt(Number.MAX_SAFE_INTEGER) ? BigInt(Number.MAX_SAFE_INTEGER) : free); },
     write(name, bytes) {
-      if (!nameOk(name)) fail('UNSAFE_PATH'); checkedPath(output, true); let fd;
+      if (!nameOk(name)) fail('UNSAFE_PATH'); check(true); let fd;
       try { fd = fs.openSync(path.join(output, name), 'wx'); let at = 0;
         while (at < bytes.length) { const n = fs.writeSync(fd, bytes, at, bytes.length - at); if (!n) fail('STORAGE_ERROR'); at += n; } fs.fsyncSync(fd);
       } finally { if (fd !== undefined) fs.closeSync(fd); }
     },
     read(name) {
-      if (!nameOk(name)) fail('INTEGRITY_ERROR'); checkedPath(output, true); const file = path.join(output, name);
+      if (!nameOk(name)) fail('INTEGRITY_ERROR'); check(true); const file = path.join(output, name);
       if (fs.lstatSync(file).isSymbolicLink()) fail('INTEGRITY_ERROR'); const fd = fs.openSync(file, 'r');
-      try { const stat = fs.fstatSync(fd), cap = name.endsWith('.raw') ? LIMITS.response : 1000000;
+      try { const stat = fs.fstatSync(fd), cap = name.endsWith('.raw') ? responseCap : metadataCap;
         if (!stat.isFile() || stat.size > cap) fail('INTEGRITY_ERROR'); const bytes = Buffer.alloc(cap + 1); let at = 0;
         while (at < bytes.length) { const n = fs.readSync(fd, bytes, at, bytes.length - at, null); if (!n) break; at += n; }
         if (at > cap) fail('INTEGRITY_ERROR'); return bytes.subarray(0, at);
@@ -351,4 +360,5 @@ function replay(store) {
     return { ...FLAGS, status: m.status, code: null, summaryHash, manifestHash: digest(manifestBytes), summary: result };
   } catch { return flagsError('INTEGRITY_ERROR'); }
 }
-module.exports = { OUTPUT, ANCHORS, PROGRAMS, CONFIG, query, admit, budget, send, fileStore, runProbe, replay };
+module.exports = { OUTPUT, ANCHORS, PROGRAMS, CONFIG, query, admit, budget, send, fileStore, runProbe, replay,
+  parse, canonical, digest, fingerprint, integer, sourceIdentity, sendBounded, exclusiveStore };
