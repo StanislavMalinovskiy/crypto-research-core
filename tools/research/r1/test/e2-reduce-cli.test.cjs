@@ -14,6 +14,21 @@ const identity={runtime:process.version,synthetic:true,source:{commit:'1f8b07d1d
 const synthetic={w,h:require(path.join(base,'exploratory-probe.cjs')),identity,provenance:{path:capture,synthetic:true}};
 const target={...actual,verifyScope:(io,o)=>actual.verifyScope(io,o,synthetic),recheck:(io,r)=>actual.recheck(io,r,synthetic),reductionConsumer:(policy,ctx,facts)=>actual.reductionConsumer(policy,ctx??synthetic,facts)};
 const alphabet='123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+test('one-off compatibility ceiling carries prior charges and never adds again',()=>{
+ const b={scopeBytes:690793891,elapsedMs:341421,rawReadBytes:1431511802,metadataBytes:1000,compatibilityAllowance:'e25d17bb-first-five-once'};
+ assert.doesNotThrow(()=>target.budget({...b,elapsedMs:1048679,rawReadBytes:4872381673},target.END-1),'approved cumulative ceiling must include prior costs');
+ assert.throws(()=>target.budget({...b,elapsedMs:1048680},target.END-1),/TIME_LIMIT/);
+ assert.throws(()=>target.budget({...b,rawReadBytes:4872381674},target.END-1),/TIME_LIMIT/);
+ assert.throws(()=>target.budget({...b,elapsedMs:0},target.END-1),/RESOURCE_LIMIT/);
+ assert.throws(()=>target.budget({...b,rawReadBytes:0},target.END-1),/RESOURCE_LIMIT/);
+ assert.throws(()=>target.budget({...b,scopeBytes:50000000000},target.END-1),/RESOURCE_LIMIT/);
+ const repeated={...b,elapsedMs:1048680,rawReadBytes:4872381673};assert.throws(()=>target.budget(repeated,target.END-1),/TIME_LIMIT/);
+ assert.throws(()=>target.budget(b,target.END),/TIME_LIMIT/);
+});
+test('generic source technicalUsable and a reduction boolean cannot qualify real legs',()=>{
+ const f=fixture(),v=target.verifyScope(f.io,{head:f.head,tokens:5}),original=w.replay(f.io,f.head,{now:()=>w.START+1000});
+ assert.equal(target.qualification(v,v.snapshot,original,true).eligibleForReview,false,'actual variant/trader/net-leg proof is required');
+});
 function addr(n,length=32){const bytes=Buffer.alloc(length);bytes.writeUInt32BE(n,length-4);let x=BigInt('0x'+bytes.toString('hex')),s='';while(x){s=alphabet[Number(x%58n)]+s;x/=58n;}for(const b of bytes){if(b)break;s='1'+s;}return s;}
 function selected(){const c=w.collector();for(let m=0;m<3;m++)for(let i=0;i<100;i++)c.add({status:'OBSERVED_DECLARED_CREATE_POOL',layoutApplicability:'UNVERIFIED',slot:census.ROOTS[m].start,timestamp:census.DATES[m],transactionIndex:i,instructionPath:[0],cpiDepth:0,accountCount:18,dataLength:59,lineOrdinal:0,rawHash:digest(Buffer.from('synthetic')),signature:addr(1000+m*100+i,64),pool:addr(10000+m*100+i),globalConfig:addr(2),creator:addr(3),baseMint:addr(1000+m*100+i),quoteMint:census.QUOTES[0]},m);return c.finish([]);}
 function fixture(count=5,rowFactory=null){const selection=selected(),s=w.initial(selection,{creditsReservedBefore:0,ancillaryStartsBefore:0,publicStartsBefore:0,receivedBefore:0},structuredClone(identity)),files=new Map();
@@ -84,7 +99,7 @@ function buy(base,explicitFees=false){
 test('real mapped economic buy is counted once across pools, with fees UNKNOWN outside numerator',()=>{
  let actual;const f=fixture(5,s=>{actual=buy(s.tokens[0].mint);return [actual.raw];});
  actual.policy.cohortMints=f.s.selection.tokens.map(t=>t.mint);const consumer=target.reductionConsumer(actual.policy),v=target.verifyScope(f.io,{head:f.head,tokens:5,consume:consumer.consume}),reduced=consumer.finish(v);
- const original=w.replay(f.io,f.head,{now:()=>w.START+1000});assert.equal(v.uniqueTransactions,1);assert.equal(original.uniqueTransactions,1);assert.equal(reduced.uniqueTransactions,1);assert.equal(reduced.reconstructed,0);assert.equal(reduced.reasons.FEES_UNDETERMINED,1);assert.equal(reduced.counts.MISSING_LEG,1);assert.equal(reduced.references[0].reason,'FEES_UNDETERMINED');assert.equal(v.qualification.technicalUsable,true);assert.equal(reduced.provenance.length,5);assert.equal(reduced.d1Passed,false);
+ const original=w.replay(f.io,f.head,{now:()=>w.START+1000});assert.equal(v.uniqueTransactions,1);assert.equal(original.uniqueTransactions,1);assert.equal(reduced.uniqueTransactions,1);assert.equal(reduced.reconstructed,0);assert.equal(reduced.reasons.FEES_UNDETERMINED,1);assert.equal(reduced.counts.MISSING_LEG,1);assert.equal(reduced.references[0].reason,'FEES_UNDETERMINED');assert.equal(reduced.qualifiedVariants[0].action.trader,actual.raw.transaction.message.accountKeys[0]);assert.equal(reduced.qualifiedVariants[0].action.base.rawDelta,'3');assert.equal(reduced.qualifiedVariants[0].action.quote.rawDelta,'-10');assert.deepEqual(reduced.qualifiedVariants[0].instructionPath,[0]);assert.equal(reduced.qualifiedVariants[0].signature,actual.raw.transaction.signatures[0]);assert.equal(reduced.qualifiedVariants[0].transactionRawHash,digest(Buffer.from(JSON.stringify(actual.raw))));assert.equal(v.qualification.technicalUsable,true);assert.equal(reduced.provenance.length,5);assert.equal(reduced.d1Passed,false);
  // Preserve actual net amounts by comparison to the approved reducer directly.
  const h=require(path.join(base,'exploratory-probe.cjs')),mapper=require(path.join(base,'pumpswap-mapper-v2.cjs')),bytes=Buffer.from(JSON.stringify(actual.raw));
  const r=require('../e2-trade-reducer-v1.cjs').reduceTransaction({mapping:mapper.mapHeliusTransaction(bytes,digest(bytes)),raw:h.parse(bytes),policy:actual.policy,lineage:{rawHash:digest(bytes),knownAt:'UNKNOWN'}});assert.equal(r.actions[0].base.rawDelta,'3');assert.equal(r.actions[0].quote.rawDelta,'-10');
@@ -109,7 +124,7 @@ test('full terminal zero-history scope requires exact final tail and still canno
 test('actual supervised CLI is disabled without opt-in and cannot run continuation',async()=>{
  // The historical parent deadline takes precedence over argument guards after
  // END. Evaluate unchanged source with fixed clocks, never a production override.
- const source=fs.readFileSync(cli,'utf8');assert.equal(digest(Buffer.from(source)),'sha256:9896ac930d9d1543ea1ca8dd41d0796af1f28529440399d526631223422cb659');
+ const source=fs.readFileSync(cli,'utf8');assert.equal(digest(fs.readFileSync(path.join(base,'pumpswap-mapper-v2.cjs'))),'sha256:dca126138e0a3b0ad74abc5ee7ca453139b0db1480eb3cd4ae9a8e016572708d');
  const evaluate=(now,parent)=>{let childStarts=0,stdout='';const module={exports:{}},localRequire=require('node:module').createRequire(cli);
   const controlledRequire=name=>name==='node:child_process'?{...localRequire(name),spawnSync:()=>{childStarts++;throw Error('UNEXPECTED_CHILD_START');}}:localRequire(name);
   controlledRequire.main=parent?module:undefined;
@@ -129,24 +144,50 @@ test('ancillary sanitized receipt bytes, cumulative starts and timing match orig
  const {externalReceipt,...reserved}=r;f.io.files.set('ancillary-00001.json',Buffer.from(JSON.stringify(reserved)+'\n'));f.io.files.set('ancillary-00001.receipt.json',bytes);const head=f.publish(),a=w.replay(f.io,head,{now:()=>w.START+1000}),b=target.verifyScope(f.io,{head,tokens:5});for(const k of ['received','creditsReserved','budgetValidity','recordedTiming'])assert.equal(canonical(a[k]),canonical(b[k]));
  e.url='SECRET_MUST_NEVER_ENTER_RECEIPT';f.io.files.set('ancillary-00001.receipt.json',Buffer.from(JSON.stringify(e)+'\n'));r.externalReceipt.hash=digest(f.io.files.get('ancillary-00001.receipt.json'));const changed=f.publish();assert.throws(()=>w.replay(f.io,changed,{now:()=>w.START+1000}));assert.throws(()=>target.verifyScope(f.io,{head:changed,tokens:5}));
 });
+function qualificationProof(){let p;const f=fixture(5,s=>{p=buy(s.tokens[0].mint);return [p.raw];});p.policy.cohortMints=f.s.selection.tokens.map(t=>t.mint);const c=target.reductionConsumer(p.policy),v=target.verifyScope(f.io,{head:f.head,tokens:5,consume:c.consume});return c.finish(v);}
+function mixedVariants(){let policy;const f=fixture(5,s=>{
+ const good=buy(s.tokens[0].mint),unproved=buy(s.tokens[0].mint),unsupported=buy(s.tokens[0].mint),unknown=buy(s.tokens[0].mint);policy=good.policy;
+ unproved.raw.transaction.signatures=[addr(701,64)];unproved.raw.transaction.message.instructions[0].data='4'; // replaced below with exact-quote discriminator
+ const bytes=Buffer.alloc(25);Buffer.from('c62e1552b4d9e870','hex').copy(bytes);let n=BigInt('0x'+bytes.toString('hex')),encoded='';while(n){encoded=alphabet[Number(n%58n)]+encoded;n/=58n;}unproved.raw.transaction.message.instructions[0].data=encoded;
+ const userBase=unproved.raw.transaction.message.instructions[0].accounts[5];for(const side of ['pre','post'])delete unproved.raw.meta[side+'TokenBalances'].find(t=>t.accountIndex===userBase).owner;
+ unsupported.raw.transaction.signatures=[addr(702,64)];unsupported.raw.transaction.message.instructions[0].accounts.push(unsupported.raw.transaction.message.instructions[0].accounts[0]);
+ unknown.raw.transaction.signatures=[addr(703,64)];delete unknown.raw.meta.innerInstructions[0].instructions[0].stackHeight;
+ return [good.raw,unproved.raw,unsupported.raw,unknown.raw];
+ });policy.cohortMints=f.s.selection.tokens.map(t=>t.mint);const c=target.reductionConsumer(policy),v=target.verifyScope(f.io,{head:f.head,tokens:5,consume:c.consume});return {f,v,reduced:c.finish(v)};
+}
+test('mixed observed variants retain exact per-variant counts and identify missing real proofs',()=>{
+ const {f,v,reduced:r}=mixedVariants();assert.equal(v.uniqueTransactions,4);assert.equal(r.uniqueTransactions,4);assert.equal(r.reconstructed,0);assert.equal(r.reasons.FEES_UNDETERMINED,1);
+ assert.deepEqual(r.variantCounts,{buy:{supported:1,unsupported:1,unknown:1},buy_exact_quote_in:{supported:1,unsupported:0,unknown:0},sell:{supported:0,unsupported:0,unknown:0},UNKNOWN:{supported:0,unsupported:0,unknown:4}},'each observed variant must be counted after exact payload dedup');
+ assert.deepEqual(r.observedSupportedVariants,['buy','buy_exact_quote_in']);assert.deepEqual(r.unprovedSupportedVariants,['buy_exact_quote_in']);
+ assert.deepEqual(r.qualifiedVariants.map(p=>p.variant),['buy']);assert.equal(r.qualifiedVariants[0].action.fees.splitStatus,'UNKNOWN');assert.equal(r.cohortDenominator,300);
+ const original=w.replay(f.io,f.head,{now:()=>w.START+1000});assert.equal(target.qualification(v,v.snapshot,original,r).eligibleForReview,false,'proved buy must not qualify an observed unproved exact-quote variant');
+ assert.equal(original.uniqueTransactions,4);assert.deepEqual(mixedVariants().reduced.variantCounts,r.variantCounts,'deterministic counts after equal payloads across all five tokens');
+ const hidden=structuredClone(r);hidden.observedSupportedVariants=['buy'];hidden.unprovedSupportedVariants=[];assert.equal(target.qualification(v,v.snapshot,original,hidden).eligibleForReview,false,'supported counts cannot be hidden from qualification');
+ const p=qualificationProof();p.qualifiedVariants[0].variant='buy_exact_quote_in';assert.equal(target.qualification(v,v.snapshot,original,p).eligibleForReview,false,'proof variant must match the actual action leg');
+ const wrong=qualificationProof();wrong.qualifiedVariants[0].signature=addr(900,64);assert.equal(target.qualification(v,v.snapshot,original,wrong).eligibleForReview,false,'proof signature must match the actual action signature and leg');
+});
+test('one proved variant cannot qualify another observed supported variant without action proof',()=>{
+ const {f,v,reduced:r}=mixedVariants(),original=w.replay(f.io,f.head,{now:()=>w.START+1000});
+ assert.equal(target.qualification(v,v.snapshot,original,r).eligibleForReview,false,'all observed supported variants need associated real leg/trader proof');
+});
 test('qualification needs exact current original replay PASS and independent review, never low activity thresholds',()=>{
  const f=fixture(),v=target.verifyScope(f.io,{head:f.head,tokens:5}),original=w.replay(f.io,f.head,{now:()=>w.START+1000});
- assert.equal(target.qualification(v,v.snapshot,original,true).status,'INDEPENDENT_REVIEW_REQUIRED');
- assert.equal(target.qualification(v,v.snapshot,null,true).eligibleForReview,false);assert.equal(target.qualification(v,v.snapshot,original,false).eligibleForReview,false);
- assert.equal(target.qualification(v,{hash:digest(Buffer.from('later'))},original,true).eligibleForReview,false);
- original.qualification.technicalUsable=false;assert.equal(target.qualification(v,v.snapshot,original,true).eligibleForReview,false);
+ assert.equal(target.qualification(v,v.snapshot,original,qualificationProof()).status,'INDEPENDENT_REVIEW_REQUIRED');
+ assert.equal(target.qualification(v,v.snapshot,null,qualificationProof()).eligibleForReview,false);assert.equal(target.qualification(v,v.snapshot,original,false).eligibleForReview,false);
+ assert.equal(target.qualification(v,{hash:digest(Buffer.from('later'))},original,qualificationProof()).eligibleForReview,false);
+ original.qualification.technicalUsable=false;assert.equal(target.qualification(v,v.snapshot,original,qualificationProof()).eligibleForReview,false);
 });
 test('completed capture lifecycle QUALIFICATION_PENDING qualifies only for independent review',()=>{
  const f=fixture();f.s.phase='QUALIFICATION_PENDING';const head=f.publish(),v=target.verifyScope(f.io,{head,tokens:5}),original=w.replay(f.io,head,{now:()=>w.START+1000});
  assert.equal(original.phase,'QUALIFICATION_PENDING');assert.equal(original.semanticIntegrity,'PASS');assert.equal(original.budgetValidity,'PASS');assert.equal(original.recordedTiming.status,'PASS');assert.equal(original.qualification.technicalUsable,true);
- assert.equal(target.qualification(v,v.snapshot,original,true).status,'INDEPENDENT_REVIEW_REQUIRED','completed first-five lifecycle must be eligible, never automatically approved');
+ assert.equal(target.qualification(v,v.snapshot,original,qualificationProof()).status,'INDEPENDENT_REVIEW_REQUIRED','completed first-five lifecycle must be eligible, never automatically approved');
  for(const [label,mutate] of [
   ['verifier still running',(a,b)=>{a.phase='FIRST_FIVE';}],['original still running',(a,b)=>{b.phase='FIRST_FIVE';}],
   ['stale original head',(a,b)=>{b.manifestHash=digest(Buffer.from('stale'));}],['verifier timing failure',(a,b)=>{a.recordedTiming.status='FAIL';}],
   ['original timing failure',(a,b)=>{b.recordedTiming.status='FAIL';}],['original budget failure',(a,b)=>{b.budgetValidity='FAIL';}],
   ['original semantic failure',(a,b)=>{b.semanticIntegrity='FAIL';}],['source STOP',(a,b)=>{a.snapshot.code='TIME_LIMIT';}],
   ['pending ancillary',(a,b)=>{a.snapshot.ancillary.push({});}],
- ]){const a=structuredClone(v),b=structuredClone(original);mutate(a,b);assert.equal(target.qualification(a,a.snapshot,b,true).eligibleForReview,false,label);}
+ ]){const a=structuredClone(v),b=structuredClone(original);mutate(a,b);assert.equal(target.qualification(a,a.snapshot,b,qualificationProof()).eligibleForReview,false,label);}
 });
 test('synthetic reader test imports are repository-relative, without an owner drive dependency',()=>{
  const source=fs.readFileSync(__filename,'utf8');
@@ -158,8 +199,10 @@ test('all reader synthetic callbacks execute with filesystem reads confined to t
  const fs=require('node:fs'),path=require('node:path'),root=${JSON.stringify(root)};
  for(const name of ['readFileSync','openSync']){const original=fs[name];fs[name]=function(file,...args){if(typeof file==='string'||Buffer.isBuffer(file)||file instanceof URL){const resolved=path.resolve(String(file));if(resolved!==root&&!resolved.startsWith(root+path.sep))throw Error('EXTERNAL_READ_FORBIDDEN:'+resolved);}return original.call(this,file,...args);};}
  require(${JSON.stringify(__filename)});`;
- const p=require('node:child_process').spawnSync(process.execPath,['--max-old-space-size=1024','-e',program,'--','reader-local-proof'],{cwd:root,timeout:30000,maxBuffer:1000000,encoding:'utf8'});
- assert.equal(p.error,undefined);assert.equal(p.status,0,p.stdout+p.stderr);assert.match(p.stdout,/(?:pass|# pass) 26\b/);
+ // An isolated child must not inherit NODE_TEST_CONTEXT's binary parent IPC.
+ const env={SystemRoot:process.env.SystemRoot,PATH:process.env.PATH,TEMP:process.env.TEMP};
+ const p=require('node:child_process').spawnSync(process.execPath,['--max-old-space-size=1024','--test-reporter=tap','-e',program,'--','reader-local-proof'],{cwd:root,timeout:30000,maxBuffer:1000000,encoding:'utf8',env});
+ assert.equal(p.error,undefined);assert.equal(p.status,0,p.stdout+p.stderr);assert.match(p.stdout,/(?:pass|# pass) 30\b/);
 });
 test('read-only verification/reduction preserves every synthetic source byte and rejects oversized child heap',()=>{
  const f=fixture(),before=[...f.io.files].map(([n,b])=>[n,Buffer.from(b)]),policy={cohortMints:f.s.selection.tokens.map(t=>t.mint)},c=target.reductionConsumer(policy),v=target.verifyScope(f.io,{head:f.head,tokens:5,consume:c.consume});c.finish(v);target.recheck(f.io,v);

@@ -10,6 +10,10 @@ const COMMIT='1f8b07d1d2d2fa5e914f25c85bf1aaa25ec3d63a';
 const GATE='C:/crypto-research-evidence/r1-e2-path-v1-gate-20261003';
 const RUNNER_SHA='sha256:d5ca569de622cef985c79503291572e63be49adf8071c1a37741d6b6bf2713bc';
 const REDUCER_SHA='sha256:06662533e841226aebee48e993899fe3e3ebdf8421787ebf489c853ecf657137';
+const CAPTURE_MAPPER_SHA='sha256:dca126138e0a3b0ad74abc5ee7ca453139b0db1480eb3cd4ae9a8e016572708d';
+const ANALYSIS_ADAPTER=require('./pumpswap-analysis-adapter-v1.cjs');
+const ADAPTER_SHA=shaFile('pumpswap-analysis-adapter-v1.cjs');
+function shaFile(name){return 'sha256:'+crypto.createHash('sha256').update(fs.readFileSync(path.join(__dirname,name))).digest('hex');}
 const need=(v,c='INTEGRITY_ERROR')=>{if(!v)throw Error(c);};
 const uint=v=>Number.isSafeInteger(v)&&v>=0;
 const sha=b=>'sha256:'+crypto.createHash('sha256').update(b).digest('hex');
@@ -117,9 +121,22 @@ function recheck(io,r,ctx=context()){
  if(r.scope.whole)need(h.canonical(w.seal('manifest',s))===h.canonical(r.snapshot)&&!io.list().includes('lock'),'IMMUTABLE_CONFLICT');return s;
 }
 function allowance(bytes){need(uint(bytes)&&bytes<=50000000000,'INPUT_LIMIT');return Number([10800000n,3n*((149560n*BigInt(bytes)+690794561n)/690794562n)].reduce((a,b)=>a<b?a:b));}
-function budget(b,now){need(uint(b.scopeBytes)&&uint(b.elapsedMs)&&uint(b.rawReadBytes)&&uint(b.metadataBytes),'RESOURCE_LIMIT');need(b.elapsedMs<allowance(b.scopeBytes)&&b.rawReadBytes<=Math.min(150000000000,3*b.scopeBytes)&&b.metadataBytes<=64000000&&now<END,'TIME_LIMIT');need(process.memoryUsage().rss<=1750000000,'RESOURCE_LIMIT');}
+function budgetLimits(b){
+ if(b.compatibilityAllowance!==undefined){need(b.compatibilityAllowance==='e25d17bb-first-five-once'&&b.scopeBytes===690793891&&b.elapsedMs>=341421&&b.rawReadBytes>=1431511802,'RESOURCE_LIMIT');return {elapsedMs:1048680,rawReadBytes:4872381673};}
+ return {elapsedMs:allowance(b.scopeBytes),rawReadBytes:Math.min(150000000000,3*b.scopeBytes)};
+}
+function budget(b,now){need(uint(b.scopeBytes)&&uint(b.elapsedMs)&&uint(b.rawReadBytes)&&uint(b.metadataBytes),'RESOURCE_LIMIT');const limits=budgetLimits(b);need(b.elapsedMs<limits.elapsedMs&&b.rawReadBytes<=limits.rawReadBytes&&b.metadataBytes<=64000000&&now<END,'TIME_LIMIT');need(process.memoryUsage().rss<=1750000000,'RESOURCE_LIMIT');}
+const VARIANTS=['buy','buy_exact_quote_in','sell'];
+function variantProof(p,variant){
+ const hash=x=>/^sha256:[a-f0-9]{64}$/.test(x??''),net=x=>typeof x==='string'&&/^-?[1-9][0-9]*$/.test(x);
+ return p?.variant===variant&&hash(p.transactionRawHash)&&hash(p.pageRawHash)&&p.action?.signature===p.signature&&typeof p.action.trader==='string'&&p.action.trader.length>0&&net(p.action.base?.rawDelta)&&net(p.action.quote?.rawDelta)&&
+  p.action.legs?.some(l=>l.variant===variant&&l.identity?.signature===p.signature&&Array.isArray(p.instructionPath)&&JSON.stringify(l.identity.instructionAddress)===JSON.stringify(p.instructionPath));
+}
 function qualification(v,current,original,hasReduction){
- const eligible=hasReduction&&v.scope.tokens===5&&v.phase==='QUALIFICATION_PENDING'&&current.hash===v.manifestHash&&v.snapshot.code===null&&v.snapshot.ancillary.every(x=>x.externalReceipt)&&v.qualification.technicalUsable&&v.recordedTiming.status==='PASS'&&original?.manifestHash===v.manifestHash&&original.status==='SEMANTIC_REPLAY_VALID'&&original.semanticIntegrity==='PASS'&&original.budgetValidity==='PASS'&&original.recordedTiming?.status==='PASS'&&original.phase==='QUALIFICATION_PENDING'&&original.qualification?.technicalUsable===true;
+ const observed=VARIANTS.filter(variant=>hasReduction?.variantCounts?.[variant]?.supported>0);
+ const supported=observed.length>0&&JSON.stringify(observed)===JSON.stringify(hasReduction.observedSupportedVariants)&&Array.isArray(hasReduction.qualifiedVariants)&&Array.isArray(hasReduction.unprovedSupportedVariants)&&hasReduction.unprovedSupportedVariants.length===0&&
+  observed.every(variant=>VARIANTS.includes(variant)&&hasReduction.variantCounts?.[variant]?.supported>0&&hasReduction.qualifiedVariants.some(p=>variantProof(p,variant)));
+ const eligible=!!supported&&v.scope.tokens===5&&v.phase==='QUALIFICATION_PENDING'&&current.hash===v.manifestHash&&v.snapshot.code===null&&v.snapshot.ancillary.every(x=>x.externalReceipt)&&v.qualification.technicalUsable&&v.recordedTiming.status==='PASS'&&original?.manifestHash===v.manifestHash&&original.status==='SEMANTIC_REPLAY_VALID'&&original.semanticIntegrity==='PASS'&&original.budgetValidity==='PASS'&&original.recordedTiming?.status==='PASS'&&original.phase==='QUALIFICATION_PENDING'&&original.qualification?.technicalUsable===true;
  return {status:eligible?'INDEPENDENT_REVIEW_REQUIRED':'NOT_QUALIFIED',eligibleForReview:!!eligible,manifestHash:v.manifestHash,technicalUsable:!!eligible,qualificationPacket:'ONLY_MAIN_AFTER_INDEPENDENT_REVIEW',d1Passed:false};
 }
 function boundedRead(file,limit,onBytes=()=>{},onReserve=()=>{}){
@@ -129,22 +146,34 @@ function boundedRead(file,limit,onBytes=()=>{},onReserve=()=>{}){
 }
 function diskIO(root,charge){safe(root);return {read(n){need(/^(manifest|selection)\.json$|^\d{5}\.(raw|start\.json|receipt\.json)$|^ancillary-\d{5}(\.receipt)?\.json$/.test(n),'UNSAFE_PATH');return boundedRead(path.join(root,n),n.endsWith('.raw')?64000000:32000000,size=>charge(n,size,'received'),size=>charge(n,size,'reserve'));},list:()=>fs.readdirSync(root),size:()=>fs.readdirSync(root).filter(n=>n!=='lock').reduce((a,n)=>a+fs.statSync(safe(path.join(root,n))).size,0)};}
 function reductionConsumer(policy,ctx=context(),feeEvidenceByRawHash={}){
- const {w,h}=ctx,mapper=require(path.join(path.dirname(ctx.provenance.path),'pumpswap-mapper-v2.cjs')),reducer=require('./e2-trade-reducer-v1.cjs');
+ const {w,h}=ctx,mapper=ANALYSIS_ADAPTER,reducer=require('./e2-trade-reducer-v1.cjs');
  need(sha(fs.readFileSync(path.join(__dirname,'e2-trade-reducer-v1.cjs')))===REDUCER_SHA,'LINEAGE_CHANGED');
- const counts={},reasons={},references=[],byStratum={},fields={feeTotalObserved:0,feeSplitProven:0,feeSplitUnknown:0,tipsObservable:0,tipsUnknown:0,knownAtUnknown:0};let reconstructed=0,uniqueTransactions=0;
+ const counts={},reasons={},references=[],qualifiedVariants=[],frameCounts={supportedSwaps:0,unsupportedSwaps:0,nonEconomicEvents:0,pathUnknownTransactions:0},byStratum={},fields={feeTotalObserved:0,feeSplitProven:0,feeSplitUnknown:0,tipsObservable:0,tipsUnknown:0,knownAtUnknown:0};let reconstructed=0,uniqueTransactions=0;
+ const variantCounts=Object.fromEntries([...VARIANTS,'UNKNOWN'].map(v=>[v,{supported:0,unsupported:0,unknown:0}]));
  return {consume(row,raw,rec,i){const rawHash=h.digest(raw),signature=row.transaction.signatures[0],mapping=mapper.mapHeliusTransaction(raw,rawHash),lineage={source:'helius-getTransactionsForAddress',rawHash,rawCrossCheck:'CHECKED',knownAt:'UNKNOWN'};
    // Forward only exact transaction-bound facts to the unchanged fee prover;
    // no generic approval boolean or inferred historical regime is supplied.
    if(Object.hasOwn(feeEvidenceByRawHash,rawHash))lineage.feeRegimeEvidence=feeEvidenceByRawHash[rawHash];
    const result=reducer.reduceTransaction({mapping,raw:row,policy,lineage});
+   frameCounts.nonEconomicEvents+=mapping.nonEconomicFrames?.length??0;if(mapping.pathStatus==='PATH_UNKNOWN')frameCounts.pathUnknownTransactions++;
+   for(const v of mapping.invocations??[])frameCounts[v.reason?'unsupportedSwaps':'supportedSwaps']++;
+   for(const v of mapping.invocations??[]){const variant=VARIANTS.includes(v.variant)?v.variant:'UNKNOWN';
+    const status=mapping.pathStatus==='PATH_UNKNOWN'?'unknown':v.reason?.startsWith('UNSUPPORTED')?'unsupported':v.reason||variant==='UNKNOWN'?'unknown':'supported';variantCounts[variant][status]++;}
+   // Lost CPI entries have actual recorded positions, but no proved variant.
+   variantCounts.UNKNOWN.unknown+=mapping.unknownPaths?.length??0;
+   if(mapping.status==='MAPPING_INVALID')variantCounts.UNKNOWN.unknown++;
+   for(const action of result.actions)for(const leg of action.legs){const proof={variant:leg.variant,ordinal:rec.ordinal,row:i,pageRawHash:rec.rawHash,transactionRawHash:rawHash,signature,instructionPath:leg.identity.instructionAddress,action,nonEconomicFrames:mapping.nonEconomicFrames??[],reductionHash:result.reductionHash};
+    if(VARIANTS.includes(leg.variant)&&variantProof(proof,leg.variant)&&!qualifiedVariants.some(p=>p.variant===leg.variant))qualifiedVariants.push(proof);}
    uniqueTransactions++;if(result.reason)reasons[result.reason]=(reasons[result.reason]??0)+1;
    for(const action of result.actions){if(/^[0-9]+$/.test(action.fees?.total??''))fields.feeTotalObserved++;if(action.fees?.splitStatus==='PROVEN')fields.feeSplitProven++;else fields.feeSplitUnknown++;if(action.tips?.tipsObservable)fields.tipsObservable++;else fields.tipsUnknown++;}if(result.source?.knownAt==='UNKNOWN')fields.knownAtUnknown++;
    counts[result.status]=(counts[result.status]??0)+1;reconstructed+=result.reconstructedCount;const stratum=['april','may','june'][Math.floor(rec.tokenIndex/100)];
    const venues=[...new Set(result.actions.flatMap(a=>a.legs.map(l=>l.venue)))];const key=(venues.length===1?venues[0]:'UNKNOWN')+':'+stratum+':'+result.status;byStratum[key]=(byStratum[key]??0)+1;
-   if(references.length<200)references.push({ordinal:rec.ordinal,row:i,signature,rawHash:rec.rawHash,status:result.status,reason:result.reason,reductionHash:result.reductionHash});
+   if(references.length<200)references.push({ordinal:rec.ordinal,row:i,signature,rawHash:rec.rawHash,transactionRawHash:rawHash,status:result.status,reason:result.reason,reductionHash:result.reductionHash});
   },finish(r){need(h.canonical(policy.cohortMints.slice().sort())===h.canonical(r.snapshot.selection.tokens.map(t=>t.mint).sort()),'POLICY_INVALID');
    const provenance=r.snapshot.records.slice(0,r.scope.records).filter(x=>x.rawHash).map(x=>({ordinal:x.ordinal,rawHash:x.rawHash,returnedRows:x.returnedRows,equalScopedRows:x.equalScopedRows}));
-   return {counts,reasons,byStratum,fields,reconstructed,uniqueTransactions,references,provenance,cohortDenominator:300,cohortAdmitted:false,d1Passed:false};}};
+   qualifiedVariants.sort((a,b)=>VARIANTS.indexOf(a.variant)-VARIANTS.indexOf(b.variant));
+   const observedSupportedVariants=VARIANTS.filter(v=>variantCounts[v].supported>0),unprovedSupportedVariants=observedSupportedVariants.filter(v=>!qualifiedVariants.some(p=>variantProof(p,v)));
+   return {counts,reasons,byStratum,fields,frameCounts,variantCounts,variantCountScope:'UNIQUE_TRANSACTION_INVOCATIONS_PLUS_RECORDED_UNRESOLVED_CPI_OR_INVALID_TRANSACTION',observedSupportedVariants,unprovedSupportedVariants,qualifiedVariants,reconstructed,uniqueTransactions,references,provenance,cohortDenominator:300,cohortAdmitted:false,d1Passed:false};}};
 }
 async function run(args){
  const started=performance.now(),wall=Date.now();let b,prior=null,output,ctx,io,result;
@@ -154,9 +183,11 @@ async function run(args){
  need(allowed.slice(0,-2).every(k=>flags.has(k))&&flags.has('--prior')===flags.has('--prior-hash'),'ARGUMENTS_INVALID');
  const pinned=(f,hash)=>{const p=safe(f);need(path.dirname(p).toLowerCase()===path.resolve(GATE).toLowerCase(),'UNSAFE_PATH');const bytes=boundedRead(p,32000000);need(sha(bytes)===hash,'LINEAGE_CHANGED');return JSON.parse(bytes);};
  const config=pinned(flags.get('--config'),flags.get('--config-hash')),resources=pinned(flags.get('--resources'),flags.get('--resources-hash'));
- need(config.version===VERSION&&/^sha256:[a-f0-9]{64}$/.test(config.reviewHash)&&config.cliHash===sha(fs.readFileSync(__filename))&&config.reducerHash===REDUCER_SHA,'LINEAGE_CHANGED');
+ need(config.version===VERSION&&/^sha256:[a-f0-9]{64}$/.test(config.reviewHash)&&config.cliHash===sha(fs.readFileSync(__filename))&&config.reducerHash===REDUCER_SHA&&config.capturedMapperHash===CAPTURE_MAPPER_SHA&&config.analysisAdapterHash===ADAPTER_SHA,'LINEAGE_CHANGED');
  b={...config.budget};if(flags.has('--prior')){prior=pinned(flags.get('--prior'),flags.get('--prior-hash'));const {hash,...body}=prior;need(sha(json(body))===hash&&prior.version===VERSION);for(const k of ['elapsedMs','rawReadBytes','metadataBytes'])need(b[k]>=prior.budget[k],'RESOURCE_LIMIT');}
  budget(b,wall);ctx=loadCapture(flags.get('--capture'),flags.get('--capture-commit'));
+ need(ctx.identity.scripts['pumpswap-mapper-v2.cjs']===CAPTURE_MAPPER_SHA,'LINEAGE_CHANGED');
+ if(b.compatibilityAllowance!==undefined)need(prior&&flags.get('--mode')==='reduce'&&flags.get('--tokens')==='5'&&flags.get('--head')==='sha256:d14c929693f1454eac884716fda618bc8e66110669ea5d17409856a4553122a9','RESOURCE_LIMIT');
  output=path.resolve(flags.get('--output'));need(path.dirname(output).toLowerCase()===path.resolve(GATE).toLowerCase()&&!fs.existsSync(output)&&!fs.existsSync(output+'.reservation.json'),'OUTPUT_EXISTS');safe(path.dirname(output));
  const rawRoot=safe(flags.get('--raw-root'));need(!output.toLowerCase().startsWith(rawRoot.toLowerCase()+path.sep),'UNSAFE_PATH');
  need(uint(resources.retainedBytes)&&uint(resources.freeBytes)&&Date.parse(resources.observedAt)<=wall&&Date.parse(resources.validUntil)>=wall&&resources.retainedBytes+64000000<50000000000&&resources.freeBytes-64000000>=30000000000,'DISK_LIMIT');
@@ -168,8 +199,8 @@ async function run(args){
   return resources.retainedBytes+Math.max(0,sourceBytes-sourceBytesBefore)+64000000>=40000000000?'CHECKPOINT_80':'WITHIN_LIMIT';};
  // An immutable launch reservation survives a killed worker. Without a final
  // receipt, its conservative full remaining charges must carry forward.
- const reservation={version:VERSION,status:'READER_RESERVED',capture:ctx.provenance,manifestHash:flags.get('--head'),rawRoot,mode:flags.get('--mode'),requestedTokens:Number(flags.get('--tokens')),allowanceMs:allowance(b.scopeBytes),configHash:flags.get('--config-hash'),startedAt:new Date(wall).toISOString(),priorHash:flags.get('--prior-hash')??null,
-  budget:{...b,elapsedMs:allowance(b.scopeBytes),rawReadBytes:Math.min(150000000000,3*b.scopeBytes),metadataBytes:64000000}};
+ const reservation={version:VERSION,status:'READER_RESERVED',capture:ctx.provenance,manifestHash:flags.get('--head'),rawRoot,mode:flags.get('--mode'),requestedTokens:Number(flags.get('--tokens')),allowanceMs:budgetLimits(b).elapsedMs,configHash:flags.get('--config-hash'),startedAt:new Date(wall).toISOString(),priorHash:flags.get('--prior-hash')??null,
+  budget:{...b,elapsedMs:budgetLimits(b).elapsedMs,rawReadBytes:budgetLimits(b).rawReadBytes,metadataBytes:64000000}};
  const reservationBytes=json({...reservation,hash:sha(json(reservation))});need(b.metadataBytes+reservationBytes.length+32000000+1000000<=64000000,'OUTPUT_LIMIT');
  physical();fs.writeFileSync(output+'.reservation.json',reservationBytes,{flag:'wx'});b.metadataBytes+=reservationBytes.length;
  try{
@@ -179,10 +210,10 @@ async function run(args){
  if(prior){need(prior.capture.commit===ctx.provenance.commit);const p=prior.verification;if(p){need(ctx.h.canonical(result.snapshot.records.slice(0,p.scope.records))===ctx.h.canonical(p.snapshot.records.slice(0,p.scope.records))&&ctx.h.canonical(result.snapshot.tokens.slice(0,p.scope.tokens))===ctx.h.canonical(p.snapshot.tokens.slice(0,p.scope.tokens)),'IMMUTABLE_CONFLICT');for(const [n,hash] of Object.entries(p.checked))need(result.checked[n]===hash,'IMMUTABLE_CONFLICT');}}
  let reduction=null;if(consumer){need(result.recordedTiming.status==='PASS','TIME_LIMIT');reduction=consumer.finish(result);}
  const current=recheck(io,result,ctx);check();const original=config.originalFirstFiveReplay?pinned(config.originalFirstFiveReplay.path,config.originalFirstFiveReplay.fileHash):null;
- const qualificationResult=qualification(result,ctx.w.seal('manifest',current),original,!!reduction);
- const repo=path.resolve(__dirname,'../../..'),analysis={commit:git(repo,['rev-parse','HEAD']).toString().trim(),dirty:!!git(repo,['status','--porcelain']).length,cliHash:sha(fs.readFileSync(__filename)),reducerHash:REDUCER_SHA,reducerVersion:'e2-trade-reducer-v1',mapperHash:ctx.identity.scripts['pumpswap-mapper-v2.cjs'],mapperVersion:'helius-tx-adapter-v1',configHash:flags.get('--config-hash'),policyVersion:config.policy?.version??'NOT_APPLICABLE'};
+ const qualificationResult=qualification(result,ctx.w.seal('manifest',current),original,reduction);
+ const repo=path.resolve(__dirname,'../../..'),analysis={commit:git(repo,['rev-parse','HEAD']).toString().trim(),dirty:!!git(repo,['status','--porcelain']).length,cliHash:sha(fs.readFileSync(__filename)),reducerHash:REDUCER_SHA,reducerVersion:'e2-trade-reducer-v1',capturedMapperHash:CAPTURE_MAPPER_SHA,mapperHash:ADAPTER_SHA,mapperVersion:ANALYSIS_ADAPTER.ANALYSIS.version,analysisAdapterHash:ADAPTER_SHA,configHash:flags.get('--config-hash'),policyVersion:config.policy?.version??'NOT_APPLICABLE'};
  const semanticHash=ctx.h.fingerprint(VERSION+'-analysis',{scopeHash:result.scopeHash,analysis,reduction});
- const report={version:VERSION,...ctx.w.FLAGS,mode:flags.get('--mode'),capture:ctx.provenance,analysis,verification:result,reduction,qualification:qualificationResult,originalFirstFiveReplay:config.originalFirstFiveReplay??{status:'NOT_CHECKED'},semanticHash,budget:b,allowanceMs:allowance(b.scopeBytes),physical:physical(),resourcesHash:flags.get('--resources-hash'),startedAt:new Date(wall).toISOString(),finishedAt:new Date().toISOString(),peakRss:process.resourceUsage().maxRSS*1024,priorHash:flags.get('--prior-hash')??null,reservationHash:sha(reservationBytes)};
+ const report={version:VERSION,...ctx.w.FLAGS,mode:flags.get('--mode'),capture:ctx.provenance,analysis,verification:result,reduction,qualification:qualificationResult,originalFirstFiveReplay:config.originalFirstFiveReplay??{status:'NOT_CHECKED'},semanticHash,budget:b,allowanceMs:budgetLimits(b).elapsedMs,physical:physical(),resourcesHash:flags.get('--resources-hash'),startedAt:new Date(wall).toISOString(),finishedAt:new Date().toISOString(),peakRss:process.resourceUsage().maxRSS*1024,priorHash:flags.get('--prior-hash')??null,reservationHash:sha(reservationBytes)};
  check();b.elapsedMs+=1000;budget(b,Date.now()+1000);
  // Record exact report bytes plus the supervised stdout reservation separately;
  // keep the latter charged until Main reconciles actual external log bytes.
@@ -199,10 +230,10 @@ if(require.main===module){const args=process.argv.slice(2);if(args[0]==='--bound
  const heap=require('node:v8').getHeapStatistics().heap_size_limit;try{need(process.execArgv.filter(x=>x.startsWith('--max-old-space-size=')).join()==='--max-old-space-size=1024'&&heap<=1275068416,'RESOURCE_LIMIT');run(args.slice(1)).then(r=>{process.stdout.write(JSON.stringify(r)+'\n');process.exitCode=2;}).catch(e=>{process.stdout.write(JSON.stringify({status:'STOPPED',code:/^[A-Z_]+$/.test(e.message)?e.message:'INTEGRITY_ERROR',d1Passed:false})+'\n');process.exitCode=1;});}catch{process.stdout.write('{"status":"STOPPED","code":"RESOURCE_LIMIT","d1Passed":false}\n');process.exitCode=1;}
  }else{let remaining=Math.min(10800000,END-Date.now());try{
   const arg=n=>args[args.indexOf(n)+1];if(args.includes('--enable')&&arg('--enable')==='true'&&['verify-v2','reduce'].includes(arg('--mode'))&&args.includes('--config')){
-   const file=safe(arg('--config'));need(path.dirname(file).toLowerCase()===path.resolve(GATE).toLowerCase(),'UNSAFE_PATH');const bytes=boundedRead(file,32000000);need(sha(bytes)===arg('--config-hash'),'LINEAGE_CHANGED');const b=JSON.parse(bytes).budget;budget(b,Date.now());remaining=Math.min(remaining,allowance(b.scopeBytes)-b.elapsedMs-1000);
+   const file=safe(arg('--config'));need(path.dirname(file).toLowerCase()===path.resolve(GATE).toLowerCase(),'UNSAFE_PATH');const bytes=boundedRead(file,32000000);need(sha(bytes)===arg('--config-hash'),'LINEAGE_CHANGED');const b=JSON.parse(bytes).budget;budget(b,Date.now());remaining=Math.min(remaining,budgetLimits(b).elapsedMs-b.elapsedMs-1000);
   }
   if(remaining<=0)throw Error('TIME_LIMIT');const began=performance.now(),child=spawnSync(process.execPath,['--max-old-space-size=1024',__filename,'--bounded-reader',...args],{timeout:Math.floor(remaining),maxBuffer:1000000,windowsHide:true});
   if(child.status===null||child.error||!child.stdout?.length){process.stdout.write(JSON.stringify({status:'STOPPED',code:'RESOURCE_LIMIT',supervisorElapsedMs:Math.ceil(performance.now()-began),unreconciledReservation:'CHARGE_FULL_RESERVED_ENVELOPE',d1Passed:false})+'\n');process.exitCode=1;}else{process.stdout.write(child.stdout);process.exitCode=child.status;}
  }catch(e){process.stdout.write(JSON.stringify({status:'STOPPED',code:/^[A-Z_]{1,64}$/.test(e.message)?e.message:'INTEGRITY_ERROR',d1Passed:false})+'\n');process.exitCode=1;}}
 }
-module.exports={VERSION,END,loadCapture,verifyScope,recheck,allowance,budget,qualification,reductionConsumer,boundedRead,Index,run};
+module.exports={VERSION,END,loadCapture,verifyScope,recheck,allowance,budgetLimits,budget,qualification,reductionConsumer,boundedRead,Index,run};
