@@ -80,3 +80,27 @@ The new public-SQD measurement SHALL follow design's fixed resolver/header/spars
 - **WHEN** replay consumes listed immutable raw evidence or Main measures a nominal120minute overrun
 - **THEN** replay SHALL verify hashes/sizes/semantic lineage independently without live timing reconstruction, and an overrun SHALL forbid overallPASS without deleting or rewriting admitted evidence
 - **AND** no additional source request or repair-budget reset SHALL follow.
+
+### Requirement: Separately bounded monthly exploratory scans
+
+The new April, May and June1–27 branches SHALL use separate fresh roots in that order, without resuming or changing old stopped contracts/evidence/counters. Each SHALL permit at most16000 total actual starts including at most480 retries,4hours including publication,1000000000received and1200000000new retained bytes. Their combined ceiling SHALL be48000actual starts/1440included retries/12hours/3000000000received/3600000000new retained bytes, with measured cumulative accounting, the existing50GB aggregate/min30GB free/80-percent checkpoints/100-percent stops and unchanged2026-10-17T11:42:35.392Z expiry. Only identical-query HTTP529 SHALL retry at most twice under15/45second and valid Retry-After waits; any exhausted bound or terminal failure SHALL stop the affected branch without fallback/resume. Explicit enablement, meaningful executable RED/GREEN, independent critical review and actual Main checks SHALL precede source access.
+
+#### Scenario: Actual retries consume the monthly allowance
+- **WHEN** a monthly request requires an allowed retry
+- **THEN** that start SHALL count against both16000total actual starts and480retry starts, and all waits/error bytes SHALL remain charged
+- **AND** pre-start time/storage/global reservations SHALL prevent crossing limits; counters SHALL NOT reset between retries/months.
+
+#### Scenario: Old or previous-month evidence cannot be overwritten
+- **WHEN** a root already exists, prior monthly order/accounting is unproved, a pinned boundary/control differs or physical totals are unknown
+- **THEN** new source work SHALL remain blocked before any request
+- **AND** old terminal contracts, raw evidence, limits and unfinished task status SHALL remain unchanged.
+
+#### Scenario: Partial replay is semantically valid in the new contract
+- **WHEN** offline replay independently reproduces the immutable new monthly evidence and partial summary
+- **THEN** it SHALL return native2 with explicit valid partial semantics, not an integrity failure or complete scan
+- **AND** this new exit rule SHALL NOT retroactively change old v1 replay evidence or complete its unfinished task.
+
+#### Scenario: Monthly returned boundaries are scanned
+- **WHEN** admitted sparse responses reach a selected month's pinned final scanned boundary
+- **THEN** only that month's advertised reference-boundary coverage SHALL be SCAN_COMPLETE
+- **AND** unknown deployed ingestion/global earliest/all-pool/PIT/retention SHALL keep every confirmatory/cohort/D1 flag false; no outcome, key, paid use or holdout access SHALL follow.
