@@ -170,15 +170,63 @@ class RepositoryConventionsTest {
 	}
 
 	@Test
-	void multiagentWorkflowRequiresLeanApprovalClosureAndFinalGateRouting() throws IOException {
-		var valid = "APPROVE\nDOCS_CLOSE\ncomplete final gate\ncumulative resources\nindependent diagnosis\n"
-				+ "implementation or test issue\ndocumentation or contract issue\ninfrastructure issue";
-		var invalid = "DOCS_CLOSE\nAPPROVE\ncomplete final gate";
-
+	void workflowProcessInspectorAcceptsEquivalentSafeguardsAndRejectsDrift() throws IOException {
+		var valid = """
+				## End-to-end flow
+				APPROVE is reached, Architect then records DOCS_CLOSE, and Main completes the required verification suite.
+				Critical changes receive sign-off from someone other than the author. Anyone who prepared a holdout cannot approve it.
+				When required checks fail, return code and test failures to their implementer; send documentation or contract failures to their author; direct environment failures to infrastructure diagnosis.
+				Elapsed time and resources already used carry forward when the plan changes or another session takes over.
+				The owner or delegate must approve additional spend and changes to the holdout.
+				""";
 		assertThat(workflowLifecycleViolations(valid)).isEmpty();
-		assertThat(workflowLifecycleViolations(invalid))
-				.contains("workflow must close documentation after APPROVE and before the final gate",
-						"workflow must route final-gate failures by ownership");
+		assertThat(leanPolicyViolations(valid)).isEmpty();
+
+		var reordered = """
+				## End-to-end flow
+				DOCS_CLOSE is recorded, then APPROVE is granted, and Main completes the required verification suite.
+				""";
+		assertThat(workflowLifecycleViolations(reordered))
+				.contains("workflow must close documentation after APPROVE and before the final gate");
+		var skippedGate = valid.replace(
+				"Main completes the required verification suite",
+				"Main skips the complete required verification suite");
+		assertThat(workflowLifecycleViolations(skippedGate))
+				.contains("workflow must close documentation after APPROVE and before the final gate");
+
+		var missingIndependence = valid.replace(
+				"Critical changes receive sign-off from someone other than the author",
+				"Critical changes may be approved by their author");
+		assertThat(leanPolicyViolations(missingIndependence))
+				.contains("critical changes require independent review");
+		var selfApprovedHoldout = valid.replace(
+				"Anyone who prepared a holdout cannot approve it",
+				"Holdout preparers may approve their own holdout");
+		assertThat(workflowLifecycleViolations(selfApprovedHoldout))
+				.contains("holdout authors must not approve their own holdout");
+
+		var missingRoute = valid.replace(
+				"direct environment failures to infrastructure diagnosis",
+				"ignore environment failures");
+		assertThat(workflowLifecycleViolations(missingRoute))
+				.contains("workflow must route final-gate failures by ownership");
+		var contradictoryRoute = valid.replace(
+				"return code and test failures to their implementer; send documentation or contract failures to their author; direct environment failures to infrastructure diagnosis",
+				"send code and test failures to infrastructure support; direct documentation and contract failures to the implementer; return environment failures to the test author");
+		assertThat(workflowLifecycleViolations(contradictoryRoute))
+				.contains("workflow must route final-gate failures by ownership");
+
+		var resetBudget = valid.replace(
+				"Elapsed time and resources already used carry forward when the plan changes or another session takes over",
+				"Elapsed time and resources reset whenever the plan changes or another session takes over");
+		assertThat(workflowLifecycleViolations(resetBudget))
+				.contains("workflow must preserve cumulative time and resources across work changes");
+		var unauthorizedChanges = valid.replace(
+				"The owner or delegate must approve additional spend and changes to the holdout",
+				"Additional spend and holdout changes require no owner or delegate authorization");
+		assertThat(workflowLifecycleViolations(unauthorizedChanges))
+				.contains("additional spending and holdout changes require owner or delegate authority");
+
 		assertThat(workflowLifecycleViolations(reachableWorkflow())).isEmpty();
 	}
 
@@ -566,16 +614,37 @@ class RepositoryConventionsTest {
 
 	private List<String> leanPolicyViolations(String guidance) {
 		var violations = new ArrayList<String>();
-		var lower = guidance.toLowerCase().replaceAll("\\s+", " ");
-		if (!Pattern.compile("(core_risk|critical).{0,100}(independent|fresh reviewer)|(independent|fresh reviewer).{0,100}(core_risk|critical)")
-				.matcher(lower).find()) {
+		if (!hasIndependentCriticalReview(guidance)) {
 			violations.add("critical changes require independent review");
 		}
+		var lower = guidance.toLowerCase().replaceAll("\\s+", " ");
 		if (Pattern.compile("(?:may|can|allowed to) approve (?:its|their|his|her|my) own (?:core_risk|critical)")
 				.matcher(lower).find()) {
 			violations.add("critical changes must not allow author self-approval");
 		}
 		return violations;
+	}
+
+	private boolean hasIndependentCriticalReview(String guidance) {
+		return processStatements(guidance).stream().anyMatch(statement ->
+				matchesSemanticTerms(statement,
+						"\\b(?:core_risk|critical)\\b",
+						"\\b(?:reviewer|review|approve|approval|sign[- ]?off)\\b",
+						"\\b(?:independent|fresh reviewer|separate reviewer|another reviewer|different reviewer|"
+								+ "someone other than|other than the author|independent of (?:its|their|the) author|"
+								+ "who did not (?:author|create|implement|produce))\\b"));
+	}
+
+	private boolean matchesSemanticTerms(String statement, String... expressions) {
+		return Stream.of(expressions).allMatch(expression ->
+				Pattern.compile("(?i)" + expression).matcher(statement).find());
+	}
+
+	private List<String> processStatements(String content) {
+		return Stream.of(content.split("(?<=[.!?])\\s+|[;\\r\\n]+"))
+				.map(String::trim)
+				.filter(statement -> !statement.isEmpty())
+				.toList();
 	}
 
 	private List<String> missingClauses(String guidance, List<String> clauses) {
@@ -985,18 +1054,135 @@ class RepositoryConventionsTest {
 		var violations = new ArrayList<String>();
 		var flowStart = workflow.indexOf("## End-to-end flow");
 		var flow = flowStart >= 0 ? workflow.substring(flowStart) : workflow;
-		var approve = flow.indexOf("APPROVE");
-		var documentation = flow.indexOf("DOCS_CLOSE");
-		var finalGate = flow.indexOf("complete final gate");
-		if (approve < 0 || documentation < 0 || finalGate < 0
-				|| approve > documentation || documentation > finalGate) {
+		if (!hasOrderedApprovalCloseoutAndFullVerification(flow)) {
 			violations.add("workflow must close documentation after APPROVE and before the final gate");
 		}
-		if (!containsAll(workflow,
-				"implementation", "test issue", "documentation", "contract issue", "infrastructure issue")) {
+		if (!hasFailureRoutesByOwnership(workflow)) {
 			violations.add("workflow must route final-gate failures by ownership");
 		}
+		if (!prohibitsHoldoutAuthorApproval(workflow)) {
+			violations.add("holdout authors must not approve their own holdout");
+		}
+		if (!preservesCumulativeResources(workflow)) {
+			violations.add("workflow must preserve cumulative time and resources across work changes");
+		}
+		if (!requiresOwnerAuthorityForNewSpendAndHoldoutChanges(workflow)) {
+			violations.add("additional spending and holdout changes require owner or delegate authority");
+		}
 		return violations;
+	}
+
+	private boolean hasOrderedApprovalCloseoutAndFullVerification(String flow) {
+		var approve = Pattern.compile("\\bAPPROVE\\b").matcher(flow);
+		if (!approve.find()) {
+			return false;
+		}
+		var closeout = Pattern.compile("\\bDOCS_CLOSE\\b").matcher(flow);
+		if (!closeout.find(approve.end())) {
+			return false;
+		}
+		var verification = Pattern.compile(
+				"(?i)\\b(?:complete|completes|run|runs|perform|performs|execute|executes)\\b"
+						+ "[^.!?;\\n]{0,35}\\b(?:full|complete|entire|all|every|required|mandatory|final)\\b"
+						+ "[^.!?;\\n]{0,35}\\b(?:verification(?:\\s+(?:gate|suite|lifecycle))?|"
+						+ "(?:quality\\s+)?checks?|test suite|gate)\\b").matcher(flow);
+		return verification.find(closeout.end()) && !bypassesFullVerification(flow);
+	}
+
+	private boolean bypassesFullVerification(String content) {
+		var bypass = Pattern.compile(
+				"(?i)\\b(?:skip|skips|bypass|bypasses|omit|omits|waive|waives|avoid|avoids|"
+						+ "do not run|does not run|must not run|don't run|doesn't run)\\b"
+						+ "[^.!?;\\n]{0,60}\\b(?:full|complete|entire|all|every|required|mandatory|final)\\b"
+						+ "[^.!?;\\n]{0,35}\\b(?:verification|checks?|test suite|gate)\\b");
+		return bypass.matcher(content).find();
+	}
+
+	private boolean hasFailureRoutesByOwnership(String workflow) {
+		var statements = processStatements(workflow);
+		return hasRoutedCategory(statements,
+				"(?:code|source|test|implementation)", "(?:author|implementer|builder|developer)",
+				"implementation\\s*/\\s*test\\s+author")
+				&& hasRoutedCategory(statements,
+						"(?:documentation|docs?|contract)", "(?:author|writer|originator|planner|architect)",
+						"documentation\\s*/\\s*contract\\s+author")
+				&& hasRoutedCategory(statements,
+						"(?:infrastructure|environment|platform|setup)",
+						"(?:diagnos\\w*|support|operator|operations|infrastructure owner|platform owner)",
+						"infrastructure\\s+diagnos\\w*");
+	}
+
+	private boolean hasRoutedCategory(List<String> statements, String category, String destination, String directPair) {
+		var routeAction = "(?:route|send|return|assign|direct|refer|deliver|hand off|go back)";
+		var direct = Pattern.compile("(?i)\\b" + directPair + "\\b");
+		var explicitRoute = Pattern.compile("(?i)(?:\\b" + routeAction + "\\b[^.!?;\\n]{0,45}\\b"
+				+ category + "\\b[^.!?;\\n]{0,45}\\b" + destination + "\\b|\\b" + category
+				+ "\\b[^.!?;\\n]{0,45}\\b" + routeAction + "\\b[^.!?;\\n]{0,45}\\b" + destination + "\\b)");
+		return statements.stream().anyMatch(statement -> {
+			return !hasNegatedRoute(statement)
+					&& (direct.matcher(statement).find() && Pattern.compile("(?i)\\b" + routeAction + "\\b")
+							.matcher(statement).find()
+						|| explicitRoute.matcher(statement).find());
+		});
+	}
+
+	private boolean hasNegatedRoute(String statement) {
+		var negatedAction = Pattern.compile(
+				"(?i)\\b(?:do not|does not|don't|doesn't|must not|should not|never|cannot|can't|not)\\b"
+						+ "[^.!?;\\n]{0,45}\\b(?:route|send|return|assign|direct|refer|deliver|hand off|go back)\\b"
+						+ "|\\b(?:route|send|return|assign|direct|refer|deliver|hand off|go back)\\b"
+						+ "[^.!?;\\n]{0,45}\\b(?:not|never|nowhere)\\b");
+		return negatedAction.matcher(statement).find();
+	}
+
+	private boolean prohibitsHoldoutAuthorApproval(String guidance) {
+		return processStatements(guidance).stream().anyMatch(statement -> matchesSemanticTerms(statement,
+				"\\bholdout\\b", "\\b(?:author|prepar|creat|construct|produc|whoever|anyone)\\w*\\b",
+				"\\b(?:approve|review|sign[- ]?off)\\b", "\\b(?:must not|may not|must never|never|cannot|can't|not allowed)\\b"));
+	}
+
+	private boolean preservesCumulativeResources(String guidance) {
+		var statements = processStatements(guidance);
+		var continuity = "(?i)\\b(?:preserve|retain|continue|keep|carry\\s+(?:forward|over))\\b";
+		var resourcesAndChange = new String[] {
+				"(?i)\\b(?:time|expense|expenses|resource|resources|budget|spend|spending)\\b",
+				"(?i)\\b(?:replan\\w*|plan change\\w*|renam\\w*|session|handoff|takeover|replacement)\\b",
+				continuity
+		};
+		var carried = statements.stream().anyMatch(statement -> matchesSemanticTerms(statement, resourcesAndChange));
+		return carried && !resetsCumulativeResources(statements);
+	}
+
+	private boolean resetsCumulativeResources(List<String> statements) {
+		var resources = "(?i)\\b(?:time|expense|expenses|resource|resources|budget|spend|spending)\\b";
+		var workChange = "(?i)\\b(?:replan\\w*|plan change\\w*|renam\\w*|session|handoff|takeover|replacement)\\b";
+		var resetAction = Pattern.compile("(?i)\\b(?:reset\\w*|restart\\w*|start\\w* over)\\b"
+				+ "|\\b(?:fresh|new)\\s+(?:time|expense|expenses|resource|resources|budget|spend|spending|allowance|allocation)\\b");
+		var negatedReset = Pattern.compile("(?i)\\b(?:no|not|never|without|doesn't|does not|don't|do not)\\b"
+				+ "[^.!?;\\n]{0,20}\\b(?:reset\\w*|restart\\w*|start\\w* over)\\b");
+		return statements.stream().anyMatch(statement ->
+				matchesSemanticTerms(statement, resources, workChange)
+						&& resetAction.matcher(statement).find()
+						&& !negatedReset.matcher(statement).find());
+	}
+
+	private boolean requiresOwnerAuthorityForNewSpendAndHoldoutChanges(String guidance) {
+		var statements = processStatements(guidance);
+		var ownerAuthority = "(?i)\\b(?:owner|delegate)\\b[^.!?;\\n]{0,60}\\b(?:authority|authoriz\\w*|approve\\w*|require\\w*|need\\w*|decid\\w*)\\b"
+				+ "|\\b(?:require\\w*|need\\w*|approve\\w*|authoriz\\w*|decid\\w*)\\b[^.!?;\\n]{0,60}\\b(?:owner|delegate)\\b";
+		var waiver = Pattern.compile("(?i)\\b(?:require|requires|need|needs)\\s+no\\b[^.!?;\\n]{0,45}"
+				+ "\\b(?:owner|delegate|approval|authorization|authority)\\b"
+				+ "|\\b(?:not required|not needed|need not|do not need|does not require|doesn't require)\\b"
+				+ "[^.!?;\\n]{0,45}\\b(?:owner|delegate|approval|authorization|authority)\\b");
+		var spendingAuthorityExists = statements.stream().anyMatch(statement ->
+				matchesSemanticTerms(statement, "(?i)\\b(?:expense|expenses|spend|spending|cost|costs|budget)\\b", ownerAuthority));
+		var holdoutAuthorityExists = statements.stream().anyMatch(statement ->
+				matchesSemanticTerms(statement, "(?i)\\bholdout\\b", "(?i)\\b(?:chang\\w*|modif\\w*|alter\\w*|updat\\w*)\\b",
+						ownerAuthority));
+		var authorityWaived = statements.stream().anyMatch(statement ->
+				matchesSemanticTerms(statement, "(?i)\\b(?:expense|expenses|spend|spending|cost|costs|budget|holdout)\\b")
+						&& waiver.matcher(statement).find());
+		return spendingAuthorityExists && holdoutAuthorityExists && !authorityWaived;
 	}
 
 	private List<String> agentConfigurationViolations(
