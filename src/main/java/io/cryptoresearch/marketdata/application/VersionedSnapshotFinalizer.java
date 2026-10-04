@@ -3,14 +3,11 @@ package io.cryptoresearch.marketdata.application;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
-import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
@@ -23,9 +20,13 @@ import io.cryptoresearch.marketdata.api.MarketDataApi.SelectionScope;
 import io.cryptoresearch.marketdata.api.MarketDataApi.VersionedFinalizeRequest;
 import io.cryptoresearch.marketdata.api.MarketDataApi.VersionedSnapshot;
 import io.cryptoresearch.marketdata.application.VersionedSnapshotStore.Fact;
+import io.cryptoresearch.marketdata.application.VersionedSnapshotStore.CanonicalFactKey;
 
 @Service
 public class VersionedSnapshotFinalizer {
+
+	private record RevisionKey(io.cryptoresearch.marketdata.api.MarketDataApi.FactKind kind,
+			String chain, String transaction, String locator, String revision) { }
 
 	private static final int MAX_KEYS = 10_000;
 	private static final int MAX_REVISIONS = 20_000;
@@ -46,23 +47,23 @@ public class VersionedSnapshotFinalizer {
 		var cutoff = cutoff(request, freezeInstant);
 		validate(request, cutoff);
 
-		var proposed = new HashMap<String, RevisionReference>();
+		var proposed = new HashMap<RevisionKey, RevisionReference>();
 		for (var reference : request.included()) {
 			if (proposed.putIfAbsent(revisionRefKey(reference), reference) != null) {
 				throw new IllegalArgumentException("Duplicate selected revision");
 			}
 		}
-		var exclusions = new HashMap<String, ExcludedFact>();
+		var exclusions = new HashMap<CanonicalFactKey, ExcludedFact>();
 		for (var exclusion : request.excluded()) {
 			if (exclusions.putIfAbsent(exclusionKey(exclusion), exclusion) != null) {
 				throw new IllegalArgumentException("Duplicate exclusion disposition");
 			}
 		}
 
-		var keys = new HashSet<String>();
-		var selected = new HashMap<String, Fact>();
-		var exclusionsProven = new HashSet<String>();
-		var admissibleKeys = new HashSet<String>();
+		var keys = new HashSet<CanonicalFactKey>();
+		var selected = new HashMap<CanonicalFactKey, Fact>();
+		var exclusionsProven = new HashSet<CanonicalFactKey>();
+		var admissibleKeys = new HashSet<CanonicalFactKey>();
 		var revisionCount = 0;
 		Fact cursor = null;
 		while (true) {
@@ -135,12 +136,13 @@ public class VersionedSnapshotFinalizer {
 		return new SelectionScope(scope.chain(),
 				scope.assets().stream().distinct()
 						.sorted(Comparator.comparing(a -> a.value(), VersionedSnapshotFinalizer::compareUtf8)).toList(),
-				scope.fromInclusive(), scope.toInclusive(),
+				scope.fromInclusive().truncatedTo(ChronoUnit.MICROS), scope.toInclusive().truncatedTo(ChronoUnit.MICROS),
 				scope.factKinds().stream().distinct()
 						.sorted(Comparator.comparing(Enum::name, VersionedSnapshotFinalizer::compareUtf8)).toList(),
 				scope.pools().stream().distinct().sorted(VersionedSnapshotFinalizer::compareUtf8).toList(),
 				scope.venues().stream().distinct().sorted(VersionedSnapshotFinalizer::compareUtf8).toList(),
-				scope.eventFromInclusive(), scope.eventToInclusive());
+				scope.eventFromInclusive().truncatedTo(ChronoUnit.MICROS),
+				scope.eventToInclusive().truncatedTo(ChronoUnit.MICROS));
 	}
 
 	private Instant cutoff(VersionedFinalizeRequest request, Instant freezeInstant) {
@@ -148,7 +150,7 @@ public class VersionedSnapshotFinalizer {
 			if (request.knowledgeCutoff() != null) {
 				throw new IllegalArgumentException("Verified realtime knowledge cutoff must be captured at freeze");
 			}
-			return freezeInstant;
+			return freezeInstant.truncatedTo(ChronoUnit.MICROS);
 		}
 		return Objects.requireNonNull(request.knowledgeCutoff(), "historical modeled cutoff must not be null")
 				.truncatedTo(ChronoUnit.MICROS);
@@ -195,18 +197,24 @@ public class VersionedSnapshotFinalizer {
 						&& fact.availableAt().filter(at -> at.isAfter(cutoff)).isPresent()));
 	}
 
-	private String revisionRefKey(RevisionReference reference) {
-		return reference.kind() + "|" + reference.canonicalIdentity().chain().value() + "|"
-				+ reference.canonicalIdentity().transactionId().value() + "|"
-				+ reference.canonicalIdentity().eventId().locator() + "|" + reference.revisionKey();
+	private RevisionKey revisionRefKey(RevisionReference reference) {
+		return new RevisionKey(reference.kind(), reference.canonicalIdentity().chain().value(),
+				reference.canonicalIdentity().transactionId().value(),
+				reference.canonicalIdentity().eventId().locator(), reference.revisionKey());
 	}
 
-	private String revisionRefKey(Fact fact) {
-		return fact.kind() + "|" + fact.chain() + "|" + fact.transaction() + "|"
-				+ fact.locator() + "|" + fact.revisionKey();
+	private RevisionKey revisionRefKey(Fact fact) {
+		return new RevisionKey(fact.kind(), fact.chain(), fact.transaction(), fact.locator(), fact.revisionKey());
 	}
 
-	private String exclusionKey(ExcludedFact exclusion) {
+	private CanonicalFactKey exclusionKey(ExcludedFact exclusion) {
+		return new CanonicalFactKey(exclusion.kind(), exclusion.canonicalIdentity().chain().value(),
+				exclusion.canonicalIdentity().transactionId().value(),
+				exclusion.canonicalIdentity().eventId().locator(), exclusion.assetAddress(), exclusion.scopeDimension());
+	}
+
+	/** Retains the exact saved v1 fingerprint encoding independently of tuple equality. */
+	private String legacyExclusionFingerprintKey(ExcludedFact exclusion) {
 		return exclusion.kind() + "|" + exclusion.canonicalIdentity().chain().value() + "|"
 				+ exclusion.canonicalIdentity().transactionId().value() + "|"
 				+ exclusion.canonicalIdentity().eventId().locator() + "|"
@@ -250,13 +258,13 @@ public class VersionedSnapshotFinalizer {
 				.field("excludedCount", Integer.toString(exclusions.size()));
 		for (var fact : members) {
 			hash.field("memberObservedAt", fact.observedAt().toString())
-					.field("memberKey", fact.canonicalKey()).field("memberRevision", fact.revisionKey())
+					.field("memberKey", fact.legacyFingerprintKey()).field("memberRevision", fact.revisionKey())
 					.field("memberContent", fact.contentDigest())
 					.field("memberAvailability", fact.availabilityStatus())
 					.field("memberAvailableAt", fact.availableAt().map(Object::toString).orElse(""));
 		}
 		for (var exclusion : exclusions) {
-			hash.field("exclusionKey", exclusionKey(exclusion))
+			hash.field("exclusionKey", legacyExclusionFingerprintKey(exclusion))
 					.field("exclusionReason", exclusion.reason())
 					.field("exclusionEvidence", exclusion.evidenceFingerprint());
 		}

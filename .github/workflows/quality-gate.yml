@@ -29,16 +29,29 @@ jobs:
           java-version: '25'
           cache: maven
 
-      - name: Set up Node.js 22
+      - name: Set up Node.js 24
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: '22'
+          node-version: '24'
 
       - name: Verify test integrity
         run: pwsh -NoProfile -File .codex/scripts/verify-test-integrity.ps1
 
       - name: Verify Maven build
         run: ./mvnw clean verify
+
+      - name: Run portable Node research tests
+        if: ${{ always() }}
+        run: |
+          mkdir -p research-node-reports
+          if node --test tools/research/r1/test/*.test.cjs > research-node-reports/portable-node-tests.log 2>&1; then
+            test_status=0
+          else
+            test_status=$?
+          fi
+          cat research-node-reports/portable-node-tests.log
+          printf '%s\n' "$test_status" > research-node-reports/exit-code.txt
+          exit "$test_status"
 
       - name: Install OpenSpec
         if: ${{ always() }}
@@ -61,4 +74,13 @@ jobs:
             target/surefire-reports/**
             target/failsafe-reports/**
           if-no-files-found: warn
+          retention-days: 14
+
+      - name: Upload portable Node test results
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: portable-node-test-results
+          path: research-node-reports/**
+          if-no-files-found: error
           retention-days: 14

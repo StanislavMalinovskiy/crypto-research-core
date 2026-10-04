@@ -3,6 +3,7 @@ package io.cryptoresearch.signal.application;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Optional;
 
@@ -15,6 +16,7 @@ import io.cryptoresearch.marketdata.api.MarketDataApi.PointInTimeQuery;
 import io.cryptoresearch.marketdata.api.MarketDataApi.RevisionReference;
 import io.cryptoresearch.risk.api.RiskApi;
 import io.cryptoresearch.risk.api.RiskApi.RiskDecision;
+import io.cryptoresearch.risk.api.RiskApi.RiskFacts;
 import io.cryptoresearch.signal.api.SignalApi;
 import io.cryptoresearch.signal.api.SignalApi.AcceptedSignalSnapshot;
 import io.cryptoresearch.signal.api.SignalApi.CandidateSnapshot;
@@ -40,7 +42,7 @@ public class VersionedLiquiditySpikeSignalService {
 	}
 
 	public VersionedDetectionResult detect(VersionedDetectionRequest request) {
-		var detection = request.detection();
+		var detection = normalizedDetection(request.detection());
 		if (!request.decisionDatasetFingerprint().equals(detection.datasetFingerprint())) {
 			throw new IllegalArgumentException("Decision fingerprint must match detection evidence");
 		}
@@ -106,6 +108,16 @@ public class VersionedLiquiditySpikeSignalService {
 		transitions.completeVersioned(candidate, assessment, accepted);
 		return new VersionedDetectionResult(new DetectionResult(Optional.of(completed),
 				accepted.map(VersionedAcceptedSignal::signal)), snapshot.fingerprint(), "EXPLICIT_REVISION_V1");
+	}
+
+	private SignalApi.DetectionRequest normalizedDetection(SignalApi.DetectionRequest request) {
+		var facts = request.riskFacts();
+		var normalizedRisk = new RiskFacts(facts.asset(), facts.cutoff().truncatedTo(ChronoUnit.MICROS),
+				facts.manipulationFlags(), facts.lifecycle(), facts.liquidityUsd(), facts.evidenceVersion());
+		return new SignalApi.DetectionRequest(request.datasetFingerprint(), request.asset(),
+				request.windowStart().truncatedTo(ChronoUnit.MICROS),
+				request.decisionCutoff().truncatedTo(ChronoUnit.MICROS), normalizedRisk,
+				request.detectorVersion(), request.scorerVersion(), request.configurationFingerprint());
 	}
 
 	private Optional<MarketObservation> latest(List<MarketObservation> observations) {

@@ -101,19 +101,6 @@ test('Whole offline clock rollback deadline and output overflow stop without par
   const fs = require('node:fs'), original = fs.lstatSync; try { fs.lstatSync = () => ({ isSymbolicLink: () => true });
     assert.throws(() => x.reader(x.ROOTS[0], 'creations.jsonl'), /UNSAFE_PATH/); } finally { fs.lstatSync = original; }
 });
-test('Real pinned metadata and at most three first saved rows validate documentary shape without a real count', () => {
-  const fs = require('node:fs'); let sampled = 0;
-  for (const [at, root] of x.ROOTS.entries()) {
-    const base = 'C:/crypto-research-evidence/r1-e2/' + root.suffix + '/', mb = fs.readFileSync(base + 'manifest.json'), sb = fs.readFileSync(base + 'summary.json');
-    assert.equal(mb.length, root.pins[0][0]); assert.equal(digest(mb), 'sha256:' + root.pins[0][1]);
-    assert.equal(sb.length, root.pins[1][0]); assert.equal(digest(sb), 'sha256:' + root.pins[1][1]); const provenance = x.metadata(root, at, mb, sb);
-    if (at < 3) { const fd = fs.openSync(base + 'creations.jsonl', 'r'), parts = [], byte = Buffer.alloc(1);
-      try { while (fs.readSync(fd, byte, 0, 1, null) === 1 && byte[0] !== 10) { assert.ok(parts.length < 16384); parts.push(byte[0]); } } finally { fs.closeSync(fd); }
-      const saved = x.parsedRow(Buffer.from(parts)), r = new x.Reducer(); r.add(saved, at, provenance); sampled++;
-      assert.equal(r.result().roots[at].documentaryShape, 1); assert.equal(r.result().cohortAdmitted, false); }
-  }
-  assert.equal(sampled, 3);
-});
 function stress() {
   const started = Date.now(), f = fixture(40000), declared = f.roots.reduce((sum, root) => sum + root.pins.reduce((n, p) => n + p[0], 0), 0);
   assert.ok(declared <= 200000000); for (const root of f.roots) for (const [n] of root.pins) assert.ok(n <= 64000000);

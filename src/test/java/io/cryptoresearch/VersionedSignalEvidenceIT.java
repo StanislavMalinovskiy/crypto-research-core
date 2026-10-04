@@ -1,6 +1,7 @@
 package io.cryptoresearch;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 
 import java.util.List;
 import java.math.BigDecimal;
@@ -48,6 +49,37 @@ class VersionedSignalEvidenceIT {
 		this.marketData = marketData;
 		this.signals = signals;
 		this.jdbc = jdbc;
+	}
+
+	@Test
+	void equivalentNanosecondDetectionWindowAndRiskCutoffsResolveTheSameSignal() {
+		var fixture = new FirstSignalScenarioFixture().load();
+		var replay = marketData.replayVersioned(new RecordedDataset("decision-micros",
+				fixture.dataset().observations().subList(0, 2)));
+		var refs = replay.items().stream().map(MarketDataApi.VersionedReplayItem::revision).toList();
+		var cutoff = fixture.decisionCutoff();
+		var scope = new SelectionScope(fixture.asset().chain(), List.of(fixture.asset()),
+				cutoff.minusSeconds(3600), cutoff, List.of(FactKind.SWAP), List.of(), List.of());
+		var snapshot = marketData.finalizeVersioned(new VersionedFinalizeRequest("length-prefixed-v2",
+				cutoff, scope, refs, List.of(), "explicit-revisions-v1", "modeled-history-v1",
+				AvailabilityStatus.HISTORICAL_MODEL));
+		var detection = new DetectionRequest(snapshot.fingerprint(), fixture.asset(), cutoff.minusSeconds(3600),
+				cutoff, fixture.riskFacts(), "liquidity-spike-v2", "liquidity-score-v1", fixture.configurationFingerprint());
+		var canonical = signals.detectVersioned(new VersionedDetectionRequest(snapshot.fingerprint(), detection));
+		assertThat(canonical.legacyResult().acceptedSignal()).isPresent();
+		var originalRisk = fixture.riskFacts();
+		var nanosRisk = new RiskFacts(originalRisk.asset(), cutoff.plusNanos(987), originalRisk.manipulationFlags(),
+				originalRisk.lifecycle(), originalRisk.liquidityUsd(), originalRisk.evidenceVersion());
+		var nanos = new DetectionRequest(snapshot.fingerprint(), fixture.asset(), cutoff.minusSeconds(3600).plusNanos(456),
+				cutoff.plusNanos(123), nanosRisk, detection.detectorVersion(), detection.scorerVersion(),
+				detection.configurationFingerprint());
+		assertThatCode(() -> assertThat(signals.detectVersioned(new VersionedDetectionRequest(snapshot.fingerprint(), nanos)))
+				.isEqualTo(canonical)).doesNotThrowAnyException();
+		var accepted = canonical.legacyResult().acceptedSignal().orElseThrow();
+		assertThat(accepted.riskAssessment().facts().cutoff()).isEqualTo(cutoff);
+		assertThat(signals.versionedAcceptedSignal(accepted.signalId()).orElseThrow().signal()).isEqualTo(accepted);
+		assertThat(jdbc.sql("SELECT count(*) FROM signal.v2_accepted_signals WHERE signal_id = :id")
+				.param("id", accepted.signalId()).query(Integer.class).single()).isOne();
 	}
 
 	@Test

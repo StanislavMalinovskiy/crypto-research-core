@@ -12,10 +12,18 @@ import io.cryptoresearch.marketdata.api.MarketDataApi.VersionedSnapshotEvidence;
 
 public interface VersionedSnapshotStore {
 
+	record CanonicalFactKey(FactKind kind, String chain, String transaction, String locator,
+			String asset, String dimension) { }
+
 	record Fact(FactKind kind, String chain, String transaction, String locator, String asset,
 			String dimension, String revisionKey, String contentDigest, Instant observedAt,
 			String availabilityStatus, Optional<Instant> availableAt) {
-		public String canonicalKey() {
+		public CanonicalFactKey canonicalKey() {
+			return new CanonicalFactKey(kind, chain, transaction, locator, asset, dimension);
+		}
+
+		/** Compatibility encoding for saved v1 fingerprints, never a tuple equality key. */
+		public String legacyFingerprintKey() {
 			return kind + "|" + chain + "|" + transaction + "|" + locator + "|" + asset + "|" + dimension;
 		}
 	}

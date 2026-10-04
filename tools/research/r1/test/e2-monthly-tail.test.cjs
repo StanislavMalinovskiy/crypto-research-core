@@ -78,12 +78,6 @@ test('Tail strict replay rejects timing query raw creation summary counter and e
     d.store.files.set(name, Buffer.concat([d.store.read(name), Buffer.from('x')])); assert.equal(t.exitCode(await t.replay('may', d.store, d)), 1); }
   const d = deps(); await t.run(options(), d); d.store.files.set('00999.raw', Buffer.alloc(0)); assert.equal(t.exitCode(await t.replay('may', d.store, d)), 1);
 });
-test('Tail real pinned six metadata controls establish prefix proof without old raw or creations', () => {
-  const reads = [], p = t.proof('may', month => { const store = c.fileStore(month); return { read(n) { reads.push(month + '/' + n); assert.ok(['manifest.json', 'summary.json'].includes(n)); return store.read(n); } }; });
-  assert.equal(p.totals.attempts, 40050); assert.equal(p.totals.retries, 615); assert.equal(p.totals.received, 444036897);
-  assert.equal(reads.length, 6); assert.equal(p.prefixes[2].manifestHash, 'sha256:34742b956c883ca3af487d7ff4cc14e0b9edae68fbe58fe4f9c6c539bda2fa69');
-  assert.throws(() => t.proof('may', month => { const store = c.fileStore(month); return { read(n) { const b = store.read(n); return month === 'june' && n === 'summary.json' ? Buffer.concat([b, Buffer.from('x')]) : b; } }; }));
-});
 test('Tail independent June range remains exact and requires accounted finalized May tail', async () => {
   const d = deps(), may = await t.run(options(), d); assert.equal(may.code, null); const preceding = t.verifyTailMetadata('may', d.store);
   const j = deps(), baseProof = j.proof(); j.proof = () => ({ ...baseProof, totals: { ...baseProof.totals, attempts: 40051, received: 444036897 + may.accounting.received,

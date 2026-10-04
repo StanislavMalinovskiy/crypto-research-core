@@ -12,11 +12,14 @@ import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 import javax.sql.DataSource;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
@@ -71,6 +74,133 @@ class VersionedSnapshotStorageIT {
 				"marketdata.swap_revisions", "marketdata.raw_chain_events")) {
 			jdbc.sql("DELETE FROM " + table).update();
 		}
+	}
+
+	@Test
+	void preservesLiteralPreRepairFingerprintAndMemberSerialization() {
+		seedBulk(1);
+		var snapshot = marketData.finalizeVersioned(request(scope(TIME, TIME.plusSeconds(1)), bulkReferences(1)));
+		// Frozen from the pre-repair serializer; never derive the expectation from the implementation.
+		assertThat(snapshot.fingerprint())
+				.isEqualTo("sha256:7e8408e37b5313f944f2461c09ccb71342c31e8ca8e678a2969194590a762e5e");
+		assertThat(marketData.versionedSnapshotEvidence(snapshot.fingerprint()).orElseThrow().members())
+				.containsExactlyElementsOf(bulkReferences(1));
+	}
+
+	@Test
+	void rejectsOmittingFirstSeparatorCollisionFact() {
+		var refs = collisionReferences();
+		assertThatThrownBy(() -> marketData.finalizeVersioned(request(scope(TIME, TIME), List.of(refs.get(1)))))
+				.isInstanceOf(IllegalArgumentException.class).hasMessageContaining("incomplete selection");
+		assertThat(count("marketdata.v2_dataset_snapshots")).isZero();
+	}
+
+	@Test
+	void rejectsOmittingSecondSeparatorCollisionFact() {
+		var refs = collisionReferences();
+		assertThatThrownBy(() -> marketData.finalizeVersioned(request(scope(TIME, TIME), List.of(refs.get(0)))))
+				.isInstanceOf(IllegalArgumentException.class).hasMessageContaining("incomplete selection");
+		assertThat(count("marketdata.v2_dataset_snapshots")).isZero();
+	}
+
+	@Test
+	void selectsBothSeparatorCollisionFactsWithCompleteCoverage() {
+		var refs = collisionReferences();
+		var result = new AtomicReference<MarketDataApi.VersionedSnapshot>();
+		assertThatCode(() -> result.set(marketData.finalizeVersioned(request(scope(TIME, TIME), refs))))
+				.doesNotThrowAnyException();
+		var snapshot = result.get();
+		assertThat(snapshot.included()).containsExactly(refs.get(1), refs.get(0));
+		assertThat(marketData.versionedSnapshotEvidence(snapshot.fingerprint()).orElseThrow().coveredKeyCount())
+				.isEqualTo(2);
+		assertThat(marketData.versionedObservations(query(snapshot.fingerprint(), TIME))).hasSize(2);
+		assertThat(marketData.finalizeVersioned(request(scope(TIME, TIME), List.of(refs.get(1), refs.get(0)))))
+				.isEqualTo(snapshot);
+	}
+
+	@Test
+	void rejectsForgedSeparatorCollisionRevisionReference() {
+		var actual = record("a|b", "c", "provider-a", "1.000000000000000000", TIME);
+		var transaction = new TransactionId(CHAIN, "a");
+		var forged = new RevisionReference(FactKind.SWAP, new MarketDataApi.NormalizedSwapIdentity(
+				CHAIN, transaction, new EventId(transaction, "b|c")), actual.revisionKey());
+		assertThatThrownBy(() -> marketData.finalizeVersioned(request(scope(TIME, TIME), List.of(forged))))
+				.isInstanceOf(IllegalArgumentException.class).hasMessageContaining("absent or outside declared scope");
+		assertThat(count("marketdata.v2_dataset_snapshots")).isZero();
+	}
+
+	@Test
+	void distinctSeparatorCollisionExclusionsBothSucceed() {
+		var exclusions = collisionReferences().stream().map(this::unknownAvailabilityExclusion).toList();
+		var result = new AtomicReference<MarketDataApi.VersionedSnapshot>();
+		assertThatCode(() -> result.set(marketData.finalizeVersioned(realtimeRequest(exclusions))))
+				.doesNotThrowAnyException();
+		var snapshot = result.get();
+		assertThat(snapshot.excluded()).containsExactly(exclusions.get(1), exclusions.get(0));
+		assertThat(marketData.versionedSnapshotEvidence(snapshot.fingerprint()).orElseThrow().coveredKeyCount())
+				.isEqualTo(2);
+		assertThat(count("marketdata.v2_dataset_snapshot_exclusions")).isEqualTo(2);
+	}
+
+	@ParameterizedTest
+	@ValueSource(ints = {0, 1})
+	void rejectsOmittingEitherSeparatorCollisionExclusion(int selectedIndex) {
+		var exclusions = collisionReferences().stream().map(this::unknownAvailabilityExclusion).toList();
+		assertThatThrownBy(() -> marketData.finalizeVersioned(realtimeRequest(List.of(exclusions.get(selectedIndex)))))
+				.isInstanceOf(IllegalArgumentException.class).hasMessageContaining("incomplete selection");
+		assertThat(count("marketdata.v2_dataset_snapshots")).isZero();
+	}
+
+	@Test
+	void normalizesEveryScopeBoundaryBeforeValidationQueriesAndFingerprinting() {
+		var revision = record("scope-micros", "provider-a", "1.000000000000000000", TIME);
+		var canonical = marketData.finalizeVersioned(request(scope(TIME, TIME), List.of(revision)));
+		var nanosScope = new SelectionScope(CHAIN, List.of(ASSET), TIME.plusNanos(999), TIME.plusNanos(123),
+				List.of(FactKind.SWAP), List.of(), List.of(), TIME.plusNanos(987), TIME.plusNanos(456));
+		var result = new AtomicReference<MarketDataApi.VersionedSnapshot>();
+		assertThatCode(() -> result.set(marketData.finalizeVersioned(new VersionedFinalizeRequest("length-prefixed-v2",
+				TIME.plusNanos(789), nanosScope, List.of(revision), List.of(), "explicit-revisions-v1",
+				"modeled-history-v1", AvailabilityStatus.HISTORICAL_MODEL))))
+				.doesNotThrowAnyException();
+		var nanos = result.get();
+		assertThat(nanos).isEqualTo(canonical);
+		assertThat(marketData.versionedSnapshotEvidence(nanos.fingerprint()).orElseThrow().scope())
+				.isEqualTo(scope(TIME, TIME));
+		assertThat(count("marketdata.v2_dataset_snapshots")).isOne();
+	}
+
+	@Test
+	void readsOlderNanosecondManifestWithoutNormalizationOrRewriting() {
+		var revision = record("old-scope", "provider-a", "1.000000000000000000", TIME);
+		var oldScope = scope(TIME.minusSeconds(1).plusNanos(123), TIME.plusNanos(321));
+		// A saved pre-repair manifest is authoritative even when a new request would normalize it.
+		var snapshot = marketData.finalizeVersioned(request(scope(TIME.minusSeconds(1), TIME.plusSeconds(1)), List.of(revision)));
+		jdbc.sql("UPDATE marketdata.v2_dataset_snapshots SET scope_manifest = CAST(:scope AS jsonb) WHERE snapshot_id = :id")
+				.param("scope", json.writeValueAsString(oldScope)).param("id", snapshot.snapshotId()).update();
+		var before = jdbc.sql("SELECT scope_manifest::text FROM marketdata.v2_dataset_snapshots WHERE snapshot_id = :id")
+				.param("id", snapshot.snapshotId()).query(String.class).single();
+		var saved = marketData.versionedSnapshotEvidence(snapshot.fingerprint()).orElseThrow();
+		assertThat(saved.scope()).isEqualTo(oldScope);
+		assertThat(saved.fingerprint()).isEqualTo(snapshot.fingerprint());
+		assertThat(saved.members()).containsExactly(revision);
+		assertThat(jdbc.sql("SELECT scope_manifest::text FROM marketdata.v2_dataset_snapshots WHERE snapshot_id = :id")
+				.param("id", snapshot.snapshotId()).query(String.class).single()).isEqualTo(before);
+	}
+
+	private List<RevisionReference> collisionReferences() {
+		return List.of(record("a|b", "c", "provider-a", "1.000000000000000000", TIME),
+				record("a", "b|c", "provider-a", "1.000000000000000000", TIME));
+	}
+
+	private ExcludedFact unknownAvailabilityExclusion(RevisionReference reference) {
+		var digest = marketData.versionedFact(reference).orElseThrow().contentDigest();
+		return new ExcludedFact(reference.kind(), reference.canonicalIdentity(), ASSET.value(), "",
+				"UNVERIFIED_AVAILABILITY", digest);
+	}
+
+	private VersionedFinalizeRequest realtimeRequest(List<ExcludedFact> exclusions) {
+		return new VersionedFinalizeRequest("length-prefixed-v2", null, scope(TIME, TIME), List.of(), exclusions,
+				"explicit-revisions-v1", "verified-realtime-v1", AvailabilityStatus.VERIFIED_REALTIME);
 	}
 
 	@Test
@@ -501,8 +631,12 @@ class VersionedSnapshotStorageIT {
 	}
 
 	private RevisionReference record(String transactionValue, String provider, String price, Instant observedAt) {
+		return record(transactionValue, "i:1", provider, price, observedAt);
+	}
+
+	private RevisionReference record(String transactionValue, String locator, String provider, String price, Instant observedAt) {
 		var transaction = new TransactionId(CHAIN, transactionValue);
-		var input = new RecordedSwapInput(CHAIN, transaction, new EventId(transaction, "i:1"), provider,
+		var input = new RecordedSwapInput(CHAIN, transaction, new EventId(transaction, locator), provider,
 				new BlockPosition(CHAIN, 100), Optional.empty(), Optional.of(observedAt), observedAt,
 				"{\"schemaVersion\":\"recorded-swap-v1\",\"asset\":\"" + ASSET.value() + "\","
 						+ "\"wallet\":\"VersionedWallet111111111111111111111111111\",\"side\":\"BUY\","

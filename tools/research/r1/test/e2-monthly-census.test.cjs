@@ -1,7 +1,6 @@
 'use strict';
 const test = require('node:test'), assert = require('node:assert/strict');
 const c = require('../e2-monthly-census.cjs');
-const fs = require('node:fs'), path = require('node:path');
 const bounds = [410195947, 416762082, 423478907, 429340001];
 const dates = [1775001600, 1777593600, 1780272000, 1782604800];
 const key = '11111111111111111111111111111111';
@@ -39,13 +38,6 @@ test('Monthly exact ranges roots and narrow query reject other months and out of
     assert.equal(c.admit(nd([{ header: header(bounds[i], dates[i]) }]), q, month).code, null);
     assert.notEqual(c.admit(nd([{ header: header(bounds[i], dates[i]) }]), q, ['may', 'june', 'april'][i]).code, null);
   } assert.throws(() => c.query('july'));
-});
-test('Monthly real positive pinned manifest plus eight controls proof and corrupted control fail', () => {
-  assert.deepEqual(c.verifyBoundary(), { status: 'VERIFIED', bounds, manifestHash: c.SEAL.manifestHash, controlBytes: 880 });
-  const root = 'C:\\crypto-research-evidence\\r1-e2\\exploratory-census-v1', readNames = [];
-  assert.throws(() => c.verifyBoundary(name => { readNames.push(name); const bytes = fs.readFileSync(path.join(root, name));
-    return name === '0008.raw' ? Buffer.concat([bytes, Buffer.from('!')]) : bytes; }));
-  assert.deepEqual(readNames, ['manifest.json', ...Array.from({ length: 8 }, (_, i) => String(i + 1).padStart(4, '0') + '.raw')]);
 });
 test('Monthly disabled unsafe CLI root order pin expiry and physical reservation make zero calls', async () => {
   const cli = require('../e2-monthly-census-cli.cjs');
