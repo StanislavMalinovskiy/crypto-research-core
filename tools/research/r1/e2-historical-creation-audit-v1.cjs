@@ -1,7 +1,9 @@
 'use strict';
 // Read-only relationships over existing creations; never a raw replay, admission or selection runner.
 const fs = require('node:fs'), path = require('node:path'), crypto = require('node:crypto');
-const { digest, parseExact, canonical, uint, numericPath, signature, address, boundedLimits } = require('./e2-census-parser-v2.cjs');
+const { parseExact, uint, numericPath, signature, address, boundedLimits } = require('./lib/v1/parsing.cjs');
+const { digest, canonical } = require('./lib/v1/canonicalization.cjs');
+const { scanBytes } = require('./lib/v1/transport.cjs');
 const STOP = '2026-10-05T04:42:41Z';
 const LIMITS = Object.freeze({ timeMs: 1800000, outputBytes: 50000000, retainedBytes: 50000000000,
   freeBytes: 30000000000, rows: 1000000, lineBytes: 262144, stateBytes: 128000000, diagnostics: 1000, inputs: 64 });
@@ -62,11 +64,10 @@ function outsideGit(file) { let at = path.dirname(file); while (true) {
   need(!fs.existsSync(path.join(at, '.git')), 'UNSAFE_PATH'); const parent = path.dirname(at); if (parent === at) break; at = parent; } }
 function scan(file, limit, check, consume) {
   checkedPath(file); const stat = fs.lstatSync(file); need(stat.isFile() && stat.size <= limit, 'INPUT_LIMIT');
-  const fd = fs.openSync(file, 'r'), buffer = Buffer.alloc(65536); let total = 0;
+  const fd = fs.openSync(file, 'r');
   try { need(fs.fstatSync(fd).size === stat.size, 'INPUT_CHANGED');
-    while (true) { check(); const n = fs.readSync(fd, buffer, 0, buffer.length, null); if (!n) break;
-      total += n; need(total <= limit, 'INPUT_LIMIT'); consume(buffer.subarray(0, n)); }
-    check(); return { bytes: total, initialBytes: stat.size };
+    const total = scanBytes(buffer => fs.readSync(fd, buffer, 0, buffer.length, null), limit, check, consume);
+    return { bytes: total, initialBytes: stat.size };
   } finally { fs.closeSync(fd); }
 }
 function hashFile(file, limit, check) { const hash = crypto.createHash('sha256');
