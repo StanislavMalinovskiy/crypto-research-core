@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const { createHash } = require('node:crypto');
 const { reduceTransaction } = require('../e2-trade-reducer-v1.cjs');
 // Read-only stable mapper; no runner import and no external raw-history dependency.
-const { mapHeliusTransaction } = require('C:/git/crypto-research/crypto-research-core/tools/research/r1/pumpswap-mapper-v2.cjs');
+const { mapHeliusTransaction } = require('../pumpswap-mapper-v2.cjs');
 const { parse, digest } = require('../exploratory-probe.cjs');
 const PUMP = 'pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA';
 const TOKEN = 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA';
