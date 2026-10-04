@@ -4,6 +4,38 @@ Defines separate R1-E2 historical creation-based cohort preregistration and a fi
 
 ## ADDED Requirements
 
+### Requirement: Prospective bounded D1 window and historical fallback
+The owner-authorized 2026-10-04 window SHALL follow protocol section10 and design's bounded D1 route from `2026-10-04T16:42:41Z` to absolute STOP `2026-10-05T04:42:41Z`. It SHALL preserve historical pinned tools/helpers, evidence, STOPs and E1 unchanged; the expressly permitted existing mapper entrypoint SHALL retain old mapBlock behavior and historical SHA interpretation. Historical deployment investigation SHALL last at most one hour; unresolved applicability SHALL automatically select option1B with `deployment UNVERIFIED` and EXPLORATORY disposition, not confirmatory census or D1 admission. Protocol1.0.0 SHALL undergo independent review and Main's actual complete freeze gate, followed by one scoped commit with protocol and separate matching prepared hash freeze record; the actual commit SHALL be resolved from Git/external receipt and its protocol bytes verified before new data admission. Holdout, outcomes, calibration1.1.0, P1 and paid access SHALL remain forbidden.
+
+#### Scenario: Historical deployment cannot be proved in time
+- **WHEN** the one-hour free investigation cannot prove the historical executable/layout intervals
+- **THEN** the new fixed cohort work SHALL retain the predetermined option1B limitation without another owner request
+- **AND** a successful extraction SHALL NOT remove that limitation or constitute confirmatory D1 PASS.
+
+### Requirement: Fixed raw-mint hash cohort and whole-window credits
+The new route SHALL select100 studied mints per April, May and June1–27 stratum from the recorded eligibility disposition using SHA256 of exactly32 decoded mint bytes, unsigned digest order and mint-byte tie-break, without activity/outcome replacement. All first-five validation, full download, verification and retries SHALL share at most450000 credits and the owner's opening31620/1000000 usage provenance. Each token's selected addresses SHALL share at most14 actual page starts and1400 credits. Current tariff/Free access SHALL be checked and conservatively reserved before each start; unknown actual debit SHALL remain unknown. Complete zero/low-swap histories SHALL be valid, while cap-stopped/unproved coverage SHALL be INCOMPLETE without a new incomplete-share threshold. Existing50GB aggregate/min30GB free/80percent checkpoint/100percent stop SHALL include all retained/temporary evidence.
+
+#### Scenario: Qualification pages consume a token allowance
+- **WHEN** one of the first five fixed tokens has already used pages or credits during mapper qualification
+- **THEN** subsequent download SHALL continue its saved evidence/cursor and remaining original allowance
+- **AND** a second address, retry, session or renamed task SHALL NOT replenish either token or aggregate credits.
+
+### Requirement: Existing mapper qualification without fabricated source facts
+The new run SHALL use existing `pumpswap-mapper.cjs`, not a new economic parser, after full permitted-range first-five technical qualification and applicable meaningful RED/GREEN plus independent review for minimal corrections. The minimally added Helius transaction entrypoint SHALL use the same mapping logic while preserving old mapBlock behavior/config/literal results. It SHALL version new provenance as `helius-tx-adapter-v1`, pin actual raw/slot/blockTime and preserve real quantities, transaction state, ownership and positions. Absent block/parent hashes SHALL remain UNVERIFIED without bulk header retrieval or invented header/parent/knownAt. CPI paths SHALL use actual unambiguous source facts or PATH_UNKNOWN; missing ownership/reserve/fee/native/CPI/state SHALL remain UNKNOWN and SHALL NOT become RECONSTRUCTED via flags. Historical SHA pins/receipts SHALL remain unchanged without historical reruns under the modified tool. First-five qualification SHALL test technical structural usability, not impose a new statistical threshold; systematically unrecoverable keys/ownership/CPI after minimal correction SHALL stop/report, while individual unknowns SHALL remain counted for whole-cohort assessment. Qualified responses SHALL be reused in the subsequent300-token download without a30-token pilot. Token/pool history SHALL NOT imply complete wallet/noncohort histories or all D1 fields. A source/data defect or failed technical qualification SHALL stop and report.
+
+#### Scenario: Source page lacks required mapper facts
+- **WHEN** Helius full history omits header hashes or other reconstruction facts
+- **THEN** the versioned transaction entrypoint SHALL retain actual slot/blockTime/raw lineage, explicit UNVERIFIED header hashes and counted UNKNOWN reconstruction facts without fabrication or weakened D1 criteria
+- **AND** no payer proxy, net delta or successful transport SHALL be labelled a complete reconstructed trade.
+
+### Requirement: One unchanged D1 assessment and finite terminal result
+The new route SHALL run one aggregate200-trade reconstruction check stratified by actual venue/month, requiring>=95percent agreement and zero double-counted volume, within the same credit budget. All inherited section8.2/8.3 coverage, depth, gaps, PIT and manifest requirements SHALL remain unchanged; a limited preholdout sample SHALL NOT substitute for their whole-envelope measurements. PASS SHALL require every condition proved. Otherwise the window SHALL record FAIL/INSUFFICIENT with hypothesis interpretation INCONCLUSIVE/data insufficient, concrete missing facts, usage and immutable receipts. Failed reconstruction verification SHALL stop and report. At the hard deadline owned work SHALL stop with one factual report; no calibration/P1 shall follow within this allocation.
+
+#### Scenario: Fixed cohort loads but protected-period coverage is absent
+- **WHEN** token histories load successfully but required full-envelope, wallet, state, price, tip or protected-period evidence remains unmeasured
+- **THEN** the verdict SHALL retain those exact unmet conditions and SHALL NOT be PASS
+- **AND** low activity SHALL NOT become a failure criterion, missing data SHALL NOT become zero and no new threshold or holdout request SHALL be introduced automatically.
+
 ### Requirement: Separate experiment and frozen-history preservation
 R1-E2 SHALL have its own reviewed protocol/freeze record before confirmatory data work, under accepted research-protocol amendment rules. E1 artifacts, results, stops and repair counters SHALL remain unchanged. The design's separately authorized path diagnostic SHALL be EXPLORATORY and SHALL NOT admit an E2 cohort, compute outcomes or satisfy D1. Proposed inherited dates/methodology SHALL NOT be reported as a completed freeze or new holdout attestation.
 

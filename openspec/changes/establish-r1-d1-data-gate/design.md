@@ -1,5 +1,7 @@
 ## Context
 
+**Prospective E2 assessment, owner decision2026-10-04:** existing `preregister-r1-e2-pumpswap-cohort` design's bounded D1 route/protocol10 governs new fixed300/free450000-credit work until2026-10-05T04:42:41Z. This D1 change remains the unchanged inventory/§8.2–8.3 source-adequacy authority. Its earlier E1 grants/STOPs/helpers/raw/task outcomes are not reopened or rewritten. The new E2 protocol is separately reviewed/frozen before admission. An exploratory deployment fallback, token/pool-only histories or unmeasured protected-period/full-envelope fields cannot constitute a D1 PASS; apply every original threshold and retain explicit INSUFFICIENT rather than force completion. New work is tracked in E2 tasks8, not duplicate D1 tooling or invented calibration/P1 scope.
+
 See [proposal.md](proposal.md). [Frozen R1](../../../docs/research/R1_RESEARCH_PROTOCOL.md) `1.0.0`, freeze record entry 1 and the owner-approved [offline procedure](../../../docs/research/R1_OFFLINE_RESEARCH_PROCEDURE.md) govern one D1 change. Accepted `research-protocol` already requires a reviewed field inventory before bulk extraction. Section 1 inventory tools are implemented and independently approved; section 2 remains blocked. Existing `tools/spikes/provider-feasibility/` demonstrates dependency-free CommonJS tools with `node:test`; installed Node is `v20.18.0`. Application code and tests remain outside this slice.
 
 ### Fixed classification and handoff

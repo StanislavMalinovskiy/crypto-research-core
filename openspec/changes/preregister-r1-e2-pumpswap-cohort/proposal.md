@@ -1,5 +1,7 @@
 ## Why
 
+**Current prospective scope, owner decision 2026-10-04:** execute protocol section 10's fixed-cohort, existing-mapper, free bounded D1 window. Start `2026-10-04T16:42:41Z`, hard STOP `2026-10-05T04:42:41Z`. The historical scopes below retain their original disposition; they are not reopened. Owner packet choices 1A (one-hour deployment proof then automatic exploratory 1B), 2A and explicitly revised 3A replace the earlier new-mapper/pilot/650000-credit proposal for new work only. One frozen protocol commit, 300 fixed tokens, first-five mapper qualification, at most 14 pages/1400 credits per token and 450000 credits total; no paid, holdout, outcomes, calibration or P1.
+
 R1-E1 remains frozen and incomplete: sparse SQD discovery stopped at an unchanged mapper output cap, while Helius wallet proxies do not establish an outcome-blind token/trader universe. The owner authorized a separate R1-E2 narrowed study and a small path diagnostic to test the source route before committing to extraction.
 
 ## What Changes
