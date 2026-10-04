@@ -104,3 +104,17 @@ The new April, May and June1–27 branches SHALL use separate fresh roots in tha
 - **WHEN** admitted sparse responses reach a selected month's pinned final scanned boundary
 - **THEN** only that month's advertised reference-boundary coverage SHALL be SCAN_COMPLETE
 - **AND** unknown deployed ingestion/global earliest/all-pool/PIT/retention SHALL keep every confirmatory/cohort/D1 flag false; no outcome, key, paid use or holdout access SHALL follow.
+
+### Requirement: Versioned observed wait guard without historical repair
+
+The separately delegated guard-v2 wrapper SHALL preserve frozen monthly v1 code/tests/evidence and its exact data/configuration/replay contracts. Remaining May/June source waits SHALL reobserve the same recorded clock until the full retry/spacing deadline is reached, with unchanged time/reservation/cumulative caps and no tolerance. Its operational version/policy/wrapper hashes SHALL be bound into existing hashed source lineage. April finalized metadata SHALL be accepted only for unchanged prior resource accounting, never reclassified as exact replay PASS. Meaningful behavioral RED/GREEN, independent review and Main actual gates SHALL precede remaining source release.
+
+#### Scenario: Timer resolves before the recorded deadline
+- **WHEN** a requested retry or spacing wait returns early
+- **THEN** the wrapper SHALL wait/recheck the remaining interval before any transport start, charging all elapsed time against original bounds
+- **AND** rollback, invalid clock or no-progress completion SHALL stop before source instead of bypassing the exact wait or looping indefinitely.
+
+#### Scenario: April evidence predates the new operational guard
+- **WHEN** the remaining-month wrapper reads April finalized metadata or replay is requested for April
+- **THEN** its immutable pins/counters SHALL charge prior expenditure without changing April's native strict replay failure
+- **AND** the wrapper SHALL reject April source/replay and preserve frozen v1 identities; subsequent May/June guard lineage SHALL be verified separately before unchanged strict replay.
