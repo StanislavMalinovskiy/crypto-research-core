@@ -132,3 +132,17 @@ The separately delegated April diagnostic SHALL independently verify immutable s
 - **WHEN** any semantic/pin/hash/size/query/creation/summary check or fixed path/deadline/resource reservation fails
 - **THEN** the diagnostic SHALL stop explicitly without a successful semantic identity, retry or immutable write
 - **AND** Main SHALL stop before June pending delegated disposition; no timing-failure exception SHALL hide the semantic defect.
+
+### Requirement: Separate finite missing-tail branches
+
+The separately delegated May and June tails SHALL follow design's exact fresh roots, missing ranges, pinned read-only prefix metadata, versioned lineage and meaningful RED/review/gate contract without mutating original roots or failure statuses. Each SHALL permit at most1500total starts including45retries/100MBreceived/120MBretained; May all-write/source/replay/receipts SHALL fit30minutes and June5minutes, consuming ORIGINAL cumulative ceilings and the frozen remaining7193288ms from11:16:54.4622711UTC. Engineering/review/gate SHALL finish by12:16:54.4622711UTC and all factual closing by13:16:47.7502711UTC. Only these NEW tails SHALL permit at most two identical HTTP503/529 retries under exact observed15/45/valid Retry-After waits and full finite reservation; no other original529-only contract SHALL change.
+
+#### Scenario: Prior boundary, identity or reservation is unproved
+- **WHEN** a prefix pin/configuration/final503query/boundary+1, earlier branch accounting, exclusive root, observed wait or required time/physical/cumulative reservation fails
+- **THEN** the affected tail SHALL stop before further source access or successful replay publication
+- **AND** no old root SHALL be resumed, counters reset, cap increased or partial evidence hidden.
+
+#### Scenario: Tail is complete or validly partial
+- **WHEN** ONE offline tail replay independently reproduces exact immutable files, query/retry/timing/counter/creation/summary identity
+- **THEN** complete tail replay SHALL return0 and valid partial replay2 with code=null and recordedSourceCode; integrity failures SHALL return1
+- **AND** separately referenced contiguous advertised boundary coverage SHALL NOT rewrite original INCOMPLETE statuses, April strict failure or UNKNOWN chain/global-earliest/all-pool/PIT/rights, nor authorize cohort/D1 admission, outcomes or another invocation.
