@@ -65,6 +65,49 @@ class VersionedSnapshotStorageIT {
 	@Autowired PlatformTransactionManager transactions;
 	@Autowired ObjectMapper json;
 	@Autowired DataSource dataSource;
+	@Autowired VersionedSnapshotStore snapshotStore;
+
+	@ParameterizedTest
+	@ValueSource(strings = {"identity", "dimension", "reason", "evidence"})
+	void immutableExclusionRetryComparesEveryComponent(String changedComponent) {
+		var transaction = new TransactionId(CHAIN, "a|b");
+		var original = new ExcludedFact(FactKind.PRICE, new MarketDataApi.NormalizedSwapIdentity(
+				CHAIN, transaction, new EventId(transaction, "c")), "a|b", "c", "reason|part",
+				"sha256:" + "1".repeat(64));
+		var fingerprint = "sha256:" + "2".repeat(64);
+		var snapshot = new MarketDataApi.VersionedSnapshot(fingerprint, fingerprint, TIME,
+				new SelectionScope(CHAIN, List.of(new AssetId(CHAIN, "a|b")), TIME, TIME,
+						List.of(FactKind.PRICE), List.of(), List.of("c")), List.of(), List.of(original),
+				AvailabilityStatus.VERIFIED_REALTIME, "EXPLICIT_REVISION_V1");
+		var retry = new TransactionTemplate(transactions);
+		retry.execute(status -> snapshotStore.store(snapshot, "length-prefixed-v2",
+				"explicit-revisions-v1", "verified-realtime-v1", List.of(), List.of(original)));
+		var equalRetry = retry.execute(status -> snapshotStore.store(snapshot, "length-prefixed-v2",
+				"explicit-revisions-v1", "verified-realtime-v1", List.of(), List.of(original)));
+		assertThat(equalRetry).isEqualTo(snapshot);
+		var alternativeTransaction = new TransactionId(CHAIN, "a");
+		var conflicting = switch (changedComponent) {
+			case "identity" -> new ExcludedFact(original.kind(), new MarketDataApi.NormalizedSwapIdentity(
+					CHAIN, alternativeTransaction, new EventId(alternativeTransaction, "b|c")),
+					original.assetAddress(), original.scopeDimension(), original.reason(), original.evidenceFingerprint());
+			case "dimension" -> new ExcludedFact(original.kind(), original.canonicalIdentity(),
+					"a", "b|c", original.reason(), original.evidenceFingerprint());
+			case "reason" -> new ExcludedFact(original.kind(), original.canonicalIdentity(),
+					original.assetAddress(), "c|reason", "part", original.evidenceFingerprint());
+			case "evidence" -> new ExcludedFact(original.kind(), original.canonicalIdentity(),
+					original.assetAddress(), original.scopeDimension(), original.reason(), "sha256:" + "0".repeat(64));
+			default -> throw new IllegalArgumentException(changedComponent);
+		};
+		// Exercise durable retry verification directly: finalizer validation is a separate guarantee.
+		assertThatThrownBy(() -> retry.execute(status -> snapshotStore.store(snapshot, "length-prefixed-v2",
+				"explicit-revisions-v1", "verified-realtime-v1", List.of(), List.of(conflicting))))
+				.as("a changed persisted exclusion component must not equal an immutable retry")
+				.isInstanceOf(IllegalStateException.class).hasMessageContaining("Conflicting immutable v2 snapshot exclusions");
+		assertThat(marketData.versionedSnapshotEvidence(snapshot.fingerprint()).orElseThrow().excluded())
+				.containsExactly(original);
+		assertThat(count("marketdata.v2_dataset_snapshots")).isOne();
+		assertThat(count("marketdata.v2_dataset_snapshot_exclusions")).isOne();
+	}
 
 	@BeforeEach
 	void clean() {

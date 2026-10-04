@@ -8,6 +8,10 @@ import java.util.Optional;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
 
+import io.cryptoresearch.kernel.api.ChainId;
+import io.cryptoresearch.kernel.api.TransactionId;
+import io.cryptoresearch.kernel.api.EventId;
+import io.cryptoresearch.marketdata.api.MarketDataApi.FactKind;
 import io.cryptoresearch.marketdata.api.MarketDataApi.MarketObservation;
 import io.cryptoresearch.marketdata.api.MarketDataApi.NormalizedSwapIdentity;
 import io.cryptoresearch.marketdata.api.MarketDataApi.AvailabilityStatus;
@@ -27,6 +31,27 @@ public class JdbcVersionedFactStore implements VersionedFactStore {
 
 	public JdbcVersionedFactStore(JdbcClient jdbc) {
 		this.jdbc = jdbc;
+	}
+
+	@Override
+	public Optional<RevisionIdentity> findRevisionIdentity(FactKind kind, String revisionKey) {
+		var table = switch (kind) {
+			case PRICE -> "price_revisions";
+			case LIQUIDITY -> "liquidity_revisions";
+			default -> throw new IllegalArgumentException("Identity recognition supports price and liquidity only");
+		};
+		var dimension = kind == FactKind.PRICE ? "venue" : "pool_address";
+		return jdbc.sql("SELECT chain_id, transaction_value, event_locator, asset_address, " + dimension
+				+ " AS dimension, source_identity, raw_payload_hash, derivation_version FROM marketdata."
+				+ table + " WHERE revision_key = :key")
+				.param("key", revisionKey).query((row, index) -> {
+					var chain = new ChainId(row.getString("chain_id"));
+					var transaction = new TransactionId(chain, row.getString("transaction_value"));
+					return new RevisionIdentity(revisionKey, kind, new NormalizedSwapIdentity(chain, transaction,
+							new EventId(transaction, row.getString("event_locator"))), row.getString("asset_address"),
+							row.getString("dimension"), row.getString("source_identity"), row.getString("raw_payload_hash"),
+							row.getString("derivation_version"));
+				}).optional();
 	}
 
 	@Override

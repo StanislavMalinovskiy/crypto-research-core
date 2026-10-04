@@ -37,6 +37,15 @@ public class JdbcVersionedSnapshotStore implements VersionedSnapshotStore {
 	private record SnapshotHeader(Instant cutoff, AvailabilityStatus availability, SelectionScope scope,
 			int coveredKeyCount, String selectionVersion, String canonicalizationVersion) { }
 
+	private record ExclusionTuple(String kind, String chain, String transaction, String locator,
+			String asset, String dimension, String reason, String evidenceFingerprint) {
+		static ExclusionTuple from(ExcludedFact exclusion) {
+			return new ExclusionTuple(exclusion.kind().name(), exclusion.canonicalIdentity().chain().value(),
+					exclusion.canonicalIdentity().transactionId().value(), exclusion.canonicalIdentity().eventId().locator(),
+					exclusion.assetAddress(), exclusion.scopeDimension(), exclusion.reason(), exclusion.evidenceFingerprint());
+		}
+	}
+
 	private static final String VISIBLE_FACTS = """
 			SELECT 'SWAP'::text COLLATE "C" AS fact_kind, chain_id, transaction_value, event_locator,
 			 asset_address, ''::text COLLATE "C" AS scope_dimension, venue AS filter_value,
@@ -264,13 +273,14 @@ public class JdbcVersionedSnapshotStore implements VersionedSnapshotStore {
 			throw new IllegalStateException("Conflicting immutable v2 snapshot members");
 		}
 		var savedExclusions = jdbc.sql("""
-				SELECT fact_kind || '|' || chain_id || '|' || transaction_value || '|' || event_locator || '|'
-				 || asset_address || '|' || scope_dimension || '|' || reason || '|' || evidence_fingerprint
+				SELECT fact_kind, chain_id, transaction_value, event_locator,
+				 asset_address, scope_dimension, reason, evidence_fingerprint
 				FROM marketdata.v2_dataset_snapshot_exclusions WHERE snapshot_id = :id ORDER BY exclusion_ordinal
-				""").param("id", snapshot.snapshotId()).query(String.class).list();
-		var expectedExclusions = exclusions.stream().map(e -> e.kind() + "|" + e.canonicalIdentity().chain().value()
-				+ "|" + e.canonicalIdentity().transactionId().value() + "|" + e.canonicalIdentity().eventId().locator()
-				+ "|" + e.assetAddress() + "|" + e.scopeDimension() + "|" + e.reason() + "|" + e.evidenceFingerprint()).toList();
+				""").param("id", snapshot.snapshotId()).query((row, index) -> new ExclusionTuple(
+						row.getString("fact_kind"), row.getString("chain_id"), row.getString("transaction_value"),
+						row.getString("event_locator"), row.getString("asset_address"), row.getString("scope_dimension"),
+						row.getString("reason"), row.getString("evidence_fingerprint"))).list();
+		var expectedExclusions = exclusions.stream().map(ExclusionTuple::from).toList();
 		if (!savedExclusions.equals(expectedExclusions)) {
 			throw new IllegalStateException("Conflicting immutable v2 snapshot exclusions");
 		}

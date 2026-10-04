@@ -1,6 +1,7 @@
 package io.cryptoresearch.marketdata.application;
 
 import io.cryptoresearch.marketdata.api.MarketDataApi.MarketObservation;
+import io.cryptoresearch.marketdata.api.MarketDataApi.FactKind;
 import io.cryptoresearch.marketdata.api.MarketDataApi.NormalizedSwapIdentity;
 import io.cryptoresearch.marketdata.api.MarketDataApi.RevisionReference;
 import io.cryptoresearch.marketdata.api.MarketDataApi.VersionedFactEvidence;
@@ -9,6 +10,11 @@ import io.cryptoresearch.marketdata.application.RecordMarketFactUseCase.RawSourc
 
 /** Owned persistence boundary for immutable, exact fact revisions. */
 public interface VersionedFactStore {
+	/** Exact saved fields needed to recognize price/liquidity identity encoding. */
+	record RevisionIdentity(String revisionKey, FactKind kind, NormalizedSwapIdentity canonicalIdentity,
+			String asset, String dimension, String sourceIdentity, String rawPayloadHash, String derivationVersion) { }
+
+	Optional<RevisionIdentity> findRevisionIdentity(FactKind kind, String revisionKey);
 
 	Optional<VersionedFactEvidence> findRevision(RevisionReference reference);
 

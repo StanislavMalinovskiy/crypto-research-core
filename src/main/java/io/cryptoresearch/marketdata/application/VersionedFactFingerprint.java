@@ -5,6 +5,7 @@ import io.cryptoresearch.marketdata.api.MarketDataApi.NormalizedSwapIdentity;
 import io.cryptoresearch.marketdata.application.RecordMarketFactUseCase.RawSourceKind;
 
 final class VersionedFactFingerprint {
+	enum RevisionVersion { V1, V2 }
 
 	private VersionedFactFingerprint() { }
 
@@ -26,6 +27,39 @@ final class VersionedFactFingerprint {
 				.field("locator", source.eventId().locator()).field("dimension", dimension)
 				.field("sourceIdentity", sourceIdentity).field("rawPayloadHash", rawHash)
 				.field("derivationVersion", derivationVersion).finish();
+	}
+
+	static String revisionV2(String kind, NormalizedSwapIdentity source, String sourceIdentity,
+			String rawHash, String derivationVersion, String asset, String dimensionName, String dimension) {
+		return new CanonicalFingerprint().field("contract", "market-fact-revision-v2")
+				.field("factKind", kind).field("chain", source.chain().value())
+				.field("transaction", source.transactionId().value())
+				.field("locator", source.eventId().locator()).field("asset", asset)
+				.field(dimensionName, dimension)
+				.field("sourceIdentity", sourceIdentity).field("rawPayloadHash", rawHash)
+				.field("derivationVersion", derivationVersion).finish();
+	}
+
+	static RevisionVersion revisionVersion(VersionedFactStore.RevisionIdentity saved) {
+		var dimensionName = switch (saved.kind()) {
+			case PRICE -> "venue";
+			case LIQUIDITY -> "pool";
+			default -> throw new IllegalArgumentException("Identity recognition supports price and liquidity only");
+		};
+		var v1 = revision(saved.kind().name(), saved.canonicalIdentity(), saved.sourceIdentity(),
+				saved.rawPayloadHash(), saved.derivationVersion(), saved.asset() + "|" + saved.dimension());
+		var v2 = revisionV2(saved.kind().name(), saved.canonicalIdentity(), saved.sourceIdentity(),
+				saved.rawPayloadHash(), saved.derivationVersion(), saved.asset(), dimensionName, saved.dimension());
+		return revisionVersion(saved.revisionKey(), v1, v2);
+	}
+
+	static RevisionVersion revisionVersion(String recordedKey, String v1Candidate, String v2Candidate) {
+		var matchesV1 = recordedKey.equals(v1Candidate);
+		var matchesV2 = recordedKey.equals(v2Candidate);
+		if (matchesV1 == matchesV2) {
+			throw new IllegalStateException("Invalid revision identity version: expected exactly one v1/v2 match");
+		}
+		return matchesV1 ? RevisionVersion.V1 : RevisionVersion.V2;
 	}
 
 	static String swapContent(MarketObservation value, String revisionKey) {

@@ -15,6 +15,9 @@ import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
@@ -54,6 +57,395 @@ class MarketFactStorageIT {
 	private final StoreRawTransactionUseCase rawTransactionStore;
 	private final JdbcClient jdbcClient;
 	private final MarketDataApi marketData;
+	@Autowired VersionedFactStore versionedStore;
+
+	@ParameterizedTest
+	@CsvSource({"PRICE,117", "PRICE,128", "LIQUIDITY,117", "LIQUIDITY,128"})
+	void fullDerivationCapacityPersistsOriginalValueAndRetries(FactKind kind, int length) {
+		int index = 51 + (kind == FactKind.PRICE ? 0 : 2) + (length == 128 ? 1 : 0);
+		storeRawPriceSource(index);
+		var version = "v".repeat(length - 4) + "|é/1";
+		var key = new AtomicReference<String>();
+		try {
+			assertThatCode(() -> {
+				if (kind == FactKind.PRICE) {
+					var request = new RecordMarketFactUseCase.VersionedPriceRequest(price(index, T1, "1.500000000000000000"),
+							RecordMarketFactUseCase.RawSourceKind.RAW_CHAIN_EVENT, "provider-a", version);
+					var saved = useCase.storeVersionedPrice(request);
+					key.set(saved.revisionKey());
+					assertThat(saved.evidenceVersion()).isEqualTo("EXPLICIT_REVISION_V2");
+					assertThat(useCase.storeVersionedPrice(request)).isEqualTo(saved);
+				}
+				else {
+					var request = new RecordMarketFactUseCase.VersionedLiquidityRequest(liquidity(index, T1, "50000.00000000"),
+							RecordMarketFactUseCase.RawSourceKind.RAW_CHAIN_EVENT, "provider-a", version);
+					var saved = useCase.storeVersionedLiquidity(request);
+					key.set(saved.revisionKey());
+					assertThat(saved.evidenceVersion()).isEqualTo("EXPLICIT_REVISION_V2");
+					assertThat(useCase.storeVersionedLiquidity(request)).isEqualTo(saved);
+				}
+			}).as("the existing %s-character derivation capacity must remain usable for %s", length, kind)
+					.doesNotThrowAnyException();
+			assertThat(marketData.versionedFact(new RevisionReference(kind, identity(index), key.get()))
+					.orElseThrow().derivationVersion()).isEqualTo(version);
+			assertThat(jdbcClient.sql("SELECT derivation_version FROM marketdata." + revisionTable(kind)
+					+ " WHERE revision_key = :key").param("key", key.get()).query(String.class).single())
+					.isEqualTo(version).hasSize(length);
+			assertThat(revisionCount(kind, index)).isOne();
+		}
+		finally {
+			deleteRevisions(kind, index);
+		}
+	}
+
+	@ParameterizedTest
+	@CsvSource({"PRICE,false", "PRICE,true", "LIQUIDITY,false", "LIQUIDITY,true"})
+	void sameLegacyFactResubmissionConflictsWithoutDuplicating(FactKind kind, boolean changedContent) {
+		int index = kind == FactKind.PRICE ? 55 : 56;
+		storeRawPriceSource(index);
+		try {
+			var oldKey = seedLegacyDimensionFact(kind, index, "a|b", "c");
+			var oldRow = revisionRow(revisionTable(kind), oldKey);
+			assertThatThrownBy(() -> {
+				if (kind == FactKind.PRICE) {
+					useCase.storeVersionedPrice(priceRequest(dimensionPrice(index, "a|b", "c",
+							changedContent ? "9.000000000000000000" : "1.500000000000000000")));
+				}
+				else {
+					useCase.storeVersionedLiquidity(liquidityRequest(dimensionLiquidity(index, "a|b", "c",
+							changedContent ? "90000.00000000" : "50000.00000000")));
+				}
+			}).as("same legacy tuple and lineage must conflict before any v2 insertion")
+					.isInstanceOf(IllegalStateException.class).hasMessageContaining("Legacy revision version conflict");
+			assertThat(revisionCount(kind, index)).isOne();
+			assertThat(revisionRow(revisionTable(kind), oldKey)).isEqualTo(oldRow);
+		}
+		finally {
+			deleteRevisions(kind, index);
+		}
+	}
+
+	@ParameterizedTest
+	@EnumSource(value = FactKind.class, names = {"PRICE", "LIQUIDITY"})
+	void differentlySplitLegacyCollisionAllowsDistinctV2Fact(FactKind kind) {
+		int index = kind == FactKind.PRICE ? 59 : 60;
+		storeRawPriceSource(index);
+		try {
+			var oldKey = seedLegacyDimensionFact(kind, index, "a|b", "c");
+			var oldRow = revisionRow(revisionTable(kind), oldKey);
+			var key = kind == FactKind.PRICE
+					? useCase.storeVersionedPrice(priceRequest(dimensionPrice(index, "a", "b|c", "1.500000000000000000"))).revisionKey()
+					: useCase.storeVersionedLiquidity(liquidityRequest(dimensionLiquidity(index, "a", "b|c", "50000.00000000"))).revisionKey();
+			assertThat(key).isNotEqualTo(oldKey);
+			assertThat(revisionCount(kind, index)).isEqualTo(2);
+			assertThat(revisionRow(revisionTable(kind), oldKey)).isEqualTo(oldRow);
+			assertThat(marketData.versionedFact(new RevisionReference(kind, identity(index), key)))
+					.isPresent().get().satisfies(fact -> assertThat(fact.derivationVersion())
+							.isEqualTo(kind == FactKind.PRICE ? "price-v1" : "liquidity-v1"));
+		}
+		finally {
+			deleteRevisions(kind, index);
+		}
+	}
+
+	@ParameterizedTest
+	@EnumSource(value = FactKind.class, names = {"PRICE", "LIQUIDITY"})
+	void nullDerivationRemainsRejectedWithoutWriting(FactKind kind) {
+		int index = kind == FactKind.PRICE ? 57 : 58;
+		storeRawPriceSource(index);
+		assertThatThrownBy(() -> {
+			if (kind == FactKind.PRICE) {
+				useCase.storeVersionedPrice(new RecordMarketFactUseCase.VersionedPriceRequest(
+						price(index, T1, "1.500000000000000000"),
+						RecordMarketFactUseCase.RawSourceKind.RAW_CHAIN_EVENT, "provider-a", null));
+			}
+			else {
+				useCase.storeVersionedLiquidity(new RecordMarketFactUseCase.VersionedLiquidityRequest(
+						liquidity(index, T1, "50000.00000000"),
+						RecordMarketFactUseCase.RawSourceKind.RAW_CHAIN_EVENT, "provider-a", null));
+			}
+		}).isInstanceOf(NullPointerException.class);
+		assertThat(revisionCount(kind, index)).isZero();
+	}
+
+	private String seedLegacyDimensionFact(FactKind kind, int index, String asset, String dimension) {
+		return seedLegacyDimensionFact(kind, index, asset, dimension,
+				kind == FactKind.PRICE ? "price-v1" : "liquidity-v1");
+	}
+
+	private String seedLegacyDimensionFact(FactKind kind, int index, String asset, String dimension, String derivation) {
+		var source = identity(index);
+		var sourceKind = RecordMarketFactUseCase.RawSourceKind.RAW_CHAIN_EVENT;
+		var sourceIdentity = VersionedFactFingerprint.sourceIdentity(sourceKind, source, "provider-a");
+		var rawHash = versionedStore.rawPayloadHash(sourceKind, source, "provider-a");
+		var key = VersionedFactFingerprint.revision(kind.name(), source, sourceIdentity, rawHash,
+				derivation, asset + "|" + dimension);
+		if (kind == FactKind.PRICE) {
+			var observation = dimensionPrice(index, asset, dimension, "1.500000000000000000");
+			versionedStore.storePrice(observation, key, VersionedFactFingerprint.priceContent(observation, key),
+					sourceIdentity, rawHash, derivation, sourceKind);
+		}
+		else {
+			var observation = dimensionLiquidity(index, asset, dimension, "50000.00000000");
+			versionedStore.storeLiquidity(observation, key, VersionedFactFingerprint.liquidityContent(observation, key),
+					sourceIdentity, rawHash, derivation, sourceKind);
+		}
+		return key;
+	}
+
+	@ParameterizedTest
+	@EnumSource(value = FactKind.class, names = {"PRICE", "LIQUIDITY"})
+	void recognizesSavedV1AndV2FieldsAndRejectsUnmatchedEvidence(FactKind kind) {
+		int index = kind == FactKind.PRICE ? 61 : 62;
+		storeRawPriceSource(index);
+		// Derivation text is original provenance, even when it happens to start with this text.
+		var originalVersion = "identity-v2/original|版本";
+		try {
+			var oldKey = seedLegacyDimensionFact(kind, index, "a|b", "c", originalVersion);
+			var savedOld = versionedStore.findRevisionIdentity(kind, oldKey).orElseThrow();
+			assertThat(savedOld.canonicalIdentity()).isEqualTo(identity(index));
+			assertThat(savedOld.asset()).isEqualTo("a|b");
+			assertThat(savedOld.dimension()).isEqualTo("c");
+			assertThat(savedOld.derivationVersion()).isEqualTo(originalVersion);
+			assertThat(VersionedFactFingerprint.revisionVersion(savedOld))
+					.isEqualTo(VersionedFactFingerprint.RevisionVersion.V1);
+			var newVersion = originalVersion + "/new";
+			var newKey = writeDimensionFact(kind, index, newVersion);
+			var savedNew = versionedStore.findRevisionIdentity(kind, newKey).orElseThrow();
+			assertThat(savedNew.derivationVersion()).isEqualTo(newVersion);
+			assertThat(savedNew.sourceIdentity()).isEqualTo(savedOld.sourceIdentity());
+			assertThat(savedNew.rawPayloadHash()).isEqualTo(savedOld.rawPayloadHash());
+			assertThat(VersionedFactFingerprint.revisionVersion(savedNew))
+					.isEqualTo(VersionedFactFingerprint.RevisionVersion.V2);
+			assertThat(versionedStore.findRevisionIdentity(kind, "sha256:" + "0".repeat(64))).isEmpty();
+			for (var key : List.of(oldKey, newKey)) {
+				// Corrupt isolated fixture provenance to prove that unmatched saved evidence is explicit.
+				jdbcClient.sql("UPDATE marketdata." + revisionTable(kind)
+						+ " SET derivation_version = 'unmatched-original' WHERE revision_key = :key")
+						.param("key", key).update();
+				var unmatched = versionedStore.findRevisionIdentity(kind, key).orElseThrow();
+				assertThatThrownBy(() -> VersionedFactFingerprint.revisionVersion(unmatched))
+						.isInstanceOf(IllegalStateException.class).hasMessageContaining("Invalid revision identity version");
+			}
+			assertThatThrownBy(() -> writeDimensionFact(kind, index, originalVersion))
+					.isInstanceOf(IllegalStateException.class).hasMessageContaining("Invalid revision identity version");
+			assertThat(revisionCount(kind, index)).isEqualTo(2);
+		}
+		finally {
+			deleteRevisions(kind, index);
+		}
+	}
+
+	private String writeDimensionFact(FactKind kind, int index, String derivation) {
+		var sourceKind = RecordMarketFactUseCase.RawSourceKind.RAW_CHAIN_EVENT;
+		return kind == FactKind.PRICE
+				? useCase.storeVersionedPrice(new RecordMarketFactUseCase.VersionedPriceRequest(
+						dimensionPrice(index, "a|b", "c", "1.500000000000000000"), sourceKind, "provider-a", derivation)).revisionKey()
+				: useCase.storeVersionedLiquidity(new RecordMarketFactUseCase.VersionedLiquidityRequest(
+						dimensionLiquidity(index, "a|b", "c", "50000.00000000"), sourceKind, "provider-a", derivation)).revisionKey();
+	}
+
+	@Test
+	void identityVersionRejectsNeitherOrBothCandidateMatches() {
+		var key = "sha256:" + "1".repeat(64);
+		var other = "sha256:" + "2".repeat(64);
+		assertThatThrownBy(() -> VersionedFactFingerprint.revisionVersion(key, other, other))
+				.isInstanceOf(IllegalStateException.class).hasMessageContaining("exactly one v1/v2 match");
+		// Exercise the exactly-one comparison branch; this does not claim a real SHA-256 collision.
+		assertThatThrownBy(() -> VersionedFactFingerprint.revisionVersion(key, key, key))
+				.isInstanceOf(IllegalStateException.class).hasMessageContaining("exactly one v1/v2 match");
+	}
+
+	private String revisionTable(FactKind kind) {
+		return kind == FactKind.PRICE ? "price_revisions" : "liquidity_revisions";
+	}
+
+	private int revisionCount(FactKind kind, int index) {
+		return jdbcClient.sql("SELECT count(*) FROM marketdata." + revisionTable(kind) + " WHERE transaction_value = :transaction")
+				.param("transaction", identity(index).transactionId().value()).query(Integer.class).single();
+	}
+
+	private void deleteRevisions(FactKind kind, int index) {
+		jdbcClient.sql("DELETE FROM marketdata." + revisionTable(kind) + " WHERE transaction_value = :transaction")
+				.param("transaction", identity(index).transactionId().value()).update();
+	}
+
+	@Test
+	void priceRevisionSeparatesOpaqueDimensionsAndRetainsEqualRetryAndConflict() {
+		storeRawPriceSource(41);
+		try {
+			var left = dimensionPrice(41, "a|b", "c", "1.500000000000000000");
+			var right = dimensionPrice(41, "a", "b|c", "1.500000000000000000");
+			var first = useCase.storeVersionedPrice(priceRequest(left));
+			var second = new AtomicReference<RecordMarketFactUseCase.VersionedPriceResult>();
+			assertThatCode(() -> second.set(useCase.storeVersionedPrice(priceRequest(right))))
+					.as("distinct asset/venue tuples must coexist under distinct revision keys")
+					.doesNotThrowAnyException();
+			assertThat(second.get().revisionKey()).isNotEqualTo(first.revisionKey());
+			assertThat(useCase.storeVersionedPrice(priceRequest(left))).isEqualTo(first);
+			assertThat(first.evidenceVersion()).isEqualTo("EXPLICIT_REVISION_V2");
+			assertThat(second.get().evidenceVersion()).isEqualTo("EXPLICIT_REVISION_V2");
+			for (var result : List.of(first, second.get())) {
+				var evidence = marketData.versionedFact(new RevisionReference(FactKind.PRICE,
+						identity(41), result.revisionKey())).orElseThrow();
+				assertThat(evidence.derivationVersion()).isEqualTo("price-v1");
+				assertThat(evidence.sourceIdentity()).isEqualTo(VersionedFactFingerprint.sourceIdentity(
+						RecordMarketFactUseCase.RawSourceKind.RAW_CHAIN_EVENT, identity(41), "provider-a"));
+				assertThat(evidence.rawPayloadHash()).isEqualTo(versionedStore.rawPayloadHash(
+						RecordMarketFactUseCase.RawSourceKind.RAW_CHAIN_EVENT, identity(41), "provider-a"));
+				assertThat(jdbcClient.sql("SELECT asset_address, venue FROM marketdata.price_revisions WHERE revision_key = :key")
+						.param("key", result.revisionKey()).query((row, index) -> List.of(
+								row.getString("asset_address"), row.getString("venue"))).single())
+						.containsExactly(result.observation().asset().value(), result.observation().venue());
+			}
+			assertThatThrownBy(() -> useCase.storeVersionedPrice(priceRequest(
+					dimensionPrice(41, "a|b", "c", "9.000000000000000000"))))
+					.isInstanceOf(MarketFactConflictException.class);
+			assertThat(jdbcClient.sql("SELECT count(*) FROM marketdata.price_revisions WHERE transaction_value = 'fixture-tx-41'")
+					.query(Integer.class).single()).isEqualTo(2);
+			assertThat(jdbcClient.sql("SELECT price FROM marketdata.price_revisions WHERE revision_key = :key")
+					.param("key", first.revisionKey()).query(BigDecimal.class).single()).isEqualByComparingTo(left.price());
+		}
+		finally {
+			jdbcClient.sql("DELETE FROM marketdata.price_revisions WHERE transaction_value = 'fixture-tx-41'").update();
+		}
+	}
+
+	@Test
+	void liquidityRevisionSeparatesOpaqueDimensionsAndRetainsEqualRetryAndConflict() {
+		storeRawPriceSource(42);
+		try {
+			var left = dimensionLiquidity(42, "a|b", "c", "50000.00000000");
+			var right = dimensionLiquidity(42, "a", "b|c", "50000.00000000");
+			var first = useCase.storeVersionedLiquidity(liquidityRequest(left));
+			var second = new AtomicReference<RecordMarketFactUseCase.VersionedLiquidityResult>();
+			assertThatCode(() -> second.set(useCase.storeVersionedLiquidity(liquidityRequest(right))))
+					.as("distinct asset/pool tuples must coexist under distinct revision keys")
+					.doesNotThrowAnyException();
+			assertThat(second.get().revisionKey()).isNotEqualTo(first.revisionKey());
+			assertThat(useCase.storeVersionedLiquidity(liquidityRequest(left))).isEqualTo(first);
+			assertThat(first.evidenceVersion()).isEqualTo("EXPLICIT_REVISION_V2");
+			assertThat(second.get().evidenceVersion()).isEqualTo("EXPLICIT_REVISION_V2");
+			for (var result : List.of(first, second.get())) {
+				var evidence = marketData.versionedFact(new RevisionReference(FactKind.LIQUIDITY,
+						identity(42), result.revisionKey())).orElseThrow();
+				assertThat(evidence.derivationVersion()).isEqualTo("liquidity-v1");
+				assertThat(jdbcClient.sql("SELECT asset_address, pool_address FROM marketdata.liquidity_revisions WHERE revision_key = :key")
+						.param("key", result.revisionKey()).query((row, index) -> List.of(
+								row.getString("asset_address"), row.getString("pool_address"))).single())
+						.containsExactly(result.observation().asset().value(), result.observation().poolAddress());
+			}
+			assertThatThrownBy(() -> useCase.storeVersionedLiquidity(liquidityRequest(
+					dimensionLiquidity(42, "a|b", "c", "90000.00000000"))))
+					.isInstanceOf(MarketFactConflictException.class);
+			assertThat(jdbcClient.sql("SELECT count(*) FROM marketdata.liquidity_revisions WHERE transaction_value = 'fixture-tx-42'")
+					.query(Integer.class).single()).isEqualTo(2);
+			assertThat(jdbcClient.sql("SELECT liquidity_usd FROM marketdata.liquidity_revisions WHERE revision_key = :key")
+					.param("key", first.revisionKey()).query(BigDecimal.class).single()).isEqualByComparingTo(left.liquidityUsd());
+		}
+		finally {
+			jdbcClient.sql("DELETE FROM marketdata.liquidity_revisions WHERE transaction_value = 'fixture-tx-42'").update();
+		}
+	}
+
+	private PriceObservation dimensionPrice(int index, String asset, String venue, String value) {
+		var original = price(index, T1, value);
+		return new PriceObservation(original.source(), new AssetId(CHAIN, asset), original.quoteAsset(), venue,
+				original.price(), original.tradeNotionalQuote(), original.blockPosition(), original.observedAt(),
+				original.confidence(), original.provider(), original.sourceEventTime());
+	}
+
+	private LiquidityObservation dimensionLiquidity(int index, String asset, String pool, String value) {
+		var original = liquidity(index, T1, value);
+		return new LiquidityObservation(original.source(), new AssetId(CHAIN, asset), pool, original.quoteAsset(),
+				original.liquidityUsd(), original.baseReserve(), original.quoteReserve(), original.blockPosition(),
+				original.observedAt(), original.confidence(), original.provider(), original.sourceEventTime());
+	}
+
+	private RecordMarketFactUseCase.VersionedPriceRequest priceRequest(PriceObservation observation) {
+		return new RecordMarketFactUseCase.VersionedPriceRequest(observation,
+				RecordMarketFactUseCase.RawSourceKind.RAW_CHAIN_EVENT, "provider-a", "price-v1");
+	}
+
+	private RecordMarketFactUseCase.VersionedLiquidityRequest liquidityRequest(LiquidityObservation observation) {
+		return new RecordMarketFactUseCase.VersionedLiquidityRequest(observation,
+				RecordMarketFactUseCase.RawSourceKind.RAW_CHAIN_EVENT, "provider-a", "liquidity-v1");
+	}
+
+	@Test
+	void oldRevisionKeysAndFrozenReferencesRemainExactAfterV2Writes() {
+		storeRawPriceSource(43);
+		var source = identity(43);
+		var kind = RecordMarketFactUseCase.RawSourceKind.RAW_CHAIN_EVENT;
+		var sourceIdentity = VersionedFactFingerprint.sourceIdentity(kind, source, "provider-a");
+		var rawHash = versionedStore.rawPayloadHash(kind, source, "provider-a");
+		var oldPrice = price(43, T1, "1.500000000000000000");
+		var oldLiquidity = liquidity(43, T1, "50000.00000000");
+		// Literal historical keys are independent of the new write-boundary encoder.
+		var oldPriceKey = "sha256:76b529945543b3f2cfa10e7268d934dd08e02686144a0108489edc1d95b7d0b1";
+		var oldLiquidityKey = "sha256:b5eba154c94a18827aa9f40f3971b30ea6dc2c2ab544c288b0a574c67125d439";
+		assertThat(VersionedFactFingerprint.revision("PRICE", source, sourceIdentity, rawHash,
+				"price-v1", oldPrice.asset().value() + "|" + oldPrice.venue())).isEqualTo(oldPriceKey);
+		assertThat(VersionedFactFingerprint.revision("LIQUIDITY", source, sourceIdentity, rawHash,
+				"liquidity-v1", oldLiquidity.asset().value() + "|" + oldLiquidity.poolAddress())).isEqualTo(oldLiquidityKey);
+		String snapshotId = null;
+		try {
+			versionedStore.storePrice(oldPrice, oldPriceKey, VersionedFactFingerprint.priceContent(oldPrice, oldPriceKey),
+					sourceIdentity, rawHash, "price-v1", kind);
+			versionedStore.storeLiquidity(oldLiquidity, oldLiquidityKey,
+					VersionedFactFingerprint.liquidityContent(oldLiquidity, oldLiquidityKey),
+					sourceIdentity, rawHash, "liquidity-v1", kind);
+			var priceRef = new RevisionReference(FactKind.PRICE, source, oldPriceKey);
+			var liquidityRef = new RevisionReference(FactKind.LIQUIDITY, source, oldLiquidityKey);
+			var oldPriceEvidence = marketData.versionedFact(priceRef).orElseThrow();
+			var oldLiquidityEvidence = marketData.versionedFact(liquidityRef).orElseThrow();
+			assertThat(oldPriceEvidence.derivationVersion()).isEqualTo("price-v1");
+			assertThat(oldLiquidityEvidence.derivationVersion()).isEqualTo("liquidity-v1");
+			var scope = new MarketDataApi.SelectionScope(CHAIN, List.of(ASSET), T1, T1,
+					List.of(FactKind.PRICE, FactKind.LIQUIDITY), List.of(), List.of(), T1.minusSeconds(1), T1);
+			var snapshot = marketData.finalizeVersioned(new MarketDataApi.VersionedFinalizeRequest(
+					"length-prefixed-v2", T1, scope, List.of(priceRef, liquidityRef), List.of(),
+					"explicit-revisions-v1", "modeled-history-v1", MarketDataApi.AvailabilityStatus.HISTORICAL_MODEL));
+			snapshotId = snapshot.snapshotId();
+			var frozen = marketData.versionedSnapshotEvidence(snapshot.fingerprint()).orElseThrow();
+			var priceRow = revisionRow("price_revisions", oldPriceKey);
+			var liquidityRow = revisionRow("liquidity_revisions", oldLiquidityKey);
+			var usd = useCase.storeVersionedUsd(new RecordMarketFactUseCase.VersionedUsdRequest(
+					usd(43, 43, "1.800000000000000000"), oldPriceKey, oldPriceKey));
+			var newPrice = useCase.storeVersionedPrice(new RecordMarketFactUseCase.VersionedPriceRequest(
+					oldPrice, kind, "provider-a", "price-v2"));
+			var newLiquidity = useCase.storeVersionedLiquidity(new RecordMarketFactUseCase.VersionedLiquidityRequest(
+					oldLiquidity, kind, "provider-a", "liquidity-v2"));
+			assertThat(newPrice.revisionKey()).as("v2 writes must not reuse a recorded v1 key").isNotEqualTo(oldPriceKey);
+			assertThat(newLiquidity.revisionKey()).isNotEqualTo(oldLiquidityKey);
+			assertThat(marketData.versionedFact(priceRef)).contains(oldPriceEvidence);
+			assertThat(marketData.versionedFact(liquidityRef)).contains(oldLiquidityEvidence);
+			assertThat(marketData.versionedFact(new RevisionReference(FactKind.PRICE, identity(44), oldPriceKey))).isEmpty();
+			assertThat(marketData.versionedSnapshotEvidence(snapshot.fingerprint())).contains(frozen);
+			assertThat(revisionRow("price_revisions", oldPriceKey)).isEqualTo(priceRow);
+			assertThat(revisionRow("liquidity_revisions", oldLiquidityKey)).isEqualTo(liquidityRow);
+			assertThat(marketData.versionedFact(new RevisionReference(FactKind.USD, source, usd.revisionKey())))
+					.isPresent().get().satisfies(evidence -> {
+						assertThat(evidence.convertedPriceRevisionKey()).isEqualTo(oldPriceKey);
+						assertThat(evidence.quotePriceRevisionKey()).isEqualTo(oldPriceKey);
+					});
+			assertThat(usd.evidenceVersion()).isEqualTo("EXPLICIT_REVISION_V1");
+		}
+		finally {
+			if (snapshotId != null) {
+				jdbcClient.sql("DELETE FROM marketdata.v2_dataset_snapshot_members WHERE snapshot_id = :id").param("id", snapshotId).update();
+				jdbcClient.sql("DELETE FROM marketdata.v2_dataset_snapshots WHERE snapshot_id = :id").param("id", snapshotId).update();
+			}
+			jdbcClient.sql("DELETE FROM marketdata.usd_revisions WHERE transaction_value = 'fixture-tx-43'").update();
+			jdbcClient.sql("DELETE FROM marketdata.price_revisions WHERE transaction_value = 'fixture-tx-43'").update();
+			jdbcClient.sql("DELETE FROM marketdata.liquidity_revisions WHERE transaction_value = 'fixture-tx-43'").update();
+		}
+	}
+
+	private String revisionRow(String table, String key) {
+		return jdbcClient.sql("SELECT row_to_json(r)::text FROM marketdata." + table + " r WHERE revision_key = :key")
+				.param("key", key).query(String.class).single();
+	}
 
 	@Autowired
 	MarketFactStorageIT(RecordMarketFactUseCase useCase, StoreRawObservationUseCase rawStore,

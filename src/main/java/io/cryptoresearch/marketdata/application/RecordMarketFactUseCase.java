@@ -8,6 +8,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import io.cryptoresearch.kernel.api.AssetId;
 import io.cryptoresearch.marketdata.api.MarketDataApi.NormalizedSwapIdentity;
+import io.cryptoresearch.marketdata.api.MarketDataApi.FactKind;
 
 @Service
 public class RecordMarketFactUseCase {
@@ -52,12 +53,16 @@ public class RecordMarketFactUseCase {
 		var rawHash = versionedStore.rawPayloadHash(request.sourceKind(), observation.source(), request.sourceProvider());
 		var sourceIdentity = VersionedFactFingerprint.sourceIdentity(request.sourceKind(),
 				observation.source(), request.sourceProvider());
-		var key = VersionedFactFingerprint.revision("PRICE", observation.source(), sourceIdentity, rawHash,
-				request.derivationVersion(), observation.asset().value() + "|" + observation.venue());
+		var derivationVersion = Objects.requireNonNull(request.derivationVersion(),
+				"derivationVersion must not be null");
+		rejectLegacyRevision(FactKind.PRICE, observation.source(), observation.asset().value(), observation.venue(),
+				sourceIdentity, rawHash, derivationVersion);
+		var key = VersionedFactFingerprint.revisionV2("PRICE", observation.source(), sourceIdentity, rawHash,
+				derivationVersion, observation.asset().value(), "venue", observation.venue());
 		var digest = VersionedFactFingerprint.priceContent(observation, key);
 		versionedStore.storePrice(observation, key, digest, sourceIdentity, rawHash,
-				request.derivationVersion(), request.sourceKind());
-		return new VersionedPriceResult(observation, key, "EXPLICIT_REVISION_V1");
+				derivationVersion, request.sourceKind());
+		return new VersionedPriceResult(observation, key, "EXPLICIT_REVISION_V2");
 	}
 
 	@Transactional
@@ -70,12 +75,30 @@ public class RecordMarketFactUseCase {
 		var rawHash = versionedStore.rawPayloadHash(request.sourceKind(), observation.source(), request.sourceProvider());
 		var sourceIdentity = VersionedFactFingerprint.sourceIdentity(request.sourceKind(),
 				observation.source(), request.sourceProvider());
-		var key = VersionedFactFingerprint.revision("LIQUIDITY", observation.source(), sourceIdentity, rawHash,
-				request.derivationVersion(), observation.asset().value() + "|" + observation.poolAddress());
+		var derivationVersion = Objects.requireNonNull(request.derivationVersion(),
+				"derivationVersion must not be null");
+		rejectLegacyRevision(FactKind.LIQUIDITY, observation.source(), observation.asset().value(), observation.poolAddress(),
+				sourceIdentity, rawHash, derivationVersion);
+		var key = VersionedFactFingerprint.revisionV2("LIQUIDITY", observation.source(), sourceIdentity, rawHash,
+				derivationVersion, observation.asset().value(), "pool", observation.poolAddress());
 		var digest = VersionedFactFingerprint.liquidityContent(observation, key);
 		versionedStore.storeLiquidity(observation, key, digest, sourceIdentity, rawHash,
-				request.derivationVersion(), request.sourceKind());
-		return new VersionedLiquidityResult(observation, key, "EXPLICIT_REVISION_V1");
+				derivationVersion, request.sourceKind());
+		return new VersionedLiquidityResult(observation, key, "EXPLICIT_REVISION_V2");
+	}
+
+	private void rejectLegacyRevision(FactKind kind, NormalizedSwapIdentity source, String asset, String dimension,
+			String sourceIdentity, String rawHash, String derivationVersion) {
+		var legacyKey = VersionedFactFingerprint.revision(kind.name(), source, sourceIdentity, rawHash,
+				derivationVersion, asset + "|" + dimension);
+		var expected = new VersionedFactStore.RevisionIdentity(legacyKey, kind, source, asset, dimension,
+				sourceIdentity, rawHash, derivationVersion);
+		versionedStore.findRevisionIdentity(kind, legacyKey).ifPresent(saved -> {
+			if (VersionedFactFingerprint.revisionVersion(saved) == VersionedFactFingerprint.RevisionVersion.V1
+					&& saved.equals(expected)) {
+				throw new IllegalStateException("Legacy revision version conflict for " + source);
+			}
+		});
 	}
 
 	@Transactional
