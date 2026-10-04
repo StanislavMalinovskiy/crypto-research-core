@@ -118,3 +118,17 @@ The separately delegated guard-v2 wrapper SHALL preserve frozen monthly v1 code/
 - **WHEN** the remaining-month wrapper reads April finalized metadata or replay is requested for April
 - **THEN** its immutable pins/counters SHALL charge prior expenditure without changing April's native strict replay failure
 - **AND** the wrapper SHALL reject April source/replay and preserve frozen v1 identities; subsequent May/June guard lineage SHALL be verified separately before unchanged strict replay.
+
+### Requirement: Separate immutable April semantic diagnostic
+
+The separately delegated April diagnostic SHALL independently verify immutable semantic evidence under design's fixed read-only root, pins, finite input/time/output bounds, primitive reuse and exact non-timing replay checks without invoking original replay/source or changing any evidence. It SHALL report recorded temporal nonconformance separately, without normalization/tolerance, overall strict PASS or data admission. Meaningful RED/GREEN, independent review and actual Main gate/preflight SHALL precede its ONE invocation.
+
+#### Scenario: Semantics reproduce but recorded retry timing fails
+- **WHEN** all exact non-timing checks reproduce April summary/hash/ordered creations but recorded waits violate the original schedule
+- **THEN** the diagnostic SHALL report semanticIntegrity=PASS and recordedTiming=FAIL with actual ordinal/required/observed facts and native2 qualified disposition
+- **AND** historical strict replay SHALL remain INTEGRITY_ERROR with overallStrictPass=false and all cohort/D1 flags false.
+
+#### Scenario: Semantic evidence or finite reservation is invalid
+- **WHEN** any semantic/pin/hash/size/query/creation/summary check or fixed path/deadline/resource reservation fails
+- **THEN** the diagnostic SHALL stop explicitly without a successful semantic identity, retry or immutable write
+- **AND** Main SHALL stop before June pending delegated disposition; no timing-failure exception SHALL hide the semantic defect.
