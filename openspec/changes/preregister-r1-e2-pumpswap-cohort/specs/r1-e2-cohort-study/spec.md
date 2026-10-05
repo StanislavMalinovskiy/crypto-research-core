@@ -1,5 +1,7 @@
 ## Purpose
 
+Non-normative current repair3 checkpoint,2026-10-05: independent review APPROVE SHA256e319e58a62ca0ae5f4f2923ce1dbf4541fd5fa1ac604b2c250ec2b64fe35a953 plus actual targeted144/Maven201/zero failures/errors/skips and integrity/Docker/strict17/doctor/diffs native0 verifies tooling only. Global ALL-owned-account reconciliation precedes partition,as already required; no new rule or relaxed threshold. Historical clock-failure aggregate remains FAIL. Actual report2 is RUNNING,not approved qualification; source295/200-crosscheck/D1 pending,4600reserved credits carry. Tasks' repair3 checkpoint holds exact hashes/RED/GREEN/review provenance; normative requirements/frozen protocol/raw/old reports unchanged.
+
 Non-normative current implementation checkpoint,2026-10-05: independent `reviewer-d1-completion-repair1-final.md` APPROVE SHA256bc228e2205a1dd8f8e64a9f4473331928eb7b5439e3b34acc29374c1068c852c and saved actual checks verify new implementation tasks9.1–9.2 only. Main targeted105/native0 and Maven201/zero failures/errors/skips plus integrity/Docker/strict17/doctor/diffs passed; aggregate544/539PASS/5FAIL remains FAIL on immutable historical cutoff assertions. New first-five read-only analysis RUNNING is not qualification; source release/current D1/200-crosscheck remain pending,4600reserved credits carry. Exact hashes and caveats are in tasks' checkpoint; normative requirements, frozen protocol/raw/old terminal records are unchanged.
 
 Non-normative terminal evidence,2026-10-05: D1 INSUFFICIENT / TOOL_NOT_QUALIFIED_IN_WINDOW; H1/H2 INCONCLUSIVE, not tested. Final independent terminal review APPROVE verifies truthful reporting, not qualification. Final lifecycle requirement below remained planned/unimplemented/unverified; no requirements or thresholds are relaxed. Actual first-five evidence is5/300 tokens,46 pages,42832TX,2 complete/3 cap;295 not loaded,200-trade cross-check not run. Ownership/balances are present according to appointed-delegate read-only raw00001 observation; no source-wide absence conclusion. See [durable result](../../../../../docs/notes/R1_E2_D1_WINDOW_RESULT_2026-10-05.md). No further repair/read/source allowance, admission or archive.
@@ -9,6 +11,15 @@ Non-normative implementation evidence,2026-10-04T22:38:53Z: compatibility repair
 Defines separate R1-E2 historical creation-based cohort preregistration and a finite outcome-blind path diagnostic without changing frozen R1-E1 or claiming confirmatory source adequacy.
 
 ## ADDED Requirements
+
+### Requirement: Source-proved per-trader actions preserve global reconciliation
+
+The prospective analysis repair SHALL reconstruct one net economic action per uniquely proved trader as required by frozen E1§6.1,not reject a transaction solely because several actual users exist. Before partitioning it SHALL validate all actual legs/ownership/paths/transfers and reconcile unique scoped flows globally against shared vault/fee/owned-account states,then partition only uniquely proved trader-owned accounts and legs. Unknown/conflicting ownership,unscoped or duplicated flows and unreconciled global state SHALL remain explicit ambiguity/failure. Each `(chain,signature,trader)` SHALL have at most one net action with zero-net intermediates excluded,never route-leg summed volume. Transaction fee totals/proof SHALL remain distinguishable context,not duplicated per-action expense; only actual source-proved payer attribution SHALL determine trader cost. Nonpayer,ambiguous or unproved fee cost SHALL remain UNKNOWN/outside reconstructed numerator,never guessed split or zero. Actual-regression RED/GREEN,independent critical review and new exact analysis lineage SHALL precede renewed qualification; old reports/raw/protocol/source limits/D1 thresholds SHALL remain unchanged.
+
+#### Scenario: Distinct proved traders use the same pool in one transaction
+- **WHEN** actual ownership/events/paths and globally reconciled scoped transfers uniquely prove two traders sharing a pool
+- **THEN** analysis SHALL produce separate deterministic net actions for the proved traders without reusing shared-vault whole-transaction deltas as per-trader deltas
+- **AND** each source flow SHALL be counted once and network fees SHALL be context plus only proved attribution,with any unknown cost remaining non-RECONSTRUCTED.
 
 ### Requirement: Owner-authorized source-backed D1 completion
 

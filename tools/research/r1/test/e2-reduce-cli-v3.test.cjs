@@ -2,6 +2,13 @@
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
 const {fragments,h}=require('./pumpswap-analysis-adapter-v2.test.cjs'),{policy}=require('./e2-trade-reducer-v2.test.cjs');
 const filename=path.join(__dirname,'../e2-reduce-cli-v3.cjs'),cli=fs.existsSync(filename)?require(filename):require('../e2-reduce-cli.cjs');
+test('real shared-pool two-owner transaction produces two candidates and trader-matched variant proof with once-TX fee context',()=>{
+ const {realTwoTrader}=require('./e2-trade-reducer-v2.test.cjs'),raw=Buffer.from(realTwoTrader),c=cli.reductionConsumer(policy);c.consume(h.parse(raw),raw,{ordinal:1,tokenIndex:0,rawHash:'sha256:'+'1'.repeat(64)},12);
+ const r=c.finish({state:{selection:{tokens:[{mint:policy.cohortMints[0]}]},records:[]}}),candidates=r.crossCheckCandidates.flatMap(g=>g.candidates);
+ assert.equal(r.uniqueTransactions,1);assert.equal(r.economicActions,2);assert.equal(r.reconstructed,1);assert.equal(candidates.length,2);assert.equal(new Set(candidates.map(c=>c.actionId)).size,2);
+ assert.deepEqual(r.qualifiedVariants.map(p=>p.variant),['buy','sell']);assert.ok(r.qualifiedVariants.every(p=>p.action.legs.some(l=>l.variant===p.variant&&l.declaredTrader===p.action.trader)));
+ assert.equal(r.transactionFeeContext.observed,1);assert.equal(r.transactionFeeContext.formulaProven,1);assert.equal(r.transactionFeeContext.attributedPayerActions,1);assert.equal(r.transactionFeeContext.nonpayerUnknownActions,1);assert.equal(r.transactionFeeContext.unknownActionReasons.NONPAYER_COST_ATTRIBUTION_UNPROVED,1);assert.equal(r.transactionFeeContext.formulaUnknown,0);
+});
 test('versioned CLI consumes the actual opposite-orientation first-five proof',()=>{
  const c=cli.reductionConsumer(policy);const raw=Buffer.from(fragments[1].raw),row=h.parse(raw);c.consume(row,raw,{ordinal:1,tokenIndex:0,rawHash:'sha256:'+'1'.repeat(64)},3);
  const r=c.finish({snapshot:{selection:{tokens:[{mint:policy.cohortMints[0]}]},records:[]},scope:{records:0,tokens:5}});

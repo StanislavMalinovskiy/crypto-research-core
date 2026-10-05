@@ -5,7 +5,7 @@ const legacy=require('./pumpswap-analysis-adapter-v1.cjs'),h=require('./explorat
 const PUMP='pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA',TOKEN='TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA',SYSTEM='11111111111111111111111111111111';
 const WSOL='So11111111111111111111111111111111111111112',ATA='ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL';
 const alphabet='123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
-const ANALYSIS={...legacy.ANALYSIS,version:'pumpswap-analysis-adapter-v2',proofVersion:'owned-lifecycle-event-v2',deployment:'UNVERIFIED'};
+const ANALYSIS={...legacy.ANALYSIS,version:'pumpswap-analysis-adapter-v2',proofVersion:'owned-lifecycle-event-global-per-trader-v3',deployment:'UNVERIFIED'};
 const need=(v,c='INPUT_INVALID')=>{if(!v)throw Error(c);};
 const integer=v=>{const n=Number(v);need(/^(0|[1-9][0-9]*)$/.test(String(v))&&Number.isSafeInteger(n));return n;};
 const same=(a,b)=>h.canonical(a)===h.canonical(b);
@@ -65,6 +65,7 @@ function lifecycle(ctx,rawStates,invocations){
  }
  return states;
 }
+function eventFrames(ctx,parent){return ctx.records.filter(r=>r.program===PUMP&&same(r.path.slice(0,-1),parent.path)&&r.data.subarray(0,8).toString('hex')==='e445a52e51cb9a1d'&&['3e2f370aa503dc2a','67f4521f2cf57777'].includes(r.data.subarray(8,16).toString('hex')));}
 function event(r,parent){
  if(r.program!==PUMP||r.accounts.length!==1||!same(r.path.slice(0,-1),parent.path)||parent.accounts[15]!==r.accounts[0]||parent.accounts[16]!==PUMP)return null;
  const b=r.data;if(b.length<16||b.subarray(0,8).toString('hex')!=='e445a52e51cb9a1d')return null;
@@ -97,11 +98,11 @@ function mapHeliusTransaction(bytes,rawHash){
    const variant={'33e685a4017f83ad':'sell','66063d1201daebea':'buy','c62e1552b4d9e870':'buy_exact_quote_in'}[r.data.subarray(0,8).toString('hex')];if(!variant)continue;
    const old=m.invocations.find(v=>same(v.instructionAddress,r.path)),v={...old,variant,identity:{chain:m.configuration.chain,signature:raw.transaction.signatures[0],instructionAddress:r.path},instructionAddress:r.path,event:null,layoutProof:idlLayout(r)};
    for(const [name,index] of Object.entries({pool:0,declaredTrader:1,baseMint:3,quoteMint:4,userBase:5,userQuote:6,poolBaseVault:7,poolQuoteVault:8,creatorAccount:17,creatorAuthority:18}))v[name]=r.accounts[index]??null;
-   const matches=ctx.records.map(x=>event(x,r)).filter(Boolean);if(matches.length===1){v.event=matches[0];events.push(matches[0]);}
+   const matches=ctx.records.map(x=>event(x,r)).filter(Boolean);v.eventSourceConflict=eventFrames(ctx,r).length!==matches.length||matches.length>1;if(matches.length===1){v.event=matches[0];events.push(matches[0]);}
    invocations.push(v);
   }
   const states=lifecycle(ctx,m.tokenStates,invocations),tx=transfers(ctx,invocations);
-  for(const v of invocations){const r=ctx.byPath.get(v.instructionAddress.join('.'));if(raw.meta.err!==null){v.reason='FAILED_TRANSACTION';continue;}if(r.accounts[11]!==TOKEN||r.accounts[12]!==TOKEN){v.reason='UNSUPPORTED_TOKEN_PROGRAM';continue;}
+  for(const v of invocations){const r=ctx.byPath.get(v.instructionAddress.join('.'));if(raw.meta.err!==null){v.reason='FAILED_TRANSACTION';continue;}if(v.eventSourceConflict){v.reason='EVENT_SOURCE_CONFLICT';continue;}if(r.accounts[11]!==TOKEN||r.accounts[12]!==TOKEN){v.reason='UNSUPPORTED_TOKEN_PROGRAM';continue;}
    const prefixValid=r.accounts[13]===SYSTEM&&r.accounts[14]===ATA&&r.accounts[16]===PUMP&&v.baseMint!==v.quoteMint&&new Set([v.userBase,v.userQuote,v.poolBaseVault,v.poolQuoteVault]).size===4;
    if(v.event&&prefixValid&&eventFlows(v,tx,states)){v.reason=null;v.layoutApplicability='OBSERVED_SAME_INVOCATION_EVENT';}
    else if(!v.event&&v.layoutProof){v.reason=null;v.layoutApplicability=v.layoutProof.applicability;}
@@ -115,4 +116,4 @@ function mapHeliusTransaction(bytes,rawHash){
   m.factsHash=h.fingerprint(ANALYSIS.version+'-facts',{rawHash,invocations,proof:m.analysisProof,events,originalFactsHash:m.factsHash});delete m.reportHash;m.reportHash=h.fingerprint(ANALYSIS.version,m);need(Buffer.byteLength(JSON.stringify(m))<=2000000,'OUTPUT_LIMIT');return m;
  }catch(e){return {...m,status:'OFFLINE_MAPPING_PARTIAL',analysisFailure:e.message??'INPUT_INVALID'};}
 }
-module.exports={mapBlock:legacy.mapBlock,mapHeliusTransaction,ANALYSIS,context,decode,encode,compare,ancestor,stable,eventFlows,deriveLifecycle:lifecycle,deriveTransfers:transfers,decodeEvent:event,idlLayout};
+module.exports={mapBlock:legacy.mapBlock,mapHeliusTransaction,ANALYSIS,context,decode,encode,compare,ancestor,stable,eventFlows,deriveLifecycle:lifecycle,deriveTransfers:transfers,decodeEvent:event,eventFrames,idlLayout};
