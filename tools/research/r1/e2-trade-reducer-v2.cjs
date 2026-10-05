@@ -4,9 +4,9 @@ const VERSION='e2-trade-reducer-v2',PUMP='pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52F
 const CU='ComputeBudget111111111111111111111111111111',WSOL='So11111111111111111111111111111111111111112';
 const QUOTES=[WSOL,'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v','Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB'];
 const PRECOMPILES=new Set(['Ed25519SigVerify111111111111111111111111111','KeccakSecp256k11111111111111111111111111111','Secp256r1SigVerify1111111111111111111111111']);
-const FEE_SOURCES=['https://solana.com/docs/core/fees/fee-structure','https://raw.githubusercontent.com/solana-labs/solana/v1.18.26/program-runtime/src/prioritization_fee.rs','https://raw.githubusercontent.com/solana-labs/solana/v1.18.26/sdk/src/fee.rs'];
+const FEE_SOURCES=['https://raw.githubusercontent.com/solana-labs/solana/v1.18.26/program-runtime/src/compute_budget_processor.rs','https://solana.com/docs/core/fees/fee-structure','https://raw.githubusercontent.com/solana-labs/solana/v1.18.26/program-runtime/src/prioritization_fee.rs','https://raw.githubusercontent.com/solana-labs/solana/v1.18.26/sdk/src/fee.rs'];
 const same=(a,b)=>h.canonical(a)===h.canonical(b),need=(v,reason,status='MISSING_LEG')=>{if(!v)throw {reason,status};};
-const DERIVATION_REVISION='global-reconcile-all-owned-trader-partition-v4';
+const DERIVATION_REVISION='global-reconcile-all-owned-data-only-compute-budget-v5';
 const number=v=>{const n=Number(v);need(/^(0|[1-9][0-9]*)$/.test(String(v))&&Number.isSafeInteger(n),'INPUT_INVALID');return n;};
 const amount=v=>{need(typeof v==='string'&&/^(0|[1-9][0-9]{0,19})$/.test(v)&&BigInt(v)<=18446744073709551615n,'RAW_AMOUNT_INVALID');return BigInt(v);};
 function fees(raw,ctx,trader){
@@ -17,10 +17,10 @@ function fees(raw,ctx,trader){
   need(n<=raw.transaction.message.accountKeys.length&&number(header.numReadonlySignedAccounts)<n&&number(header.numReadonlyUnsignedAccounts)<=raw.transaction.message.accountKeys.length-n,'FEE_SIGNATURES_UNPROVED');
   need(!ctx.records.some(r=>PRECOMPILES.has(r.program)),'FEE_PRECOMPILE_UNPROVED');
   const cb=ctx.records.filter(r=>r.program===CU),p=cb.filter(r=>r.data[0]===3),l=cb.filter(r=>r.data[0]===2);
-  need(cb.every(r=>r.path.length===1&&r.accounts.length===0)&&new Set(cb.map(r=>r.data[0])).size===cb.length&&p.length===1&&l.length===1&&p[0].data.length===9&&l[0].data.length===5&&cb.every(r=>[2,3].includes(r.data[0])||[1,4].includes(r.data[0])&&r.data.length===5),'FEE_COMPUTE_BUDGET_UNPROVED');
+  need(cb.every(r=>r.path.length===1)&&new Set(cb.map(r=>r.data[0])).size===cb.length&&p.length===1&&l.length===1&&p[0].data.length===9&&l[0].data.length===5&&cb.every(r=>[2,3].includes(r.data[0])||[1,4].includes(r.data[0])&&r.data.length===5),'FEE_COMPUTE_BUDGET_UNPROVED');
   const price=p[0].data.readBigUInt64LE(1),limit=BigInt(l[0].data.readUInt32LE(1));need(limit>0n&&limit<=1400000n,'FEE_COMPUTE_LIMIT_UNPROVED');const base=5000n*BigInt(n),priority=(price*limit+999999n)/1000000n;
   need(base+priority===BigInt(f.total),'FEE_EQUATION_MISMATCH');f.base=base.toString();f.priority=priority.toString();f.splitStatus='PROVEN';f.reason=null;
-  f.proof={version:'explicit-compute-budget-observed-equality-v2',requiredSignatures:n,priceMicroLamports:price.toString(),requestedLimit:limit.toString(),pricePath:p[0].path,limitPath:l[0].path,formula:'5000*signatures+ceil(price*requestedLimit/1000000)',sources:FEE_SOURCES};
+  f.proof={version:'explicit-compute-budget-data-only-observed-equality-v3',requiredSignatures:n,priceMicroLamports:price.toString(),requestedLimit:limit.toString(),pricePath:p[0].path,limitPath:l[0].path,formula:'5000*signatures+ceil(price*requestedLimit/1000000)',sources:FEE_SOURCES};
  }catch(e){f.reason=e.reason??'FEE_TOTAL_MISSING_OR_INVALID';}return f;
 }
 function reduceTransaction(input){
