@@ -1,5 +1,7 @@
 ## Purpose
 
+Non-normative current implementation checkpoint,2026-10-05: independent `reviewer-d1-completion-repair1-final.md` APPROVE SHA256bc228e2205a1dd8f8e64a9f4473331928eb7b5439e3b34acc29374c1068c852c and saved actual checks verify new implementation tasks9.1–9.2 only. Main targeted105/native0 and Maven201/zero failures/errors/skips plus integrity/Docker/strict17/doctor/diffs passed; aggregate544/539PASS/5FAIL remains FAIL on immutable historical cutoff assertions. New first-five read-only analysis RUNNING is not qualification; source release/current D1/200-crosscheck remain pending,4600reserved credits carry. Exact hashes and caveats are in tasks' checkpoint; normative requirements, frozen protocol/raw/old terminal records are unchanged.
+
 Non-normative terminal evidence,2026-10-05: D1 INSUFFICIENT / TOOL_NOT_QUALIFIED_IN_WINDOW; H1/H2 INCONCLUSIVE, not tested. Final independent terminal review APPROVE verifies truthful reporting, not qualification. Final lifecycle requirement below remained planned/unimplemented/unverified; no requirements or thresholds are relaxed. Actual first-five evidence is5/300 tokens,46 pages,42832TX,2 complete/3 cap;295 not loaded,200-trade cross-check not run. Ownership/balances are present according to appointed-delegate read-only raw00001 observation; no source-wide absence conclusion. See [durable result](../../../../../docs/notes/R1_E2_D1_WINDOW_RESULT_2026-10-05.md). No further repair/read/source allowance, admission or archive.
 
 Non-normative implementation evidence,2026-10-04T22:38:53Z: compatibility repair1 independent APPROVE and Main's renewed full/scoped checks are recorded with exact analysis/capture hashes in tasks' compatibility checkpoint. Adapter/CLI implementation is reviewed; actual renewed first-five qualification is NOT_RUN, original source continuation HOLD,8.5–8.8/8.10 unchecked. No requirement, threshold, accepted raw, frozen protocol or cumulative budget changes are made by this status note.
@@ -7,6 +9,22 @@ Non-normative implementation evidence,2026-10-04T22:38:53Z: compatibility repair
 Defines separate R1-E2 historical creation-based cohort preregistration and a finite outcome-blind path diagnostic without changing frozen R1-E1 or claiming confirmatory source adequacy.
 
 ## ADDED Requirements
+
+### Requirement: Owner-authorized source-backed D1 completion
+
+The new owner-authorized continuation SHALL preserve frozen protocol/old tools/raw/manifests/receipts and prior terminal results, and SHALL use new versioned analysis and thin operational entrypoints under design's exact assigned paths. Source-backed missing-side lifecycle SHALL require successful matching initialization before use or closure after use; absent rows or CreateIdempotent alone SHALL NOT prove zero. Economic direction SHALL derive from exact owned cohort/supported-quote flows for either actual pool orientation, not AMM variant labels. Layout support SHALL require pinned official IDL or uniquely associated same-invocation event identities/amounts agreeing with actual trader/vault/fee flows. Explicit ComputeBudget price/limit and actual signatures SHALL prove exact base5000×signatures plus ceiling(price×limit/1000000) equal actual meta.fee, with correct attribution and no unaccounted regime/precompile ambiguity; otherwise fees SHALL remain undetermined outside reconstructed numerator. Meaningful actual-regression RED/GREEN and independent critical review SHALL precede qualified use; no new statistical/nonzero reconstructed-count threshold SHALL be imposed.
+
+After actual reviewed first-five qualification, fresh-root continuation SHALL reuse original exported pure capture semantics, link old first-five evidence read-only,skip its terminal tokens and carry4600 reserved credits into unchanged450000 global/14pages1400 per-token limits. It SHALL use real-clock prospective24h execution bounds under delegated552fd850,not spoof time or mutate the old runner/root. All retained/temp/output evidence SHALL remain≤50GB with≥30GB free and80/100% controls; paid/holdout/outcomes/replacements SHALL remain prohibited. Prior reader byte/time caps,5min replay guard,last-repair count and expired old execution deadline SHALL NOT be terminal criteria for this newly authorized work; actual costs SHALL remain cumulatively reported without retrospective erasure. Main SHALL inspect progress/blocked handoffs at most every10min; about6h SHALL produce a delegate checkpoint,not automatic STOP. Sequential exact verification/reduction of linked5+295 and ONE aggregate200-trade venue/month raw cross-check SHALL measure unchanged§8.2–8.3 criteria. Unproved coverage/fields SHALL remain unavailable/unmeasured; no source-wide data insufficiency or no-edge conclusion SHALL be inferred from tool rejection alone.
+
+#### Scenario: Real captured accounts initialize during a reverse-orientation swap
+- **WHEN** exact successful same-account lifecycle and uniquely associated invocation/event/transfer facts prove owned cohort/supported-quote flows despite absent pre/post rows or reversed pool orientation
+- **THEN** new analysis SHALL preserve original raw and separately version the proved economic action with exact quantities/fee status and lineage
+- **AND** failed/conflicting/unproved lifecycle,event,layout,fee or ownership evidence SHALL remain explicit unknown or unsupported rather than be zero-filled or admitted.
+
+#### Scenario: New continuation follows the old terminal window
+- **WHEN** independently reviewed first-five qualification and actual current preflight permit remaining295 under the new owner authorization
+- **THEN** new operational lineage SHALL link old5 read-only,skip their pages and preserve the total ledger/filter/cursor/fixed cohort while using the prospectively configured real24h source boundary
+- **AND** original deadline/replay guard SHALL remain historical,all physical/spend/holdout controls SHALL remain enforced,and final D1 SHALL require unchanged measured thresholds rather than technical qualification alone.
 
 ### Requirement: Separate capture and offline-analysis lineage
 
