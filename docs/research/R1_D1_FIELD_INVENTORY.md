@@ -2,6 +2,31 @@
 
 ## Status and controlling sources
 
+### Current measured cohort disposition — 2026-10-07
+
+The owner-authorized E2 continuation has completed capture and current-version offline verification. The [completion result](../notes/R1_E2_D1_COMPLETION_RESULT_2026-10-07.md) records **D1 INSUFFICIENT**, H1/H2 INCONCLUSIVE/data insufficient,not tested. Independent final review APPROVE covers truthful reporting only. Report3 verifies300 fixed tokens/258 COMPLETE42 CAP/1760 pages/18436347104raw bytes/1365027uniqueTX. Current literal200-action audit agrees200/200 with zero sample double-volume,April193/May7; whole-envelope month/venue coverage remains UNMET. No dataset admission,calibration/P1 or archive follows.
+
+This table accounts for all12 fields in the measured cohort scope. OBSERVED facts and proved derived outputs are not automatically full availability; UNKNOWN/UNAVAILABLE includes explicit missing evidence. Inventory-complete interpretation in active D1 design4h means every field is honestly accounted for,not every field available; selected-source/query/retention/exact-cost prerequisites remain separate. The historical machine-readable input/fingerprint below has not been rewritten or revalidated by this documentary update. C-3+60s remains versioned MODELED,not observed visibility. The full required envelope and frozen thresholds are unchanged; protected dates were not accessed.
+
+| Field | Current retained evidence | Missing proof / disposition |
+|---|---|---|
+| `trade-legs` | OBSERVED Helius TX/instructions and derived source-proved per-trader net actions;293982 actions/145735 with determined attributable fees. | Whole candidate swap/trigger denominator and missing month/venue routes UNKNOWN; Token2022/unproved buyback routes remain unsupported/UNKNOWN. |
+| `spl-transfers` | OBSERVED source instructions/static+loaded keys; supported classic-SPL owner/mint/scoped transfers reconciled where proved. | Complete candidate-wallet/noncohort transfer history and unsupported Token2022 routes INCOMPLETE/UNKNOWN. |
+| `sol-transfers` | OBSERVED native account pre/post and relevant instructions in captured TX. | Full wallet transfers,rent/native/tip attribution INCOMPLETE; native delta or payer is not a trader/quote shortcut. |
+| `base-priority-fees` | OBSERVED exact `meta.fee` total; derived split only explicit ComputeBudget price+limit/signature/formula equality and attributable actual payer. | Missing explicit inputs/nonpayer attribution UNKNOWN; contextual TX fee is not per-action expense. Audit95 fee-UNKNOWN agreements do not establish known costs. |
+| `tips` | No proven historical complete tip identities/attribution for this cohort. | UNKNOWN,not zero; historical account versions,separate/CPI transfer attribution and coverage missing. |
+| `reserves-depth` | OBSERVED vault pre/post balances; derived account lifecycle only actual same-account creation/closure proof. | Continuous supported-venue depth/state/trigger coverage UNAVAILABLE; snapshots are not executable predecision depth. |
+| `liquidity-events` | Captured raw instructions retain possible venue events. | Full add/remove decoding,intervening state and range coverage UNAVAILABLE. |
+| `mint-decimals-freeze` | OBSERVED mint/decimals where source balances and supported roles agree. | Historical freeze-authority transitions and full mint coverage UNAVAILABLE; no guessed decimals. |
+| `executable-entry-exit` | Actual swap amounts and selected vault observations are retained. | Joint entry/primary1h pricing and loss-of-exit inputs/denominators UNAVAILABLE/UNMEASURED; executed trade is not counterfactual executable quote. |
+| `sol-usd` | No admitted exact historical price series. | UNAVAILABLE; feed/query/PIT availability/date/granularity/gaps/retention proof missing. |
+| `block-time` | OBSERVED source slot/blockTime; audit stratifies actual transaction UTC month. | Whole-envelope completeness and source `knownAt`/first visibility UNKNOWN; cohort creation month is not trade month. |
+| `visibility-latency` | No historical first-visible receipt series. | OBSERVED visibility UNAVAILABLE; C-3 default60s MODELED only,not measured or calibrated. |
+
+Source and cost scope: Helius Free capture reserved176000credits/1760starts; actual account debit UNKNOWN,reported cashUSD0. Exact query/old+new source and analysis pins are in the completion result; deployment/PIT identities/labels/full-envelope retention remain UNVERIFIED.258 complete pool-index histories do not establish wallet lookback/noncohort assets or protected tail.42CAP means unfinished cursor at14pages,not zero swaps or2%-gap arithmetic. Neither old JSON's zero-selected-source cost nor current USD0 spending is a full D1 cost upper bound. Both D1/E2 changes remain active/unarchived; no machine-readable source promotion is made here.
+
+### Historical inventory checkpoint — 2026-10-03
+
 Document checked 2026-10-03. The active [D1 change](../../openspec/changes/establish-r1-d1-data-gate/proposal.md) preserves the verified offline inventory and separately authorized exploratory probe under design 4f and [procedure section 11](R1_OFFLINE_RESEARCH_PROCEDURE.md#11-exploratory-probe--owner-authorized-2026-10-03). The [actual exploratory receipt](r1-receipts/2026-10-03-exploratory-sqd-v1.md) records a USD-0 incomplete sample and successful offline integrity replay. Frozen inventory/D1 prerequisites below remain unchanged; no inventory field is promoted and no measured D1 pass is claimed. Earlier spike receipts retain their original limited scope.
 
 The machine-readable input is [inventory-candidates.json](../../tools/research/r1/inventory-candidates.json). Its closed schema and canonical encoding are defined by the active [design](../../openspec/changes/establish-r1-d1-data-gate/design.md) and [delta spec](../../openspec/changes/establish-r1-d1-data-gate/specs/r1-data-inventory/spec.md). Use the [runbook](R1_D1_RUNBOOK.md) to validate it locally.
