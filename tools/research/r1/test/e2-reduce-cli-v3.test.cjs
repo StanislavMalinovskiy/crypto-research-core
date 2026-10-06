@@ -2,6 +2,30 @@
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
 const {fragments,h}=require('./pumpswap-analysis-adapter-v2.test.cjs'),{policy}=require('./e2-trade-reducer-v2.test.cjs');
 const filename=path.join(__dirname,'../e2-reduce-cli-v3.cjs'),cli=fs.existsSync(filename)?require(filename):require('../e2-reduce-cli.cjs');
+// Exercise the former source.loadContext route as well as the repaired helper.
+// Only Git/filesystem/module metadata is synthetic; no raw or transport exists.
+const capturePin={root:'C:/git/crypto-research/worktrees/e2-d1-completion-exec-20261005-r4',commit:'4d0861f1c1e2ef2719714269943c9a05120186a4',sourceHash:'sha256:3a5f71d02c673f366daa9b07173c3fa2d796e06f250d63a0808112c436a07a00',indexHash:'sha256:f2b531c20820239c5f0b0188f90e549800ff86c03848fa1c243867e3e24df85c'};
+function captureHarness(change={}){
+ const analysis={root:path.resolve(__dirname,'../../../..'),commit:'9ceb0a2a02c489fde1f11c8a01644e34df2166e2',dirty:false},sourceBytes=Buffer.from('source literal'),indexBytes=Buffer.from('index literal'),calls=[];
+ const operational={commit:capturePin.commit,dirty:false,scripts:{'e2-cohort-d1-continuation-v2.cjs':capturePin.sourceHash,index:capturePin.indexHash}},context={operational,capture:{source:{commit:'1f8b07d1d2d2fa5e914f25c85bf1aaa25ec3d63a',dirty:false}}};
+ const deps={safeDirectory:r=>{calls.push('safe');if(change.unsafe)throw Error('UNSAFE_PATH');return path.resolve(r);},
+  git:(root,args)=>{calls.push(args.join(' '));if(args[0]==='rev-parse')return Buffer.from((change.head??capturePin.commit)+'\n');if(args[0]==='status')return Buffer.from(change.dirty?' M file':'');if(args[0]==='cat-file'&&args[1]==='-e'){if(change.absent)throw Error('missing');return Buffer.alloc(0);}if(args[0]==='merge-base'){if(change.unrelated)throw Error('unrelated');return Buffer.alloc(0);}if(args[0]==='cat-file')return change.blob?Buffer.from('wrong blob'):args[2].endsWith('e2-reduce-cli.cjs')?indexBytes:sourceBytes;throw Error('unexpected Git');},
+  read:file=>{calls.push('read '+path.basename(file));return change.bytes?Buffer.from('wrong bytes'):file.endsWith('e2-reduce-cli.cjs')?indexBytes:sourceBytes;},
+  sha:b=>b.equals(sourceBytes)?capturePin.sourceHash:b.equals(indexBytes)?capturePin.indexHash:'sha256:'+'0'.repeat(64),
+  load:file=>{calls.push('require historical');return {loadContext(){calls.push('dependencies');if(change.dependencies)throw Error('LINEAGE_CHANGED');return change.context?{...context,operational:{...operational,commit:analysis.commit}}:context;},verifySnapshot(){return {semanticIntegrity:'PASS',manifestHash:'synthetic sealed head'};}};}};
+ const vm=require('node:vm'),mod={exports:{}},script=fs.readFileSync(filename,'utf8')+'\nmodule.exports.testCaptureLoader=typeof loadCaptureContext===\'function\'?loadCaptureContext:()=>({context:source.loadContext(),verifier:source});';
+ vm.runInNewContext(script,{module:mod,exports:mod.exports,__filename:filename,__dirname:path.dirname(filename),Buffer,process,require:n=>n==='./e2-cohort-d1-continuation-v2.cjs'?{loadContext:()=>({operational:{...operational,commit:analysis.commit}})}:require(n.startsWith('./')?path.resolve(path.dirname(filename),n):n)});
+ return {run:pin=>mod.exports.testCaptureLoader(pin??capturePin,analysis,deps),calls,analysis};
+}
+test('historical capture context remains valid when current analysis HEAD differs',()=>{
+ const t=captureHarness(),loaded=t.run();assert.equal(loaded.context.operational.commit,capturePin.commit,'captured HEAD must not be replaced with current analysis HEAD');assert.notEqual(loaded.context.operational.commit,t.analysis.commit);assert.equal(loaded.verifier.verifySnapshot().semanticIntegrity,'PASS');assert.equal(loaded.captureIdentity.commit,capturePin.commit);assert.equal(t.calls.filter(x=>x==='dependencies').length,1);
+});
+for(const [name,change]of Object.entries({wrongHead:{head:'a'.repeat(40)},dirty:{dirty:true},unsafe:{unsafe:true},wrongBytes:{bytes:true},wrongBlob:{blob:true},dependencyMismatch:{dependencies:true},wrongContext:{context:true},absentOrigin:{absent:true},unrelatedOrigin:{unrelated:true}}))test('historical capture guard rejects '+name+' before raw',()=>{
+ const t=captureHarness(change);assert.throws(()=>t.run(),/LINEAGE_CHANGED|UNSAFE_PATH/,'unproved historical lineage must reject');assert.ok(!t.calls.some(c=>c.endsWith('.raw')));
+});
+for(const field of ['root','commit','sourceHash','indexHash'])test('historical capture guard rejects wrong configuration '+field,()=>{
+ const t=captureHarness(),bad={...capturePin,[field]:field==='root'?capturePin.root+'/other':field==='commit'?'a'.repeat(40):'sha256:'+'0'.repeat(64)};assert.throws(()=>t.run(bad),/LINEAGE_CHANGED/);assert.equal(t.calls.length,0,'config mismatch must reject before filesystem/module/raw access');
+});
 test('real shared-pool two-owner transaction produces two candidates and trader-matched variant proof with once-TX fee context',()=>{
  const {realTwoTrader}=require('./e2-trade-reducer-v2.test.cjs'),raw=Buffer.from(realTwoTrader),c=cli.reductionConsumer(policy);c.consume(h.parse(raw),raw,{ordinal:1,tokenIndex:0,rawHash:'sha256:'+'1'.repeat(64)},12);
  const r=c.finish({state:{selection:{tokens:[{mint:policy.cohortMints[0]}]},records:[]}}),candidates=r.crossCheckCandidates.flatMap(g=>g.candidates);
