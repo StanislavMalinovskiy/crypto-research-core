@@ -48,6 +48,14 @@ test('actual economic candidates use transaction UTC month, retain cohort month,
 test('RSS engineering guide is advisory rather than a source/data STOP boundary',()=>{
  const memory=process.memoryUsage;try{process.memoryUsage=()=>({rss:1800000000});assert.doesNotThrow(()=>cli.budget({scopeBytes:0,elapsedMs:0,rawReadBytes:0,metadataBytes:0}),'historical RSS guide cannot override owner physical boundary');}finally{process.memoryUsage=memory;}
 });
+test('bounded first rejection locator identifies raw conflict without changing transaction counts',()=>{
+ const c=cli.reductionConsumer(policy),changed=JSON.parse(fragments[1].raw);changed.meta.err={InstructionError:[3,{Custom:6004}]};const raw=Buffer.from(JSON.stringify(changed));
+ for(const row of [42,43])c.consume(h.parse(raw),raw,{ordinal:538,tokenIndex:100,rawHash:'sha256:'+'1'.repeat(64)},row);
+ const r=c.finish({state:{selection:{tokens:[{mint:policy.cohortMints[0]}]},records:[]}});
+ assert.equal(r.rejectionLocators?.length,1,'first source-bound locator per reason must be retained, not all rows');
+ const l=r.rejectionLocators[0];assert.equal(l.reason,'FAILED_TRANSACTION');assert.equal(l.ordinal,538);assert.equal(l.row,42);assert.equal(l.signature,changed.transaction.signatures[0]);assert.equal(l.transactionRawHash,h.digest(raw));assert.equal(l.pageRawHash,'sha256:'+'1'.repeat(64));assert.ok(l.instructionPaths.length>0);
+ assert.equal(r.uniqueTransactions,2);assert.equal(r.reasons.FAILED_TRANSACTION,2);assert.equal(r.crossCheckCandidates.length,0);
+});
 test('candidate identity ordering is deterministic and unresolved real swap attempt is a sampling gap',()=>{
  const consume=(c,index)=>{const raw=Buffer.from(fragments[index].raw);c.consume(h.parse(raw),raw,{ordinal:1,tokenIndex:0,rawHash:'sha256:'+'1'.repeat(64)},index);},finish=c=>c.finish({state:{selection:{tokens:[{mint:policy.cohortMints[0]}]},records:[]}});
  const a=cli.reductionConsumer(policy),b=cli.reductionConsumer(policy);consume(a,0);consume(a,1);consume(b,1);consume(b,0);assert.deepEqual(finish(a).crossCheckCandidates,finish(b).crossCheckCandidates);

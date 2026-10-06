@@ -5,7 +5,8 @@ const legacy=require('./pumpswap-analysis-adapter-v1.cjs'),h=require('./explorat
 const PUMP='pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA',TOKEN='TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA',SYSTEM='11111111111111111111111111111111';
 const WSOL='So11111111111111111111111111111111111111112',ATA='ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL';
 const alphabet='123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
-const ANALYSIS={...legacy.ANALYSIS,version:'pumpswap-analysis-adapter-v2',proofVersion:'owned-lifecycle-event-global-per-trader-v3',deployment:'UNVERIFIED'};
+const MAY_IDL='sha256:cd5c58a5dded23632aedb993b08cc0d2ba91bda2bb084560913464274d3bee50';
+const ANALYSIS={...legacy.ANALYSIS,version:'pumpswap-analysis-adapter-v2',proofVersion:'owned-lifecycle-exact-may-buyback-global-per-trader-v4',deployment:'UNVERIFIED',additionalSchemaHashes:[MAY_IDL]};
 const need=(v,c='INPUT_INVALID')=>{if(!v)throw Error(c);};
 const integer=v=>{const n=Number(v);need(/^(0|[1-9][0-9]*)$/.test(String(v))&&Number.isSafeInteger(n));return n;};
 const same=(a,b)=>h.canonical(a)===h.canonical(b);
@@ -70,18 +71,22 @@ function event(r,parent){
  if(r.program!==PUMP||r.accounts.length!==1||!same(r.path.slice(0,-1),parent.path)||parent.accounts[15]!==r.accounts[0]||parent.accounts[16]!==PUMP)return null;
  const b=r.data;if(b.length<16||b.subarray(0,8).toString('hex')!=='e445a52e51cb9a1d')return null;
  const tag=b.subarray(8,16).toString('hex'),sell=tag==='3e2f370aa503dc2a',buy=tag==='67f4521f2cf57777';if(!sell&&!buy)return null;
- if(sell&&![368,384].includes(b.length))return null;
- if(buy){if(b.length<416||b[368]>1)return null;const len=b.readUInt32LE(409);if(len>18||![413+len,429+len].includes(b.length))return null;const name=b.subarray(413,413+len).toString('utf8');if(!['buy','buy_exact_quote_in'].includes(name))return null;}
+ if(sell&&![368,384,400].includes(b.length))return null;
+ let nameLength=0;
+ if(buy){if(b.length<416||b[368]>1)return null;const len=b.readUInt32LE(409);if(len>18||![413+len,429+len,445+len].includes(b.length))return null;const name=b.subarray(413,413+len).toString('utf8');if(!['buy','buy_exact_quote_in'].includes(name))return null;nameLength=len;}
+ const may=sell?b.length===400:b.length===445+nameLength;
  const names=['timestamp',sell?'baseAmountIn':'baseAmountOut',sell?'minQuoteAmountOut':'maxQuoteAmountIn','userBaseReserves','userQuoteReserves','poolBaseReserves','poolQuoteReserves',sell?'quoteAmountOut':'quoteAmountIn','lpBasisPoints','lpFee','protocolBasisPoints','protocolFee',sell?'quoteWithoutLpFee':'quoteWithLpFee',sell?'userQuoteAmountOut':'userQuoteAmountIn'];
-const e={kind:sell?'SellEvent':'BuyEvent',instructionPath:r.path,sourceHash:h.digest(b),idlHash:ANALYSIS.idlHashes[b.length===368?0:1]};names.forEach((n,i)=>e[n]=b.readBigUInt64LE(16+i*8).toString());
+const e={kind:sell?'SellEvent':'BuyEvent',instructionPath:r.path,sourceHash:h.digest(b),idlHash:may?MAY_IDL:ANALYSIS.idlHashes[b.length===368?0:1]};names.forEach((n,i)=>e[n]=b.readBigUInt64LE(16+i*8).toString());
  for(const [n,i] of [['pool',0],['user',1],['userBase',2],['userQuote',3],['protocolRecipient',4],['protocolAccount',5],['coinCreator',6]])e[n]=encode(b.subarray(128+i*32,160+i*32));
- e.creatorBasisPoints=b.readBigUInt64LE(352).toString();e.creatorFee=b.readBigUInt64LE(360).toString();e.cashback=sell&&b.length===384?b.readBigUInt64LE(376).toString():buy&&b.length===429+b.readUInt32LE(409)?b.readBigUInt64LE(b.length-8).toString():'0';
+ e.creatorBasisPoints=b.readBigUInt64LE(352).toString();e.creatorFee=b.readBigUInt64LE(360).toString();e.cashback=sell&&b.length>=384?b.readBigUInt64LE(376).toString():buy&&b.length>=429+nameLength?b.readBigUInt64LE(421+nameLength).toString():'0';
+ // Exact documentary tail, not recipient policy or historical deployment proof.
+ if(may){const offset=sell?384:429+nameLength;e.buybackBasisPoints=b.readBigUInt64LE(offset).toString();e.buybackFee=b.readBigUInt64LE(offset+8).toString();}
  if(e.pool!==parent.accounts[0]||e.user!==parent.accounts[1]||e.userBase!==parent.accounts[5]||e.userQuote!==parent.accounts[6]||e.protocolRecipient!==parent.accounts[9]||e.protocolAccount!==parent.accounts[10])return null;
  return e;
 }
 function transfers(ctx,invocations){return ctx.records.filter(r=>r.program===TOKEN&&[3,12].includes(r.data[0])).map(r=>{const checked=r.data[0]===12;need(r.data.length===(checked?10:9)&&r.accounts.length===(checked?4:3),'TRANSFER_LAYOUT_UNSUPPORTED');const parents=invocations.filter(v=>ancestor(v.instructionAddress,r.path));return {instructionAddress:r.path,source:r.accounts[0],destination:r.accounts[checked?2:1],declaredAuthority:r.accounts[checked?3:2],mint:checked?r.accounts[1]:null,decimals:checked?r.data[9]:null,amount:r.data.readBigUInt64LE(1).toString(),associatedInvocation:parents.length===1?parents[0].identity:null};});}
 function eventFlows(v,tx,states){
- const e=v.event;if(!e)return false;const scoped=tx.filter(t=>same(t.associatedInvocation,v.identity));if(!scoped.length||e.cashback!=='0')return false;
+ const e=v.event;if(!e)return false;const scoped=tx.filter(t=>same(t.associatedInvocation,v.identity));if(!scoped.length||e.cashback!=='0'||e.buybackFee!==undefined&&e.buybackFee!=='0')return false;
  const flow=(account,mint,decimals)=>scoped.reduce((n,t)=>{if(t.source!==account&&t.destination!==account)return n;if(t.mint!==null&&(t.mint!==mint||t.decimals!==decimals))throw Error('EVENT_TRANSFER_MISMATCH');return n+(t.destination===account?BigInt(t.amount):0n)-(t.source===account?BigInt(t.amount):0n);},0n);
  const b=states.find(t=>t.account===v.poolBaseVault),q=states.find(t=>t.account===v.poolQuoteVault);if(!stable(b)||!stable(q)||b.preMint!==v.baseMint||q.preMint!==v.quoteMint||b.preOwner!==v.pool||q.preOwner!==v.pool)return false;
  const sell=v.variant==='sell';if(sell!==(e.kind==='SellEvent'))return false;
@@ -104,6 +109,9 @@ function mapHeliusTransaction(bytes,rawHash){
   const states=lifecycle(ctx,m.tokenStates,invocations),tx=transfers(ctx,invocations);
   for(const v of invocations){const r=ctx.byPath.get(v.instructionAddress.join('.'));if(raw.meta.err!==null){v.reason='FAILED_TRANSACTION';continue;}if(v.eventSourceConflict){v.reason='EVENT_SOURCE_CONFLICT';continue;}if(r.accounts[11]!==TOKEN||r.accounts[12]!==TOKEN){v.reason='UNSUPPORTED_TOKEN_PROGRAM';continue;}
    const prefixValid=r.accounts[13]===SYSTEM&&r.accounts[14]===ATA&&r.accounts[16]===PUMP&&v.baseMint!==v.quoteMint&&new Set([v.userBase,v.userQuote,v.poolBaseVault,v.poolQuoteVault]).size===4;
+   // No named May buyback recipient policy is pinned. An observed gross split
+   // alone is not permission to classify an arbitrary remaining account.
+   if(v.event?.buybackFee!==undefined&&prefixValid){if(v.event.buybackFee!=='0'){v.reason='BUYBACK_FEE_ROUTE_UNPROVED';continue;}if(v.event.cashback!=='0'){v.reason='CASHBACK_FEE_ROUTE_UNPROVED';continue;}}
    if(v.event&&prefixValid&&eventFlows(v,tx,states)){v.reason=null;v.layoutApplicability='OBSERVED_SAME_INVOCATION_EVENT';}
    else if(!v.event&&v.layoutProof){v.reason=null;v.layoutApplicability=v.layoutProof.applicability;}
    else if(v.reason===null&&v.event)v.reason='EVENT_FLOW_MISMATCH';

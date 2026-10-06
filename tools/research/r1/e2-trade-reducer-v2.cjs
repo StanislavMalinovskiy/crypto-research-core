@@ -6,7 +6,7 @@ const QUOTES=[WSOL,'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v','Es9vMFrzaCERm
 const PRECOMPILES=new Set(['Ed25519SigVerify111111111111111111111111111','KeccakSecp256k11111111111111111111111111111','Secp256r1SigVerify1111111111111111111111111']);
 const FEE_SOURCES=['https://raw.githubusercontent.com/solana-labs/solana/v1.18.26/program-runtime/src/compute_budget_processor.rs','https://solana.com/docs/core/fees/fee-structure','https://raw.githubusercontent.com/solana-labs/solana/v1.18.26/program-runtime/src/prioritization_fee.rs','https://raw.githubusercontent.com/solana-labs/solana/v1.18.26/sdk/src/fee.rs'];
 const same=(a,b)=>h.canonical(a)===h.canonical(b),need=(v,reason,status='MISSING_LEG')=>{if(!v)throw {reason,status};};
-const DERIVATION_REVISION='global-reconcile-all-owned-data-only-compute-budget-v5';
+const DERIVATION_REVISION='global-reconcile-all-owned-exact-may-buyback-unknown-v6';
 const number=v=>{const n=Number(v);need(/^(0|[1-9][0-9]*)$/.test(String(v))&&Number.isSafeInteger(n),'INPUT_INVALID');return n;};
 const amount=v=>{need(typeof v==='string'&&/^(0|[1-9][0-9]{0,19})$/.test(v)&&BigInt(v)<=18446744073709551615n,'RAW_AMOUNT_INVALID');return BigInt(v);};
 function fees(raw,ctx,trader){
@@ -51,7 +51,7 @@ function reduceTransaction(input){
   for(const v of inv){
    const trader=v.declaredTrader;need(![v.userBase,v.userQuote].some(a=>infrastructure.has(a)),'SHARED_OWNED_ACCOUNT_UNPROVED','AMBIGUOUS_ROUTE');
    for(const [account,mint,owner]of [[v.userBase,v.baseMint,trader],[v.userQuote,v.quoteMint,trader],[v.poolBaseVault,v.baseMint,v.pool],[v.poolQuoteVault,v.quoteMint,v.pool]]){const t=byAccount.get(account);need(adapter.stable(t)&&t.preMint===mint&&t.preOwner===owner,'SCOPED_ACCOUNT_UNPROVED');required.add(account);}
-   const b=byAccount.get(v.poolBaseVault),q=byAccount.get(v.poolQuoteVault);if(v.event)need(adapter.eventFlows(v,tx,states),'EVENT_FLOW_UNPROVED');
+   const b=byAccount.get(v.poolBaseVault),q=byAccount.get(v.poolQuoteVault);if(v.event){need(v.event.buybackFee===undefined||v.event.buybackFee==='0','BUYBACK_FEE_ROUTE_UNPROVED');need(v.event.buybackFee===undefined||v.event.cashback==='0','CASHBACK_FEE_ROUTE_UNPROVED');need(adapter.eventFlows(v,tx,states),'EVENT_FLOW_UNPROVED');}
    need(byAccount.get(v.userBase).preDecimals===b.preDecimals&&byAccount.get(v.userQuote).preDecimals===q.preDecimals,'SCOPED_DECIMALS_CONFLICT','DECIMALS_UNKNOWN');
    const swap=ctx.byPath.get(v.instructionAddress.join('.')),recipients=[[swap.accounts[10],swap.accounts[9]],[v.creatorAccount,v.creatorAuthority]];
    for(const [account,owner]of recipients){const t=byAccount.get(account);need(adapter.stable(t)&&t.preMint===v.quoteMint&&t.preOwner===owner&&t.preDecimals===q.preDecimals,'FEE_ACCOUNT_UNPROVED');required.add(account);}
