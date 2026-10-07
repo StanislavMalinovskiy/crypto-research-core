@@ -152,12 +152,19 @@ test('repair bounded worker rejects excess heap before any source or input acces
   assert.throws(()=>w.resourceCheck(performance.now()-300001),/TIME_LIMIT/);
 });
 test('configured supervised CLI reaches argument validation within the actual host heap envelope',()=>{
-  const {spawnSync}=require('node:child_process'),path=require('node:path');
-  const child=spawnSync(process.execPath,[path.join(__dirname,'../e2-cohort-d1-window.cjs'),'--unsupported-offline-command'],{timeout:5000,encoding:'utf8',windowsHide:true});
-  assert.equal(child.status,1);const result=JSON.parse(child.stdout);
-  assert.equal(result.code,'ARGUMENTS_INVALID');assert.equal(result.d1Passed,false);
-  const measured=spawnSync(process.execPath,['--max-old-space-size=1024','-e','console.log(require("node:v8").getHeapStatistics().heap_size_limit)'],{timeout:5000,encoding:'utf8',windowsHide:true});
-  assert.equal(measured.status,0);assert.ok(Number(measured.stdout)<=1275068416);
+  const {spawnSync}=require('node:child_process'),path=require('node:path'),os=require('node:os');
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),'b5-window-clock-'));
+  try {
+    const preload=path.join(root,'fixed-clock.cjs');fs.writeFileSync(preload,`Date.now = () => ${at};\n`);
+    const inherited=process.env.NODE_OPTIONS?.trim();
+    const modulePath=preload.replace(/\\/g,'/');
+    const env={...process.env,NODE_OPTIONS:[inherited,`--require="${modulePath}"`].filter(Boolean).join(' ')};
+    const child=spawnSync(process.execPath,[path.join(__dirname,'../e2-cohort-d1-window.cjs'),'--unsupported-offline-command'],{timeout:5000,encoding:'utf8',windowsHide:true,env});
+    assert.equal(child.status,1,child.stderr+child.stdout);const result=JSON.parse(child.stdout);
+    assert.equal(result.code,'ARGUMENTS_INVALID');assert.equal(result.d1Passed,false);
+    const measured=spawnSync(process.execPath,['--max-old-space-size=1024','-e','console.log(require("node:v8").getHeapStatistics().heap_size_limit)'],{timeout:5000,encoding:'utf8',windowsHide:true});
+    assert.equal(measured.status,0);assert.ok(Number(measured.stdout)<=1275068416);
+  } finally { fs.rmSync(root,{recursive:true,force:true}); }
 });
 test('repair replay reports recorded timing separately from semantic validity',async()=>{
   const io=memory();let clock=at;
