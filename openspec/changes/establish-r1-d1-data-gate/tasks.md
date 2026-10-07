@@ -1,5 +1,7 @@
 ## 1. Offline inventory slice — current implementation scope
 
+**Owner status, 2026-10-07: PAUSED.** D1 INSUFFICIENT (`e386884`) is unchanged; H1/H2 INCONCLUSIVE/data insufficient, not tested. No further R1 credits/calls/repairs; calibration `1.1.0`/P1 deferred until explicit owner restart and existing prerequisites. Active/unarchived; all checkboxes, evidence and frozen criteria below retain their recorded meaning. Earlier allocations are historical, not current execution authority.
+
 - [x] 1.1 Builder establishes behavioral RED for the inventory requirements with synthetic fixtures, an importable minimal module scaffold and `node --test tools/research/r1/test/inventory.test.cjs`; records each executed assertion, expected/actual and requirement before semantic freeze. Missing-module or CLI-discovery failures do not count as RED.
 - [x] 1.2 Builder implements closed schema validation, complete required-field blockers, exact micro-USD ceiling comparison and versioned canonical fingerprint under the six-file/800-line design budget; verifies all requirement-derived tests with the same targeted command and reports `tests_changed_after_red`.
 - [x] 1.3 Builder implements the bounded read-only CLI and candidate inventory using dated official documentary references, zero selected sources and explicit unresolved status; verifies CLI exits, input/report caps, safe diagnostics, no calls/writes and `runAuthorized = false`/`d1Passed = false` in targeted tests.

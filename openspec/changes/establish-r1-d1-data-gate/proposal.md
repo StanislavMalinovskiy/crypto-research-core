@@ -1,5 +1,7 @@
 ## Why
 
+**Owner status, 2026-10-07: PAUSED.** The factual D1 INSUFFICIENT result (`e386884`) remains unchanged; H1/H2 are INCONCLUSIVE/data insufficient, not tested. No further R1 credits, source calls or repairs are allocated. Calibration `1.1.0` and P1 are deferred until an explicit owner restart and their existing prerequisites. This change remains active/unarchived with all unchecked tasks and frozen evidence intact. Earlier allocations below are historical, not current launch authority; see [Delivery Plan](../../../docs/DELIVERY_PLAN.md).
+
 R1 is frozen at `1.0.0`. The repository already retains measured SQD/public RPC reconciliation and Alchemy PAYG historical-account receipts, but those bounded samples do not prove the complete required-field inventory, full-envelope coverage, export costs or retention permissions. D1 must establish those facts before bulk extraction; a decoded trade table or one successful reserve sample cannot establish historical depth or complete executable pricing inputs.
 
 ## What Changes
