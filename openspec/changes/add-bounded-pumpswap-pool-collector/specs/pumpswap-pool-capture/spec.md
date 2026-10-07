@@ -5,10 +5,10 @@ Defines a finite live PumpSwap transaction and account-state capture boundary wi
 ## ADDED Requirements
 
 ### Requirement: Explicit finite capture session
-The collector SHALL remain disabled by default and SHALL require a versioned session configuration with an explicit Solana Mainnet pool/account allowlist, finite time, request, received-byte, retained-byte, concurrency, queue, retry and exact cost limits before connecting. Live launch SHALL require separately recorded owner authorization, verified account entitlements/limits and retention rights. Missing or unknown paid-cost bounds SHALL block paid launch. Every retry and reconnect SHALL consume the original session limits without reset.
+The collector SHALL remain disabled by default and SHALL require a versioned session configuration with an explicit Solana Mainnet pool/account allowlist, finite time, request, received-byte, retained-byte, concurrency, queue, retry and exact cost limits before connecting. Live launch SHALL require recorded owner authorization, configured account/billing-period limits and retention rights; OWNER_REPORTED settings SHALL remain distinguishable from independently observed settings. Missing or unknown paid-cost bounds or opening current-period usage SHALL block paid launch. Every retry, reconnect and replacement session SHALL consume the original authorization-period limits without reset. Whole-window subscription and RPC/control reservations SHALL be durably acquired atomically before provider work, with exact decimal rates and no downward rounding of cost limits. Reported calendar reset SHALL NOT automatically authorize a new window or erase unreconciled prior usage.
 
 #### Scenario: Launch prerequisites are missing
-- **WHEN** the account limits, cost bound, pool list or launch authorization is absent
+- **WHEN** the account limits, cost bound, opening usage baseline, pool/account linkage or launch authorization is absent
 - **THEN** the collector SHALL report BLOCKED_FOR_LAUNCH before connecting
 - **AND** documentation or a historical probe budget SHALL NOT substitute for that evidence.
 
@@ -17,8 +17,23 @@ The collector SHALL remain disabled by default and SHALL require a versioned ses
 - **THEN** the collector SHALL stop accepting work and close transport with an explicit limit reason
 - **AND** unfinished work SHALL remain counted and distinguishable from completed coverage.
 
+#### Scenario: Shared monthly authority survives session replacement
+- **WHEN** a session retries, crashes, is replaced, or reaches the reported billing reset while current-period usage or reservations remain unreconciled
+- **THEN** the collector SHALL retain the cumulative account-period ledger and stop before work exceeding either configured exact cost or CU authority
+- **AND** unknown prior or other account usage SHALL NOT become zero and a new session identifier SHALL NOT grant expense authority.
+
+#### Scenario: Subscription allowance includes RPC and billing uncertainty
+- **WHEN** the authorized first window is configured with 20,000,000 billable WSS bytes and 150,000 RPC/control CU at 0.04 CU/byte and $0.525 per million CU
+- **THEN** the collector SHALL reserve 950,000 CU and exact $0.49875 against the remaining account-period authority before connecting
+- **AND** every retry/control/history call and known received byte SHALL consume its allocation, with conservative in-flight/shutdown reservations retained and unobserved provider-side billed excess explicitly unknown rather than claimed impossible.
+
 ### Requirement: Finalized raw transaction and state capture
 The collector SHALL subscribe only to configured pools and their explicitly verified pool/vault/mint accounts at finalized commitment. It SHALL obtain complete transaction evidence for transaction notifications, preserving failed transactions and explicit unavailable responses. Stable raw storage SHALL receive only finalized evidence, with exact provider payload, network identity, slot, provider, trusted received/admitted/ingested times, optional source/provider time and explicit unknown provider-visible time. Raw account snapshots SHALL retain account address, context slot, encoding and exact account data without inventing transaction position or historical reserves.
+
+#### Scenario: Supplied linkage proof is inconsistent
+- **WHEN** supplied finalized pool/vault/mint metadata lacks a source/version, exact payload digest, context slot or mapping fields, conflicts with the allowlist, or budgeted current reads conflict with declared program ownership or supported vault mint/authority metadata
+- **THEN** that pool SHALL remain blocked before subscriptions with the specific unresolved linkage reason
+- **AND** program ownership alone, guessed pool-layout offsets or unsupported token metadata SHALL NOT substitute for the supplied mapping proof.
 
 #### Scenario: Transaction fetch is unavailable or provisional
 - **WHEN** a notification cannot produce complete finalized transaction evidence within finite retries

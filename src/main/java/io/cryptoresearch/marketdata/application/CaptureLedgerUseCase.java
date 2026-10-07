@@ -1,0 +1,136 @@
+package io.cryptoresearch.marketdata.application;
+
+import java.util.List;
+import java.util.UUID;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
+import java.math.BigDecimal;
+import java.util.Comparator;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import io.cryptoresearch.marketdata.infrastructure.persistence.JdbcCaptureStore;
+import io.cryptoresearch.marketdata.api.PumpSwapCapture.*;
+
+@Service
+public class CaptureLedgerUseCase {
+	private final JdbcCaptureStore store;
+	private final Clock clock;
+	public CaptureLedgerUseCase(JdbcCaptureStore store, Clock clock) { this.store=store; this.clock=clock; }
+	public Configuration configuration(UUID session) { return store.configuration(session); }
+	public Instant now() { return clock.instant().truncatedTo(ChronoUnit.MICROS); }
+	@Transactional public boolean open(Configuration configuration, String holder) {
+		var problem = CaptureBudget.launchProblem(configuration);
+		if (!problem.isEmpty()) throw new IllegalArgumentException(problem);
+		var c = canonical(configuration);
+		if (store.exists(c.sessionId())) {
+			if (!store.configuration(c.sessionId()).equals(c)) throw new IllegalArgumentException("CAPTURE_CONFIGURATION_CONFLICT");
+			var claimed = claim(c.sessionId(),holder);
+			if (claimed) interrupt(c.sessionId(),holder,"RESTART_UNFINISHED_SESSION");
+			return claimed;
+		}
+		if (now().isBefore(c.startsAt()) || !now().isBefore(end(c))) throw new IllegalArgumentException("CAPTURE_TIME_LIMIT");
+		var reservation = CaptureBudget.reservation(c);
+		store.period(c,CaptureBudget.ceiling(c),Math.addExact(c.authority().openingHundredths(),c.authority().otherActivityHundredths()));
+		if (!store.reservePeriod(c,reservation)) throw new IllegalStateException("ACCOUNT_PERIOD_RESERVATION_REJECTED");
+		store.insertSession(c,fingerprint(c),holder,now().plusSeconds(c.limits().leaseSeconds()),end(c),reservation);
+		return true;
+	}
+	private Configuration canonical(Configuration c) {
+		return new Configuration(c.sessionId(),c.version(),c.provider(),c.startsAt().truncatedTo(ChronoUnit.MICROS),
+				c.pools().stream().sorted(Comparator.comparing(Pool::address)).toList(),c.limits(),c.authority());
+	}
+	public String fingerprint(Configuration c) {
+		return new CanonicalFingerprint().field("contract","pumpswap-capture-configuration-v1")
+				.field("configuration",store.encode(canonical(c))).finish();
+	}
+	public static Instant end(Configuration c) {
+		var window=c.startsAt().plusSeconds(c.limits().windowSeconds());
+		return window.isBefore(c.authority().periodEnd()) ? window : c.authority().periodEnd();
+	}
+	@Transactional public boolean claim(UUID session, String holder) {
+		var c=configuration(session); return store.claim(session,holder,now(),now().plusSeconds(c.limits().leaseSeconds()));
+	}
+	private void fence(UUID session,String holder) {
+		store.fence(session,holder,now(),now().plusSeconds(configuration(session).limits().leaseSeconds()));
+	}
+	public long reserved(String period) { return store.reserved(period); }
+	@Transactional
+	public void pending(UUID session, String holder, String pool, String signature, long slot,
+			String notification) {
+		pendingAt(session,holder,pool,signature,slot,notification,now());
+	}
+	@Transactional public void pendingAt(UUID session,String holder,String pool,String signature,long slot,String notification,Instant received) {
+		fence(session,holder); CaptureBudget.signature(signature);
+		if (slot<0 || configuration(session).pools().stream().noneMatch(p -> p.address().equals(pool))) throw new IllegalArgumentException("UNKNOWN_POOL_OR_SLOT");
+		store.pending(session,pool,signature,slot,notification,received.truncatedTo(ChronoUnit.MICROS));
+	}
+	@Transactional public void finish(UUID session,String holder,String pool,String signature,String status,String digest,String envelope,boolean duplicate) {
+		fence(session,holder); store.finish(session,pool,signature,status,digest,envelope,now(),duplicate);
+		if (!java.util.Set.of("CAPTURED","FAILED_TRANSACTION").contains(status)) {
+			store.gap(session,pool,"TRANSACTION",status,now());
+		}
+	}
+	@Transactional public void interrupt(UUID session, String holder, String reason) {
+		fence(session,holder);
+		for (var p:configuration(session).pools()) { store.gap(session,p.address(),"TRANSACTION",reason,now()); store.gap(session,p.address(),"STATE",reason,now()); }
+	}
+	@Transactional public void recovered(UUID session, String holder, String pool, String boundary) {
+		fence(session,holder); store.recovered(session,pool,boundary,now());
+	}
+	public java.util.Optional<String> boundary(UUID session,String pool) { return store.boundary(session,pool); }
+	public List<Gap> gaps(UUID session) { return store.gaps(session); }
+	public List<Disposition> dispositions(UUID session) { return store.dispositions(session); }
+	public List<AccountSnapshot> states(UUID session) { return store.states(session); }
+	@Transactional public void state(UUID session, String holder, String account, long slot, String payload, String envelope) {
+		stateAt(session,holder,account,slot,payload,envelope,now());
+	}
+	@Transactional public void stateAt(UUID session,String holder,String account,long slot,String payload,String envelope,Instant received) {
+		fence(session,holder);
+		var c=configuration(session);
+		if(slot<0 || c.pools().stream().flatMap(p->p.accounts().stream()).noneMatch(account::equals)) throw new IllegalArgumentException("UNKNOWN_ACCOUNT_OR_SLOT");
+		var node=tools.jackson.databind.json.JsonMapper.builder().build().readTree(payload);
+		var data=node.path("data");
+		var encoding=data.isArray() && data.size()==2 ? data.get(1).asText() : data.path("program").asText("UNKNOWN");
+		store.state(session,c,account,slot,payload,envelope,PayloadFingerprint.sha256(payload),encoding,received.truncatedTo(ChronoUnit.MICROS),now());
+	}
+	@Transactional public boolean consume(UUID session,String holder,long requests,long received,long subscription,long retained,long rpc) {
+		if(requests<0 || received<0 || subscription<0 || retained<0 || rpc<0) throw new IllegalArgumentException("NEGATIVE_CAPTURE_ACCOUNTING");
+		fence(session,holder);
+		var c=configuration(session);
+		if(store.consume(session,requests,received,subscription,retained,rpc,c.limits(),now())) return true;
+		// Delivered bytes are already a billed fact even when admission to more work fails.
+		store.observe(session,holder,received,subscription);
+		var status=store.status(session);
+		var reason=status.subscriptionBytes()>c.limits().subscriptionBytes()?"SUBSCRIPTION_BYTE_LIMIT":
+				status.receivedBytes()>c.limits().receivedBytes()?"RECEIVED_BYTE_LIMIT":
+				!now().isBefore(end(c))?"CAPTURE_TIME_LIMIT":requests>c.limits().requests()-status.requests()?"REQUEST_LIMIT":
+				rpc>c.limits().rpcHundredths()-status.rpcHundredths()?"RPC_CU_LIMIT":store.accountExhausted(session)?"ACCOUNT_COST_LIMIT":"RETAINED_BYTE_LIMIT";
+		for(var pool:c.pools()) { store.gap(session,pool.address(),"TRANSACTION",reason,now()); store.gap(session,pool.address(),"STATE",reason,now()); }
+		store.stop(session,reason); return false;
+	}
+	@Transactional public boolean received(UUID session,String holder,long bytes,boolean subscription) {
+		if(bytes<0) throw new IllegalArgumentException("NEGATIVE_CAPTURE_ACCOUNTING");
+		store.observe(session,holder,bytes,subscription?bytes:0);
+		var c=configuration(session); var status=store.status(session);
+		var reason=status.subscriptionBytes()>c.limits().subscriptionBytes()?"SUBSCRIPTION_BYTE_LIMIT":
+				status.receivedBytes()>c.limits().receivedBytes()?"RECEIVED_BYTE_LIMIT":null;
+		if(reason!=null && "RUNNING".equals(status.state())) {
+			for(var p:c.pools()) { store.gap(session,p.address(),"TRANSACTION",reason,now()); store.gap(session,p.address(),"STATE",reason,now()); }
+			store.stop(session,reason);
+		}
+		return "RUNNING".equals(store.status(session).state());
+	}
+	@Transactional public void stop(UUID session,String holder,String reason) {
+		fence(session,holder); interrupt(session,holder,reason); store.stop(session,reason);
+	}
+	@org.springframework.transaction.annotation.Transactional(readOnly=true,isolation=org.springframework.transaction.annotation.Isolation.REPEATABLE_READ,timeout=10)
+	public Status status(UUID session) { return store.status(session); }
+	@Transactional public void envelope(UUID session,String holder,String kind,String text) {
+		envelopeAt(session,holder,kind,text,now());
+	}
+	@Transactional public void envelopeAt(UUID session,String holder,String kind,String text,Instant received) {
+		fence(session,holder); store.envelope(session,kind,PayloadFingerprint.sha256(text),text,received.truncatedTo(ChronoUnit.MICROS));
+	}
+	public Replay replay(UUID session) { return new Replay(configuration(session),dispositions(session),states(session),store.envelopes(session),status(session)); }
+}

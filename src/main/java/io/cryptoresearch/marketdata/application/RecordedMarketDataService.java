@@ -39,6 +39,15 @@ public class RecordedMarketDataService implements MarketDataApi {
 	private final ObjectProvider<VersionedSnapshotStore> versionedSnapshotStore;
 	private final ObjectProvider<VersionedFactStore> versionedFactStore;
 	private final MeterRegistry meterRegistry;
+	@org.springframework.beans.factory.annotation.Autowired
+	private ObjectProvider<PumpSwapPoolCollector> captureCollector;
+
+	@Override public io.cryptoresearch.marketdata.api.PumpSwapCapture.Status startCapture(io.cryptoresearch.marketdata.api.PumpSwapCapture.Configuration configuration) {
+		return captureCollector.getObject().start(configuration);
+	}
+	@Override public io.cryptoresearch.marketdata.api.PumpSwapCapture.Status stopCapture(java.util.UUID session) { return captureCollector.getObject().stop(session); }
+	@Override public io.cryptoresearch.marketdata.api.PumpSwapCapture.Status captureStatus(java.util.UUID session) { return captureCollector.getObject().status(session); }
+	@Override public io.cryptoresearch.marketdata.api.PumpSwapCapture.Replay replayCapture(java.util.UUID session) { return captureCollector.getObject().replay(session); }
 
 	public RecordedMarketDataService(
 			StoreRawObservationUseCase rawStore,

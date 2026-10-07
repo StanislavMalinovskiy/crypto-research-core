@@ -475,17 +475,20 @@ class FirstSignalEvaluationIT {
 	private void assertDatabaseContract() {
 		assertThat(jdbcClient.sql("SHOW server_version").query(String.class).single()).isEqualTo("18.6");
 		assertThat(jdbcClient.sql("SELECT version FROM flyway_schema_history WHERE success ORDER BY installed_rank")
-				.query(String.class).list()).containsExactly("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12");
+				.query(String.class).list()).containsExactly("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13");
 		assertThat(jdbcClient.sql("SELECT schema_name FROM information_schema.schemata WHERE schema_name IN ('marketdata','signal','evaluation','risk') ORDER BY schema_name")
 				.query(String.class).list()).containsExactly("evaluation", "marketdata", "signal");
 		assertThat(jdbcClient.sql("SELECT table_schema || '.' || table_name FROM information_schema.tables WHERE table_schema IN ('marketdata','signal','evaluation') ORDER BY table_schema, table_name")
 				.query(String.class).list()).containsExactly(
 						"evaluation.entry_outcomes", "evaluation.evaluation_reports", "evaluation.evaluation_runs",
 						"evaluation.v2_entry_outcomes", "evaluation.v2_evaluation_reports", "evaluation.v2_evaluation_runs",
+						"marketdata.capture_checkpoints", "marketdata.capture_dispositions",
+						"marketdata.capture_envelopes", "marketdata.capture_gaps", "marketdata.capture_periods",
+						"marketdata.capture_sessions", "marketdata.capture_state_members",
 						"marketdata.dataset_snapshot_members", "marketdata.dataset_snapshots",
 						"marketdata.liquidity_observations", "marketdata.liquidity_revisions",
 						"marketdata.normalized_swaps", "marketdata.price_observations",
-						"marketdata.price_revisions", "marketdata.raw_chain_events",
+						"marketdata.price_revisions", "marketdata.raw_account_snapshots", "marketdata.raw_chain_events",
 						"marketdata.raw_transactions", "marketdata.swap_revisions",
 						"marketdata.universe_members", "marketdata.universe_snapshots",
 						"marketdata.usd_conversion_facts", "marketdata.usd_revisions",

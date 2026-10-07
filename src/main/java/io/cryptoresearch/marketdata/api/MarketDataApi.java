@@ -16,6 +16,11 @@ import io.cryptoresearch.kernel.api.WalletAddress;
 /** Synchronous public boundary for recorded replay and point-in-time market data. */
 public interface MarketDataApi {
 
+	PumpSwapCapture.Status startCapture(PumpSwapCapture.Configuration configuration);
+	PumpSwapCapture.Status stopCapture(java.util.UUID session);
+	PumpSwapCapture.Status captureStatus(java.util.UUID session);
+	PumpSwapCapture.Replay replayCapture(java.util.UUID session);
+
 	ReplayResult replay(RecordedDataset dataset);
 
 	DatasetSnapshot finalizeDataset(FinalizeDatasetRequest request);
