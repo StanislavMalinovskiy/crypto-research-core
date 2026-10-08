@@ -15,6 +15,7 @@ import tools.jackson.databind.JsonNode;
 
 @Service
 public class PumpSwapPoolCollector {
+	private static final org.slf4j.Logger log=org.slf4j.LoggerFactory.getLogger(PumpSwapPoolCollector.class);
 	static JsonNode historyRows(String result) { return tools.jackson.databind.json.JsonMapper.builder().build().readTree(result).path("data"); }
 	private final PumpSwapCaptureSettings settings;
 	private final CaptureLedgerUseCase ledger;
@@ -64,7 +65,27 @@ public class PumpSwapPoolCollector {
 	private final class Run implements JdkPumpSwapTransport.Accounting {
 		private final Configuration c;
 		private final String holder;
-		private final Object writer=new Object();
+		private final Object local=new Object();
+		private record Write(long bytes,Runnable action,CompletableFuture<Void> done,boolean notificationFrame) {
+			Write(long bytes,Runnable action,CompletableFuture<Void> done) { this(bytes,action,done,false); }
+		}
+		private Write completionTransfer; private boolean completionTransferred;
+		private final AtomicLong callbackMaxNanos=new AtomicLong();
+		public void websocketHandled(long nanos) { callbackMaxNanos.accumulateAndGet(nanos,Math::max); }
+		private String writerReason(Throwable failure) {
+			var reason=JdkPumpSwapTransport.safeReason(failure);
+			return "PROVIDER_TRANSPORT_FAILURE".equals(reason)?"CAPTURE_WRITER_FAILURE":reason;
+		}
+		private final LinkedBlockingDeque<Write> writes;
+		private long requests,received,subscription,retained,rpc;
+		private long writtenRequests,writtenReceived,writtenSubscription,writtenRetained,writtenRpc;
+		private int mailboxItems; private long mailboxBytes;
+		private boolean fragmentHeld; private long fragmentBytes;
+		private volatile boolean admitting=true,writerClosing,writerFailed;
+		private volatile long drainDeadline=Long.MAX_VALUE;
+		private volatile boolean coordinatorDone,writerDone;
+		private void releaseActive() { if(coordinatorDone && writerDone) active.compareAndSet(this,null); }
+		private Thread databaseWriter;
 		private record Queued(Notification notification,java.time.Instant receivedAt) { }
 		private final ArrayBlockingQueue<Queued> queue;
 		private final AtomicLong queuedBytes=new AtomicLong();
@@ -74,8 +95,85 @@ public class PumpSwapPoolCollector {
 		private Thread worker;
 		private java.time.Instant lastRequest;
 		private volatile java.time.Instant recoveryDeadline;
-		Run(Configuration c,String holder) { this.c=c; this.holder=holder; queue=new ArrayBlockingQueue<>(c.limits().queueItems()); }
+		Run(Configuration c,String holder) {
+			this.c=c; this.holder=holder; queue=new ArrayBlockingQueue<>(c.limits().queueItems()); writes=new LinkedBlockingDeque<>(c.limits().queueItems());
+			var status=ledger.status(c.sessionId()); requests=writtenRequests=status.requests(); received=writtenReceived=status.receivedBytes();
+			subscription=writtenSubscription=status.subscriptionBytes(); retained=writtenRetained=status.retainedBytes(); rpc=writtenRpc=status.rpcHundredths();
+		}
+		private boolean acquire(long bytes) {
+			synchronized(local) { if(!admitting || mailboxItems>=c.limits().queueItems() || bytes>c.limits().queueBytes()-mailboxBytes) return false; mailboxItems++; mailboxBytes+=bytes; return true; }
+		}
+		private void release(long bytes) { synchronized(local) { mailboxItems--; mailboxBytes-=bytes; } }
+		private CompletableFuture<Void> write(long bytes,boolean priority,Runnable action) {
+			var done=new CompletableFuture<Void>();
+			if(!acquire(bytes)) { interrupted("QUEUE_OVERFLOW"); done.completeExceptionally(new IllegalStateException(interruption.get()==null?"QUEUE_OVERFLOW":interruption.get())); return done; }
+			var work=new Write(bytes,action,done);
+			if(!(priority?writes.offerFirst(work):writes.offerLast(work))) { release(bytes); interrupted("QUEUE_OVERFLOW"); done.completeExceptionally(new IllegalStateException("QUEUE_OVERFLOW")); }
+			return done;
+		}
+		private void onWriter(Runnable action) {
+			onWriter(0,action);
+		}
+		private void onWriter(long bytes,Runnable action) {
+			try { write(bytes,false,action).get(c.limits().timeoutSeconds(),TimeUnit.SECONDS); }
+			catch(InterruptedException failure) { Thread.currentThread().interrupt(); throw new IllegalStateException("CAPTURE_INTERRUPTED"); }
+			catch(TimeoutException failure) { interrupted("CAPTURE_WRITER_TIMEOUT"); throw new IllegalStateException("CAPTURE_WRITER_TIMEOUT"); }
+			catch(ExecutionException failure) { throw new IllegalStateException(JdkPumpSwapTransport.safeReason(failure.getCause())); }
+		}
+		private void flush(String kind,String text,java.time.Instant at) {
+			long r,b,s,t,cu;
+			synchronized(local) { r=requests; b=received; s=subscription; t=retained; cu=rpc; }
+			var fits=ledger.captureWrite(c,holder,r-writtenRequests,b-writtenReceived,s-writtenSubscription,t-writtenRetained,cu-writtenRpc,kind,text,at);
+			accounted(r,b,s,t,cu,fits);
+		}
+		private void flushAccount(Notification n,java.time.Instant at) {
+			long r,b,s,t,cu; synchronized(local) { r=requests; b=received; s=subscription; t=retained; cu=rpc; }
+			var fits=ledger.captureAccount(c,holder,r-writtenRequests,b-writtenReceived,s-writtenSubscription,t-writtenRetained,cu-writtenRpc,n.account(),n.slot(),n.payload(),n.envelope(),at);
+			accounted(r,b,s,t,cu,fits);
+		}
+		private void accounted(long r,long b,long s,long t,long cu,boolean fits) {
+			writtenReceived=b; writtenSubscription=s; writtenRetained=t;
+			if(!fits) {
+				// Known delivered bytes remain durable; the provider operation was never admitted.
+				synchronized(local) { requests-=r-writtenRequests; rpc-=cu-writtenRpc; }
+				throw new IllegalStateException("CAPTURE_RESOURCE_LIMIT");
+			}
+			writtenRequests=r; writtenRpc=cu;
+		}
+		private void writerLoop() {
+			var renewal=ledger.now().plusSeconds(Math.max(1,c.limits().leaseSeconds()/3));
+			try {
+				while(!writerClosing || !writes.isEmpty()) {
+					if(System.nanoTime()>drainDeadline) throw new IllegalStateException("CAPTURE_WRITER_DRAIN_TIMEOUT");
+					var work=writes.poll(100,TimeUnit.MILLISECONDS);
+					if(work!=null) {
+						long began=System.nanoTime();
+						try {
+							work.action().run();
+							if(work.notificationFrame()) { completionTransfer=work; completionTransferred=false; work.done().complete(null); if(!completionTransferred) release(work.bytes()); completionTransfer=null; }
+							else { release(work.bytes()); work.done().complete(null); }
+							int items; long bytes; synchronized(local) { items=mailboxItems; bytes=mailboxBytes; }
+							try { log.debug("PumpSwap writer commit elapsedNanos={} payloadBytes={} mailboxItems={} mailboxBytes={} callbackMaxNanos={}",System.nanoTime()-began,work.bytes(),items,bytes,callbackMaxNanos.get()); }
+							catch(RuntimeException diagnosticFailure) { /* Diagnostics never change durable completion or capacity. */ }
+						}
+						catch(RuntimeException failure) { release(work.bytes()); work.done().completeExceptionally(new IllegalStateException(writerReason(failure))); throw failure; }
+					}
+					if(!writerClosing && !ledger.now().isBefore(renewal)) { if(!ledger.claim(c.sessionId(),holder)) throw new IllegalStateException("CAPTURE_LEASE_LOST"); renewal=ledger.now().plusSeconds(Math.max(1,c.limits().leaseSeconds()/3)); }
+				}
+				flush(null,null,null);
+				ledger.stop(c.sessionId(),holder,interruption.get()==null?"OWNER_STOP":interruption.get());
+			} catch(InterruptedException failure) { Thread.currentThread().interrupt(); interrupted("CAPTURE_WRITER_INTERRUPTED"); }
+			catch(RuntimeException failure) {
+				writerFailed=true;
+				interrupted(writerReason(failure));
+				try { flush(null,null,null); } catch(RuntimeException unavailable) { /* Preserve the terminal signal even when flushing cannot finish. */ }
+				try { ledger.stop(c.sessionId(),holder,interruption.get()); }
+				catch(RuntimeException unavailable) { /* Unfinished session and conservative reservation expose failed/expired storage. */ }
+			}
+			finally { Write work; while((work=writes.poll())!=null) { release(work.bytes()); work.done().completeExceptionally(new IllegalStateException(interruption.get()==null?"CAPTURE_WRITER_FAILURE":interruption.get())); } writerDone=true; releaseActive(); }
+		}
 		private void time() {
+			if(writerFailed) throw new IllegalStateException(interruption.get()==null?"CAPTURE_WRITER_FAILURE":interruption.get());
 			if(stopped || !ledger.now().isBefore(CaptureLedgerUseCase.end(c))) throw new IllegalStateException("CAPTURE_TIME_LIMIT");
 			var deadline=recoveryDeadline;
 			if(deadline!=null && !ledger.now().isBefore(deadline)) throw new IllegalStateException("RECOVERY_TIME_LIMIT");
@@ -84,9 +182,10 @@ public class PumpSwapPoolCollector {
 			time();
 			if(cu>0) {
 				waitSeconds(c.limits().timeoutSeconds());
-				var status=ledger.status(c.sessionId());
-				if(status.receivedBytes()>c.limits().receivedBytes()-c.limits().responseBytes()) throw new IllegalStateException("HTTP_RECEIVED_BYTE_HEADROOM_LIMIT");
-				if(status.retainedBytes()>c.limits().retainedBytes()-2L*c.limits().responseBytes()) throw new IllegalStateException("HTTP_RETAINED_BYTE_HEADROOM_LIMIT");
+				synchronized(local) {
+					if(received>c.limits().receivedBytes()-c.limits().responseBytes()) throw new IllegalStateException("HTTP_RECEIVED_BYTE_HEADROOM_LIMIT");
+					if(retained>c.limits().retainedBytes()-2L*c.limits().responseBytes()) throw new IllegalStateException("HTTP_RETAINED_BYTE_HEADROOM_LIMIT");
+				}
 			}
 			if(lastRequest!=null) {
 				var next=lastRequest.plusNanos(1000000000L/c.limits().requestsPerSecond());
@@ -94,11 +193,9 @@ public class PumpSwapPoolCollector {
 				var wait=java.time.Duration.between(ledger.now(),next).toNanos();
 				if(wait>0) try { TimeUnit.NANOSECONDS.sleep(wait); } catch(InterruptedException interrupted) { Thread.currentThread().interrupt(); throw new IllegalStateException("CAPTURE_INTERRUPTED"); }
 			}
-			synchronized(writer) {
-				time(); if(cu>0) waitSeconds(c.limits().timeoutSeconds());
-				if(!ledger.consume(c.sessionId(),holder,1,0,0,0,cu)) throw new IllegalStateException("CAPTURE_RESOURCE_LIMIT");
-				lastRequest=ledger.now();
-			}
+			synchronized(local) { time(); if(!admitting) throw new IllegalStateException(interruption.get()==null?"CAPTURE_STOPPED":interruption.get());
+				if(requests>=c.limits().requests() || cu>c.limits().rpcHundredths()-rpc) throw new IllegalStateException("CAPTURE_RESOURCE_LIMIT"); requests++; rpc+=cu; }
+			onWriter(()->flush(null,null,null)); lastRequest=ledger.now();
 		}
 		public void waitSeconds(long seconds) {
 			if(seconds<0 || !ledger.now().plusSeconds(seconds).isBefore(CaptureLedgerUseCase.end(c))) throw new IllegalStateException("CAPTURE_TIME_LIMIT");
@@ -106,16 +203,26 @@ public class PumpSwapPoolCollector {
 			if(deadline!=null && !ledger.now().plusSeconds(seconds).isBefore(deadline)) throw new IllegalStateException("RECOVERY_TIME_LIMIT");
 		}
 		public void received(long bytes,boolean subscription) {
-			synchronized(writer) {
-				if(!ledger.received(c.sessionId(),holder,bytes,subscription)) throw new IllegalStateException("CAPTURE_RESOURCE_LIMIT");
+			synchronized(local) { received=Math.addExact(received,bytes); if(subscription) this.subscription=Math.addExact(this.subscription,bytes);
+				if(received>c.limits().receivedBytes() || this.subscription>c.limits().subscriptionBytes()) { interrupted("CAPTURE_RESOURCE_LIMIT"); throw new IllegalStateException("CAPTURE_RESOURCE_LIMIT"); } }
+		}
+		public void websocketFragment(long bytes) {
+			received(bytes,true);
+			synchronized(local) {
+				if(!admitting || (!fragmentHeld && mailboxItems>=c.limits().queueItems()) || bytes>c.limits().queueBytes()-mailboxBytes) throw new IllegalStateException("QUEUE_OVERFLOW");
+				if(!fragmentHeld) { fragmentHeld=true; mailboxItems++; }
+				fragmentBytes+=bytes; mailboxBytes+=bytes;
 			}
 		}
+		public void discardWebsocketMessage() {
+			synchronized(local) { if(fragmentHeld) { mailboxItems--; mailboxBytes-=fragmentBytes; fragmentHeld=false; fragmentBytes=0; } }
+		}
 		public void nextMessage() {
-			synchronized(writer) {
-				time(); var status=ledger.status(c.sessionId());
+			synchronized(local) {
+				time(); if(!admitting) throw new IllegalStateException(interruption.get()==null?"CAPTURE_STOPPED":interruption.get());
 				// Hold one full-message and close/control headroom before asking the JDK for another fragment.
 				var headroom=Math.addExact(c.limits().messageBytes(),256L);
-				if(status.subscriptionBytes()>c.limits().subscriptionBytes()-headroom || status.receivedBytes()>c.limits().receivedBytes()-headroom)
+				if(subscription>c.limits().subscriptionBytes()-headroom || received>c.limits().receivedBytes()-headroom)
 					throw new IllegalStateException("SUBSCRIPTION_BYTE_HEADROOM_LIMIT");
 			}
 		}
@@ -125,23 +232,34 @@ public class PumpSwapPoolCollector {
 		public java.time.Instant now() { return ledger.now(); }
 		public void evidence(String kind,String text,java.time.Instant receivedAt) {
 			retained(text.getBytes(StandardCharsets.UTF_8).length);
-			synchronized(writer) { ledger.envelopeAt(c.sessionId(),holder,kind,text,receivedAt); }
+			onWriter(text.getBytes(StandardCharsets.UTF_8).length,()->flush(kind,text,receivedAt));
 		}
-		private long size(Notification n) { return n.envelope().getBytes(StandardCharsets.UTF_8).length; }
+		public CompletableFuture<Void> websocketEvidence(String text,java.time.Instant at) {
+			var bytes=text.getBytes(StandardCharsets.UTF_8).length; retained(bytes);
+			var done=new CompletableFuture<Void>();
+			synchronized(local) { if(!fragmentHeld || fragmentBytes!=bytes) throw new IllegalStateException("CAPTURE_FRAME_RESERVATION_MISMATCH"); fragmentHeld=false; fragmentBytes=0; }
+			var ack=json.readTree(text).has("id"); var work=new Write(bytes,()->flush("WEBSOCKET",text,at),done,!ack);
+			if(!(ack?writes.offerFirst(work):writes.offerLast(work))) { release(bytes); interrupted("QUEUE_OVERFLOW"); done.completeExceptionally(new IllegalStateException("QUEUE_OVERFLOW")); }
+			return done;
+		}
+		private long size(Notification n) { return n.envelope().getBytes(StandardCharsets.UTF_8).length+(long)n.payload().getBytes(StandardCharsets.UTF_8).length; }
 		private void enqueue(Notification n) {
 			var bytes=size(n); var total=queuedBytes.addAndGet(bytes);
-			if(stopped || total>c.limits().queueBytes() || !queue.offer(new Queued(n,n.receivedAt()))) {
+			boolean acquired=false;
+			if(!stopped && Thread.currentThread()==databaseWriter && completionTransfer!=null && !completionTransferred) {
+				synchronized(local) { var extra=bytes-completionTransfer.bytes(); if(admitting && extra>=0 && extra<=c.limits().queueBytes()-mailboxBytes) { mailboxBytes+=extra; acquired=true; completionTransferred=true; } }
+			} else acquired=!stopped && acquire(bytes);
+			if(!acquired || !queue.offer(new Queued(n,n.receivedAt()))) {
+				if(acquired) release(bytes);
 				queuedBytes.addAndGet(-bytes); interrupted("QUEUE_OVERFLOW");
 				var current=transport; if(current!=null) current.close();
 			}
 		}
 		private void interrupted(String reason) {
-			if(interruption.compareAndSet(null,reason)) synchronized(writer) {
-				if(!stopped && "RUNNING".equals(ledger.status(c.sessionId()).state())) ledger.interrupt(c.sessionId(),holder,reason);
-			}
+			if(interruption.compareAndSet(null,reason)) { admitting=false; var current=transport; if(current!=null) current.close(); }
 		}
 		private void retained(long bytes) {
-			synchronized(writer) { if(!ledger.consume(c.sessionId(),holder,0,0,0,bytes,0)) throw new IllegalStateException("RETAINED_BYTE_LIMIT"); }
+			synchronized(local) { if(bytes>c.limits().retainedBytes()-retained) throw new IllegalStateException("RETAINED_BYTE_LIMIT"); retained+=bytes; }
 		}
 		private void verifyAndReadAccounts() {
 			var reads=new java.util.HashMap<String,JdkPumpSwapTransport.Response>();
@@ -164,32 +282,32 @@ public class PumpSwapPoolCollector {
 				var payload=JdkPumpSwapTransport.exactValue(response.result(),"/value");
 				if(first) {
 					retained(response.envelope().getBytes(StandardCharsets.UTF_8).length+(long)payload.getBytes(StandardCharsets.UTF_8).length);
-					synchronized(writer) { ledger.stateAt(c.sessionId(),holder,account,slot.longValue(),payload,response.envelope(),response.receivedAt()); }
+					onWriter(response.envelope().getBytes(StandardCharsets.UTF_8).length+(long)payload.getBytes(StandardCharsets.UTF_8).length,()->ledger.stateAt(c.sessionId(),holder,account,slot.longValue(),payload,response.envelope(),response.receivedAt()));
 				}
 			}
 		}
 		private String transaction(String pool,String signature,long slot,String envelope,java.time.Instant received) {
 			CaptureBudget.signature(signature);
 			retained(envelope.getBytes(StandardCharsets.UTF_8).length);
-			synchronized(writer) { ledger.pendingAt(c.sessionId(),holder,pool,signature,slot,envelope,received); }
+			onWriter(envelope.getBytes(StandardCharsets.UTF_8).length,()->ledger.pendingAt(c.sessionId(),holder,pool,signature,slot,envelope,received));
 			JdkPumpSwapTransport.Response response;
 			try { response=transport.rpc("getTransaction","[\""+signature+"\",{\"commitment\":\"finalized\",\"encoding\":\"json\",\"maxSupportedTransactionVersion\":0}]"); }
 			catch(RuntimeException failure) {
 				var reason=JdkPumpSwapTransport.safeReason(failure);
-				if(reason.startsWith("PROVIDER_") || reason.startsWith("MALFORMED_") || reason.equals("HTTP_RESPONSE_BYTE_LIMIT")) synchronized(writer) {
+				if(reason.startsWith("PROVIDER_") || reason.startsWith("MALFORMED_") || reason.equals("HTTP_RESPONSE_BYTE_LIMIT")) onWriter(()->{
 					if("RUNNING".equals(ledger.status(c.sessionId()).state())) ledger.finish(c.sessionId(),holder,pool,signature,"FETCH_FAILURE",null,"{\"clientFailure\":\""+reason+"\"}",false);
-				}
+				});
 				throw failure;
 			}
 			time(); retained(response.envelope().getBytes(StandardCharsets.UTF_8).length+(long)response.result().getBytes(StandardCharsets.UTF_8).length);
-			synchronized(writer) { return evidence.transaction(c.sessionId(),holder,pool,signature,response.result(),response.envelope(),response.receivedAt(),true); }
+			var result=new AtomicReference<String>(); onWriter(response.envelope().getBytes(StandardCharsets.UTF_8).length+(long)response.result().getBytes(StandardCharsets.UTF_8).length,()->result.set(evidence.transaction(c.sessionId(),holder,pool,signature,response.result(),response.envelope(),response.receivedAt(),true))); return result.get();
 		}
 		private void process(Queued queued) {
 			var n=queued.notification();
 			if(n.account()==null) transaction(n.pool(),n.signature(),n.slot(),n.envelope(),queued.receivedAt());
 			else {
-				retained(size(n)+(long)n.payload().getBytes(StandardCharsets.UTF_8).length);
-				synchronized(writer) { ledger.stateAt(c.sessionId(),holder,n.account(),n.slot(),n.payload(),n.envelope(),queued.receivedAt()); }
+				retained(n.envelope().getBytes(StandardCharsets.UTF_8).length+(long)n.payload().getBytes(StandardCharsets.UTF_8).length);
+				onWriter(()->flushAccount(n,queued.receivedAt()));
 			}
 		}
 		private void recover() {
@@ -218,7 +336,7 @@ public class PumpSwapPoolCollector {
 						var status=transaction(pool.address(),signature,slot.longValue(),response.envelope(),ledger.now());
 						if(!java.util.Set.of("CAPTURED","FAILED_TRANSACTION").contains(status)) continuity=false;
 					}
-					if(reached && continuity) { synchronized(writer) { ledger.recovered(c.sessionId(),holder,pool.address(),boundary.get()); } break; }
+					if(reached && continuity) { onWriter(()->ledger.recovered(c.sessionId(),holder,pool.address(),boundary.get())); break; }
 					var next=result.path("paginationToken").asText("");
 					if(!continuity || next.isBlank() || next.equals(cursor) || !next.matches("[A-Za-z0-9_:-]{1,512}")) throw new IllegalStateException("RECOVERY_CONTINUITY_UNPROVED");
 					if(page+1==c.limits().recoveryPages()) throw new IllegalStateException("RECOVERY_PAGE_LIMIT");
@@ -234,36 +352,36 @@ public class PumpSwapPoolCollector {
 		}
 		private void loop() {
 			String terminal="CAPTURE_TIME_LIMIT"; var reconnect=0;
+			databaseWriter=Thread.ofVirtual().name("pumpswap-durable-writer").start(this::writerLoop);
 			try {
 				while(!stopped) {
 					time(); transport=new JdkPumpSwapTransport(settings.getRpc(),settings.getWebsocket(),settings.getSecret(),c.limits(),this);
 					verifyAndReadAccounts(); retryPending();
-					interruption.set(null); transport.connect(c.pools(),this::enqueue,this::interrupted);
+					interruption.set(null); admitting=true; transport.connect(c.pools(),this::enqueue,this::interrupted);
 					if(reconnect>0 || !ledger.gaps(c.sessionId()).isEmpty()) recover();
 					while(!stopped && interruption.get()==null) {
-						time(); synchronized(writer) { if(!ledger.claim(c.sessionId(),holder)) throw new IllegalStateException("CAPTURE_LEASE_LOST"); }
+						time();
 						var notification=queue.poll(1,TimeUnit.SECONDS);
-						if(notification!=null) { queuedBytes.addAndGet(-size(notification.notification())); process(notification); }
+						if(notification!=null) { try { process(notification); } finally { var bytes=size(notification.notification()); queuedBytes.addAndGet(-bytes); release(bytes); } }
 					}
 					transport.close(); if(stopped) break;
 					var reason=interruption.get();
-					if("QUEUE_OVERFLOW".equals(reason) || reason.endsWith("LIMIT") || reason.contains("SECRET") || reconnect++>=c.limits().reconnects()) { terminal=reason; break; }
+					if(writerFailed || "QUEUE_OVERFLOW".equals(reason) || reason.endsWith("LIMIT") || reason.contains("SECRET") || reconnect++>=c.limits().reconnects()) { terminal=reason; break; }
 					var wait=reconnect==1?1:3; waitSeconds(wait); TimeUnit.SECONDS.sleep(wait);
 				}
 			} catch(InterruptedException interrupted) { Thread.currentThread().interrupt(); terminal="OWNER_STOP"; }
 			catch(RuntimeException failure) { terminal=JdkPumpSwapTransport.safeReason(failure); }
 			finally {
 				var interrupted=Thread.interrupted();
-				try { terminal(terminal); active.compareAndSet(this,null); }
+				try { terminal(terminal); coordinatorDone=true; releaseActive(); }
 				finally { if(interrupted) Thread.currentThread().interrupt(); }
 			}
 		}
 		private void terminal(String reason) {
-			stopped=true; var current=transport; if(current!=null) current.close();
-			synchronized(writer) {
-				try { if("RUNNING".equals(ledger.status(c.sessionId()).state())) ledger.stop(c.sessionId(),holder,reason); }
-				catch(RuntimeException lostLease) { /* Expired lease and pending rows expose an unfinished session. */ }
-			}
+			interruption.compareAndSet(null,reason); stopped=true; admitting=false; discardWebsocketMessage(); var current=transport; if(current!=null) current.close();
+			if(!writerClosing) { drainDeadline=System.nanoTime()+TimeUnit.SECONDS.toNanos(c.limits().timeoutSeconds()+1L); writerClosing=true; }
+			if(databaseWriter!=null && Thread.currentThread()!=databaseWriter) try { databaseWriter.join(java.time.Duration.ofSeconds(c.limits().timeoutSeconds()+1L)); }
+			catch(InterruptedException failure) { Thread.currentThread().interrupt(); }
 		}
 	}
 }

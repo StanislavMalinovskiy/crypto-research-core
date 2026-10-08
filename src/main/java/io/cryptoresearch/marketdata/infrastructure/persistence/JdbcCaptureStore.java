@@ -181,6 +181,31 @@ public class JdbcCaptureStore {
 				.param("maxReceived",l.receivedBytes()).param("maxSubscription",l.subscriptionBytes()).param("maxRetained",l.retainedBytes())
 				.param("maxRpc",l.rpcHundredths()).query(Integer.class).optional().isPresent();
 	}
+	public boolean captureAdvance(Configuration c,String holder,Instant now,long requests,long received,long subscription,long retained,long rpc) {
+		var l=c.limits();
+		var result=jdbc.sql("""
+				WITH admission AS (
+				SELECT session_id,requests<=:maxRequests-:requests AND received_bytes<=:maxReceived-:received
+				AND subscription_bytes<=:maxSubscription-:subscription AND retained_bytes<=:maxRetained-:retained
+				AND rpc_hundredths<=:maxRpc-:rpc AND ends_at>:now
+				AND NOT EXISTS (SELECT 1 FROM marketdata.capture_periods p WHERE p.account_period=s.account_period
+				AND p.known_overage_hundredths>p.ceiling_hundredths-p.reserved_hundredths) AS fits
+				FROM marketdata.capture_sessions s WHERE session_id=:id AND holder=:holder AND locked_until>:now AND state='RUNNING' FOR UPDATE
+				)
+				UPDATE marketdata.capture_sessions s SET requests=requests+CASE WHEN a.fits THEN :requests ELSE 0 END,
+				received_bytes=received_bytes+:received,subscription_bytes=subscription_bytes+:subscription,
+				retained_bytes=retained_bytes+:retained,rpc_hundredths=rpc_hundredths+CASE WHEN a.fits THEN :rpc ELSE 0 END,locked_until=:until
+				FROM admission a WHERE s.session_id=a.session_id RETURNING s.subscription_bytes,a.fits
+				""").param("id",c.sessionId()).param("holder",holder).param("now",time(now)).param("until",time(now.plusSeconds(l.leaseSeconds())))
+				.param("requests",requests).param("received",received).param("subscription",subscription).param("retained",retained).param("rpc",rpc)
+				.param("maxRequests",l.requests()).param("maxReceived",l.receivedBytes()).param("maxSubscription",l.subscriptionBytes())
+				.param("maxRetained",l.retainedBytes()).param("maxRpc",l.rpcHundredths())
+				.query((r,n)->new long[]{r.getLong(1),r.getBoolean(2)?1:0}).optional().orElseThrow(()->new IllegalStateException("CAPTURE_LEASE_LOST"));
+		var extra=Math.subtractExact(Math.max(0,result[0]-l.subscriptionBytes()),Math.max(0,result[0]-subscription-l.subscriptionBytes()));
+		if(extra>0) jdbc.sql("UPDATE marketdata.capture_periods SET known_overage_hundredths=known_overage_hundredths+:extra WHERE account_period=:period")
+				.param("extra",io.cryptoresearch.marketdata.application.CaptureBudget.subscriptionHundredths(c,extra)).param("period",c.authority().accountPeriod()).update();
+		return result[1]==1;
+	}
 	public void stop(UUID id, String reason) {
 		jdbc.sql("UPDATE marketdata.capture_sessions SET state='STOPPED',reason=:reason WHERE session_id=:id")
 				.param("id",id).param("reason",reason).update();

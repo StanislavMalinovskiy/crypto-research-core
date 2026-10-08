@@ -71,6 +71,24 @@ The collector SHALL durably record disconnect, queue overflow, fetch failure and
 - **THEN** capture SHALL terminate or pause with a durable explicit gap and terminal reason
 - **AND** no dropped item or unknown coverage SHALL become zero missing data.
 
+### Requirement: Database-free callbacks with bounded durable writer
+Every WebSocket callback and its accounting, headroom, error and overflow handlers SHALL perform no database read/write, DB-dependent lock wait or durable-future wait. They SHALL use conservative in-memory cumulative admission backed by the original durable whole-window reservation and a separate bounded marketdata writer. Aggregate queued/in-flight payload work SHALL respect configured item/byte bounds. Received bytes and original trusted receive times SHALL remain accountable, including limit-triggering traffic. Validated ACK arrival SHALL remain distinct from durable ACK commit; subscription success and dependent notification application processing SHALL require the exact ACK envelope to be committed. Writer transactions SHALL remain short, lease-fenced and provider-I/O-free. Crash/unflushed accounting SHALL remain explicitly unknown under retained reservation, never reset or refunded.
+
+#### Scenario: Notifications arrive while durable storage is slow
+- **WHEN** notification writes are blocked and a valid ACK arrives behind notifications within remaining queue capacity
+- **THEN** callbacks SHALL admit and timestamp bounded frames without waiting for database work
+- **AND** ACK arrival SHALL NOT publish subscription success before its exact envelope commits or release dependent notification processing before durable ACK.
+
+#### Scenario: Callback queue overflows or writer cannot finish
+- **WHEN** item/byte capacity is exhausted, a writer fails or a durable ACK misses its finite shared deadline
+- **THEN** callback handling SHALL signal explicit terminal failure and stop transport without database work or automatic retry
+- **AND** an independent bounded control/writer path SHALL retain known accounting and durable unresolved gaps where storage/lease permits, otherwise expose an unfinished session/unknown tail without claiming committed coverage.
+
+#### Scenario: Previously reserved authority survives callback crash
+- **WHEN** callback accounting has admitted bytes that have not committed before a crash or session replacement
+- **THEN** the original period/window reservation and committed accounting SHALL remain preserved
+- **AND** unknown unflushed usage SHALL NOT be treated as zero or grant replacement expense authority.
+
 ### Requirement: Capture-only quality and accountable status
 The collector SHALL expose a synchronous immutable session status including raw transaction/state counts, duplicates, conflicts, failures, unsupported/unknown facts, open gaps and cumulative requests/bytes/time/cost reservations with unknown actual billing labelled unknown. Raw payloads SHALL remain replayable without network access and unsupported May layouts, Token2022, self-CPI, ATA lifecycle and fee attribution SHALL not be interpreted by this slice. Secrets SHALL be absent from persisted evidence, diagnostics and error messages. Capture SHALL NOT generate signals, evaluation outcomes, D1/P1 admission or a production-readiness claim.
 

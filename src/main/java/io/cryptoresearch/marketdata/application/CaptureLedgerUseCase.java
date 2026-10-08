@@ -48,24 +48,38 @@ public class CaptureLedgerUseCase {
 		var window=c.startsAt().plusSeconds(c.limits().windowSeconds());
 		return window.isBefore(c.authority().periodEnd()) ? window : c.authority().periodEnd();
 	}
-	@Transactional public boolean claim(UUID session, String holder) {
+	@Transactional(timeout=10) public boolean claim(UUID session, String holder) {
 		var c=configuration(session); return store.claim(session,holder,now(),now().plusSeconds(c.limits().leaseSeconds()));
 	}
 	private void fence(UUID session,String holder) {
 		store.fence(session,holder,now(),now().plusSeconds(configuration(session).limits().leaseSeconds()));
 	}
 	public long reserved(String period) { return store.reserved(period); }
+	/** One writer already holds the immutable configuration acquired before provider work. */
+	@Transactional(timeout=10) public boolean captureWrite(Configuration c,String holder,long requests,long received,long subscription,long retained,long rpc,String kind,String text,Instant receivedAt) {
+		if(requests<0 || received<0 || subscription<0 || retained<0 || rpc<0) throw new IllegalArgumentException("NEGATIVE_CAPTURE_ACCOUNTING");
+		var fits=store.captureAdvance(c,holder,now(),requests,received,subscription,retained,rpc);
+		if(text!=null) store.envelope(c.sessionId(),kind,PayloadFingerprint.sha256(text),text,receivedAt.truncatedTo(ChronoUnit.MICROS));
+		return fits;
+	}
+	@Transactional(timeout=10) public boolean captureAccount(Configuration c,String holder,long requests,long received,long subscription,long retained,long rpc,String account,long slot,String payload,String envelope,Instant at) {
+		if(!captureWrite(c,holder,requests,received,subscription,retained,rpc,null,null,null)) return false;
+		if(slot<0 || c.pools().stream().flatMap(p->p.accounts().stream()).noneMatch(account::equals)) throw new IllegalArgumentException("UNKNOWN_ACCOUNT_OR_SLOT");
+		var data=tools.jackson.databind.json.JsonMapper.builder().build().readTree(payload).path("data");
+		var encoding=data.isArray() && data.size()==2?data.get(1).asText():data.path("program").asText("UNKNOWN");
+		store.state(c.sessionId(),c,account,slot,payload,envelope,PayloadFingerprint.sha256(payload),encoding,at.truncatedTo(ChronoUnit.MICROS),now()); return true;
+	}
 	@Transactional
 	public void pending(UUID session, String holder, String pool, String signature, long slot,
 			String notification) {
 		pendingAt(session,holder,pool,signature,slot,notification,now());
 	}
-	@Transactional public void pendingAt(UUID session,String holder,String pool,String signature,long slot,String notification,Instant received) {
+	@Transactional(timeout=10) public void pendingAt(UUID session,String holder,String pool,String signature,long slot,String notification,Instant received) {
 		fence(session,holder); CaptureBudget.signature(signature);
 		if (slot<0 || configuration(session).pools().stream().noneMatch(p -> p.address().equals(pool))) throw new IllegalArgumentException("UNKNOWN_POOL_OR_SLOT");
 		store.pending(session,pool,signature,slot,notification,received.truncatedTo(ChronoUnit.MICROS));
 	}
-	@Transactional public void finish(UUID session,String holder,String pool,String signature,String status,String digest,String envelope,boolean duplicate) {
+	@Transactional(timeout=10) public void finish(UUID session,String holder,String pool,String signature,String status,String digest,String envelope,boolean duplicate) {
 		fence(session,holder); store.finish(session,pool,signature,status,digest,envelope,now(),duplicate);
 		if (!java.util.Set.of("CAPTURED","FAILED_TRANSACTION").contains(status)) {
 			store.gap(session,pool,"TRANSACTION",status,now());
@@ -85,7 +99,7 @@ public class CaptureLedgerUseCase {
 	@Transactional public void state(UUID session, String holder, String account, long slot, String payload, String envelope) {
 		stateAt(session,holder,account,slot,payload,envelope,now());
 	}
-	@Transactional public void stateAt(UUID session,String holder,String account,long slot,String payload,String envelope,Instant received) {
+	@Transactional(timeout=10) public void stateAt(UUID session,String holder,String account,long slot,String payload,String envelope,Instant received) {
 		fence(session,holder);
 		var c=configuration(session);
 		if(slot<0 || c.pools().stream().flatMap(p->p.accounts().stream()).noneMatch(account::equals)) throw new IllegalArgumentException("UNKNOWN_ACCOUNT_OR_SLOT");
@@ -121,7 +135,7 @@ public class CaptureLedgerUseCase {
 		}
 		return "RUNNING".equals(store.status(session).state());
 	}
-	@Transactional public void stop(UUID session,String holder,String reason) {
+	@Transactional(timeout=10) public void stop(UUID session,String holder,String reason) {
 		fence(session,holder); interrupt(session,holder,reason); store.stop(session,reason);
 	}
 	@org.springframework.transaction.annotation.Transactional(readOnly=true,isolation=org.springframework.transaction.annotation.Isolation.REPEATABLE_READ,timeout=10)

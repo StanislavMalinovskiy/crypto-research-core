@@ -20,11 +20,17 @@ public final class JdkPumpSwapTransport implements AutoCloseable {
 	public interface Accounting {
 		void start(long rpcHundredths);
 		void received(long bytes, boolean subscription);
+		default void websocketFragment(long bytes) { received(bytes,true); }
+		default void discardWebsocketMessage() { }
+		default void websocketHandled(long elapsedNanos) { }
 		void nextMessage();
 		default void evidence(String kind,String envelope) { }
 		default void waitSeconds(long seconds) { }
 		java.time.Instant now();
 		default void evidence(String kind,String envelope,java.time.Instant receivedAt) { evidence(kind,envelope); }
+		default CompletableFuture<Void> websocketEvidence(String envelope,java.time.Instant receivedAt) {
+			evidence("WEBSOCKET",envelope,receivedAt); return CompletableFuture.completedFuture(null);
+		}
 	}
 	public record Response(String result, String envelope,java.time.Instant receivedAt) { }
 	public record Notification(String pool, String account, String signature, long slot, String payload, String envelope,java.time.Instant receivedAt) { }
@@ -126,9 +132,10 @@ public final class JdkPumpSwapTransport implements AutoCloseable {
 		public void onComplete() { receivedAt=accounting.now(); body.complete(bytes.toByteArray()); }
 	}
 	private record Channel(String pool,String account) { }
-	private record PendingSubscription(Channel channel,CompletableFuture<Void> durableAck) { }
+	private record PendingSubscription(Channel channel,CompletableFuture<Void> durableAck,java.util.concurrent.atomic.AtomicBoolean arrived) { }
+	private record Subscription(Channel channel,CompletableFuture<Void> durableAck) { }
 	public void connect(List<Pool> pools,Consumer<Notification> notifications,Consumer<String> interrupted) {
-		var pending=new ConcurrentHashMap<Long,PendingSubscription>(); var subscriptions=new ConcurrentHashMap<Long,Channel>();
+		var pending=new ConcurrentHashMap<Long,PendingSubscription>(); var subscriptions=new ConcurrentHashMap<Long,Subscription>();
 		var failureSignal=new CompletableFuture<Void>();
 		var opened=new CompletableFuture<Void>();
 		try {
@@ -144,33 +151,40 @@ public final class JdkPumpSwapTransport implements AutoCloseable {
 							catch(RuntimeException failure) { failureSignal.completeExceptionally(new IllegalStateException(safeReason(failure))); ws.abort(); interrupted.accept(safeReason(failure)); }
 						}
 						public CompletionStage<?> onText(WebSocket ws,CharSequence fragment,boolean last) {
+							var began=System.nanoTime();
 							try {
 								if(messageBytes==0) messageReceivedAt=accounting.now();
 								var count=fragment.toString().getBytes(StandardCharsets.UTF_8).length;
-								accounting.received(count,true); messageBytes=Math.addExact(messageBytes,count);
+								accounting.websocketFragment(count); messageBytes=Math.addExact(messageBytes,count);
 								if(messageBytes>limits.messageBytes()) throw new IllegalStateException("WS_MESSAGE_BYTE_LIMIT");
 								message.append(fragment);
 								if(last) {
 									var envelope=message.toString(); message.setLength(0); messageBytes=0; checkSecret(envelope);
 									var n=json.readTree(envelope);
-									accounting.evidence("WEBSOCKET",envelope,messageReceivedAt);
+									var durable=accounting.websocketEvidence(envelope,messageReceivedAt);
+									durable.whenComplete((value,error)->{ if(error!=null) { var reason=safeReason(error instanceof CompletionException?error.getCause():error); failureSignal.completeExceptionally(new IllegalStateException(reason)); ws.abort(); interrupted.accept(reason); } });
 									if(n.has("id")) {
 										var request=pending.remove(n.path("id").longValue());
-										if(request==null || !n.path("result").isIntegralNumber() || subscriptions.putIfAbsent(n.path("result").longValue(),request.channel())!=null)
+										if(request==null || !n.path("result").isIntegralNumber() || n.path("result").longValue()<0 || subscriptions.putIfAbsent(n.path("result").longValue(),new Subscription(request.channel(),request.durableAck()))!=null)
 											throw new IllegalStateException("SUBSCRIPTION_REJECTED");
-										request.durableAck().complete(null);
+										request.arrived().set(true);
+										durable.thenRun(()->{ if(!closed && !failureSignal.isDone()) request.durableAck().complete(null); });
 									} else {
-										var params=n.path("params"); var channel=subscriptions.get(params.path("subscription").longValue());
-										if(channel==null) throw new IllegalStateException("UNKNOWN_SUBSCRIPTION");
+										var params=n.path("params"); var subscription=subscriptions.get(params.path("subscription").longValue());
+										if(subscription==null) throw new IllegalStateException("UNKNOWN_SUBSCRIPTION");
+										var channel=subscription.channel();
 										var slot=params.path("result").path("context").path("slot");
 										if(!slot.isIntegralNumber() || slot.longValue()<0) throw new IllegalStateException("INVALID_NOTIFICATION_SLOT");
-										var payload=ExactCaptureJson.value(envelope,"/params/result/value");
+										if(!params.path("result").has("value")) throw new IllegalStateException("INVALID_NOTIFICATION_VALUE");
 										var signature=channel.account()==null?params.path("result").path("value").path("signature").asText():null;
-										notifications.accept(new Notification(channel.pool(),channel.account(),signature,slot.longValue(),payload,envelope,messageReceivedAt));
+										var receivedAt=messageReceivedAt; var position=slot.longValue();
+										CompletableFuture.allOf(durable,subscription.durableAck()).thenRun(()->{ if(!closed && !failureSignal.isDone()) notifications.accept(new Notification(channel.pool(),channel.account(),signature,position,ExactCaptureJson.value(envelope,"/params/result/value"),envelope,receivedAt)); })
+											.exceptionally(error->{ var reason=safeReason(error instanceof CompletionException?error.getCause():error); failureSignal.completeExceptionally(new IllegalStateException(reason)); ws.abort(); interrupted.accept(reason); return null; });
 									}
 								}
 								accounting.nextMessage(); ws.request(1);
-							} catch(RuntimeException failure) { failureSignal.completeExceptionally(new IllegalStateException(safeReason(failure))); ws.abort(); interrupted.accept(safeReason(failure)); }
+							} catch(RuntimeException failure) { accounting.discardWebsocketMessage(); failureSignal.completeExceptionally(new IllegalStateException(safeReason(failure))); ws.abort(); interrupted.accept(safeReason(failure)); }
+							finally { accounting.websocketHandled(System.nanoTime()-began); }
 							return CompletableFuture.completedFuture(null);
 						}
 						public CompletionStage<?> onPing(WebSocket ws,ByteBuffer bytes) {
@@ -183,10 +197,11 @@ public final class JdkPumpSwapTransport implements AutoCloseable {
 							return CompletableFuture.completedFuture(null);
 						}
 						public CompletionStage<?> onClose(WebSocket ws,int code,String reason) {
+							accounting.discardWebsocketMessage();
 							failureSignal.completeExceptionally(new IllegalStateException("DISCONNECT"));
 							accounting.received(reason.getBytes(StandardCharsets.UTF_8).length+2L,true); if(!closed) interrupted.accept("DISCONNECT"); return CompletableFuture.completedFuture(null);
 						}
-						public void onError(WebSocket ws,Throwable failure) { failureSignal.completeExceptionally(new IllegalStateException("WS_LISTENER_FAILURE")); if(!closed) interrupted.accept("WS_LISTENER_FAILURE"); }
+						public void onError(WebSocket ws,Throwable failure) { accounting.discardWebsocketMessage(); failureSignal.completeExceptionally(new IllegalStateException("WS_LISTENER_FAILURE")); if(!closed) interrupted.accept("WS_LISTENER_FAILURE"); }
 					});
 			socket=awaitWebSocket(connecting,"WS_CONNECT",false,connectDeadline-System.nanoTime());
 			awaitWebSocket(CompletableFuture.anyOf(opened,failureSignal),"WS_CONNECT",true,connectDeadline-System.nanoTime());
@@ -201,7 +216,7 @@ public final class JdkPumpSwapTransport implements AutoCloseable {
 		if(closed) throw new IllegalStateException("CAPTURE_TRANSPORT_CLOSED");
 		accounting.waitSeconds(limits.timeoutSeconds()); accounting.start(0);
 		accounting.waitSeconds(limits.timeoutSeconds());
-		var id=ids.incrementAndGet(); var ack=new CompletableFuture<Void>(); pending.put(id,new PendingSubscription(channel,ack));
+		var id=ids.incrementAndGet(); var ack=new CompletableFuture<Void>(); var arrived=new java.util.concurrent.atomic.AtomicBoolean(); pending.put(id,new PendingSubscription(channel,ack,arrived));
 		// Monotonic elapsed time bounds only the transport wait; evidence timestamps use Accounting.now().
 		var deadline=System.nanoTime()+TimeUnit.SECONDS.toNanos(limits.timeoutSeconds());
 		CompletableFuture<WebSocket> sending;
@@ -212,7 +227,8 @@ public final class JdkPumpSwapTransport implements AutoCloseable {
 		// Completion still requires the exact envelope to have committed before ACK validation/publication.
 		var remaining=deadline-System.nanoTime();
 		if(remaining>0) accounting.waitSeconds(TimeUnit.NANOSECONDS.toSeconds(remaining)+1);
-		awaitWebSocket(CompletableFuture.anyOf(ack,failureSignal),"WS_ACK",true,remaining);
+		try { awaitWebSocket(CompletableFuture.anyOf(ack,failureSignal),"WS_ACK",true,remaining); }
+		catch(IllegalStateException failure) { if("WS_ACK_TIMEOUT".equals(failure.getMessage()) && arrived.get()) throw new IllegalStateException("WS_DURABLE_ACK_TIMEOUT"); throw failure; }
 	}
 	private <T> T awaitWebSocket(CompletableFuture<T> future,String phase,boolean internalFailure,long remainingNanos) {
 		try { return future.get(Math.max(0,remainingNanos),TimeUnit.NANOSECONDS); }

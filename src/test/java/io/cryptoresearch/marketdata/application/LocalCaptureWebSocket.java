@@ -24,6 +24,12 @@ final class LocalCaptureWebSocket implements AutoCloseable {
 		this(notifications,fragments,acknowledgement,1);
 	}
 	LocalCaptureWebSocket(LongFunction<java.util.List<String>> notifications,boolean fragments,LongFunction<String> acknowledgement,int notificationOpcode) throws Exception {
+		this(notifications,fragments,acknowledgement,notificationOpcode,id->java.util.List.of());
+	}
+	LocalCaptureWebSocket(LongFunction<java.util.List<String>> notifications,boolean fragments,LongFunction<String> acknowledgement,int notificationOpcode,LongFunction<java.util.List<String>> beforeAcknowledgement) throws Exception {
+		this(notifications,fragments,acknowledgement,notificationOpcode,beforeAcknowledgement,()->{ });
+	}
+	LocalCaptureWebSocket(LongFunction<java.util.List<String>> notifications,boolean fragments,LongFunction<String> acknowledgement,int notificationOpcode,LongFunction<java.util.List<String>> beforeAcknowledgement,Runnable betweenFragments) throws Exception {
 		server=new ServerSocket(0,1,java.net.InetAddress.getByName("127.0.0.1")); server.setSoTimeout(10000);
 		thread=Thread.ofPlatform().daemon(true).start(()->{
 			try(var socket=server.accept()) {
@@ -41,10 +47,11 @@ final class LocalCaptureWebSocket implements AutoCloseable {
 					var id=request.path("id").longValue(); var subscription=10000+id;
 					if(firstAccount<0 && "accountSubscribe".equals(request.path("method").asText())) firstAccount=subscription;
 					var response=acknowledgement.apply(id);
+					for(var text:beforeAcknowledgement.apply(id)) frame(output,text,1,true);
 					if(response!=null) frame(output,response,1,true);
 				}
 				for(var text:notifications.apply(firstAccount)) {
-					if(fragments) { var middle=text.length()/2; frame(output,text.substring(0,middle),1,false); frame(output,text.substring(middle),0,true); }
+					if(fragments) { var middle=text.length()/2; frame(output,text.substring(0,middle),1,false); betweenFragments.run(); frame(output,text.substring(middle),0,true); }
 					else frame(output,text,notificationOpcode,true);
 				}
 				sent.complete(null);
