@@ -57,6 +57,38 @@ class PumpSwapPoolCaptureIT {
 		assertThat(rawStore.find(ChainId.SOLANA_MAINNET, original.transactionId(), "alchemy")).contains(original);
 		assertThat(ledger.dispositions(id)).singleElement().satisfies(row -> assertThat(row.status()).isEqualTo("CAPTURED"));
 	}
+	@Test void slowDurableAckEvidenceDoesNotConsumeLaterSubscriptionsTimeout() throws Exception {
+		clock.set(START); var c=configuration(SESSION,0L);
+		assertThat(ledger.open(c,"writer")).isTrue();
+		var persisted=new java.util.concurrent.atomic.AtomicInteger(); var bytes=new java.util.concurrent.atomic.AtomicLong();
+		var writer=new Object(); var failure=new java.util.concurrent.atomic.AtomicReference<String>();
+		try(var websocket=new LocalCaptureWebSocket(subscription->java.util.List.of(),false);
+			var adapter=new io.cryptoresearch.marketdata.infrastructure.JdkPumpSwapTransport(java.net.URI.create("http://127.0.0.1/"),websocket.uri(),"synthetic-provider-secret",shortAckLimits(),
+					new io.cryptoresearch.marketdata.infrastructure.JdkPumpSwapTransport.Accounting() {
+						public java.time.Instant now() { return clock.instant(); }
+						public void start(long cu) { synchronized(writer) { assertThat(ledger.consume(SESSION,"writer",1,0,0,0,cu)).isTrue(); } }
+						public void received(long count,boolean subscription) { synchronized(writer) { bytes.addAndGet(count); assertThat(ledger.received(SESSION,"writer",count,subscription)).isTrue(); } }
+						public void nextMessage() { }
+						public void evidence(String kind,String text,java.time.Instant receivedAt) {
+							// Model slow durable ACK evidence, not delayed provider response or an invented ACK.
+							try { Thread.sleep(150); } catch(InterruptedException interrupted) { Thread.currentThread().interrupt(); throw new IllegalStateException("CAPTURE_INTERRUPTED"); }
+							synchronized(writer) {
+								assertThat(ledger.consume(SESSION,"writer",0,0,0,text.getBytes(java.nio.charset.StandardCharsets.UTF_8).length,0)).isTrue();
+								ledger.envelopeAt(SESSION,"writer",kind,text,receivedAt); persisted.incrementAndGet();
+							}
+						}
+					})) {
+			try { adapter.connect(c.pools(),n->{ throw new AssertionError("ACK is not a notification"); },failure::set); }
+			catch(IllegalStateException stopped) { failure.set(stopped.getMessage()); }
+			assertThat(failure.get()).as("each ACK durability delay fits its own bounded subscription request").isNull();
+			assertThat(persisted.get()).isEqualTo(18);
+			assertThat(ledger.replay(SESSION).envelopes()).hasSize(18);
+			assertThat(ledger.status(SESSION).requests()).isEqualTo(18);
+			assertThat(ledger.status(SESSION).subscriptionBytes()).isEqualTo(bytes.get()).isPositive();
+			assertThat(ledger.status(SESSION).retainedBytes()).isEqualTo(bytes.get());
+			assertThat(ledger.reserved(c.authority().accountPeriod())).isEqualTo(95000000);
+		}
+	}
 
 	@Test void sameSlotStateVariantsRemainAmbiguousAndKeepFirstTimes() {
 		var id = UUID.fromString("00000000-0000-0000-0000-000000000012");

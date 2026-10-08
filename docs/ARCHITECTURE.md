@@ -119,6 +119,8 @@ One JAR may run with workload roles such as `api`, `ingestion` or `evaluation`; 
 
 The reviewed PumpSwap collector uses this same JAR and existing synchronous `marketdata::api`, with a disabled-default explicit ApplicationRunner, typed settings and bounded external JSON configuration. It creates no service, module edge, gRPC dependency or event-registry stream. The explicit managed-profile attempt verified startup/V13, then stopped during partial ACK; no healthy background collection or automatic relaunch is claimed. See [Operations](OPERATIONS.md#bounded-pumpswap-capture-runtime).
 
+Subsequent offline ACK repair has independent APPROVE and65 targeted tests PASS: serial durably persisted ACKs use a shared per-request send/ACK deadline and onOpen headroom barrier, with sanitized distinct failure reasons. First-STOP causation remains unproved; the new full gate PASS is259 tests with zero failures/errors/skips and the owner's single12-hour/no-repeat window is UNLAUNCHED. See [repair evidence](../openspec/changes/add-bounded-pumpswap-pool-collector/design.md#offline-ack-repair-reviewed-new-full-gate-pass); no module/transaction/runtime contract changes follow from this factual status.
+
 See [ADR 0006](adr/0006-background-work-and-bounded-concurrency.md).
 
 ## Scaling policy

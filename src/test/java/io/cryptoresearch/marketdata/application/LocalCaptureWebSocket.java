@@ -18,6 +18,12 @@ final class LocalCaptureWebSocket implements AutoCloseable {
 	private final CompletableFuture<Void> sent=new CompletableFuture<>();
 	private final Thread thread;
 	LocalCaptureWebSocket(LongFunction<java.util.List<String>> notifications,boolean fragments) throws Exception {
+		this(notifications,fragments,id->"{\"jsonrpc\":\"2.0\",\"id\":"+id+",\"result\":"+(10000+id)+"}");
+	}
+	LocalCaptureWebSocket(LongFunction<java.util.List<String>> notifications,boolean fragments,LongFunction<String> acknowledgement) throws Exception {
+		this(notifications,fragments,acknowledgement,1);
+	}
+	LocalCaptureWebSocket(LongFunction<java.util.List<String>> notifications,boolean fragments,LongFunction<String> acknowledgement,int notificationOpcode) throws Exception {
 		server=new ServerSocket(0,1,java.net.InetAddress.getByName("127.0.0.1")); server.setSoTimeout(10000);
 		thread=Thread.ofPlatform().daemon(true).start(()->{
 			try(var socket=server.accept()) {
@@ -34,11 +40,12 @@ final class LocalCaptureWebSocket implements AutoCloseable {
 					if(!"finalized".equals(request.path("params").path(1).path("commitment").asText())) throw new AssertionError("subscription must be finalized");
 					var id=request.path("id").longValue(); var subscription=10000+id;
 					if(firstAccount<0 && "accountSubscribe".equals(request.path("method").asText())) firstAccount=subscription;
-					frame(output,"{\"jsonrpc\":\"2.0\",\"id\":"+id+",\"result\":"+subscription+"}",1,true);
+					var response=acknowledgement.apply(id);
+					if(response!=null) frame(output,response,1,true);
 				}
 				for(var text:notifications.apply(firstAccount)) {
 					if(fragments) { var middle=text.length()/2; frame(output,text.substring(0,middle),1,false); frame(output,text.substring(middle),0,true); }
-					else frame(output,text,1,true);
+					else frame(output,text,notificationOpcode,true);
 				}
 				sent.complete(null);
 				try { while(input.read()!=-1) { } } catch(java.io.IOException closed) { }

@@ -219,6 +219,106 @@ class PumpSwapPoolCaptureTest {
 			try(var body=exchange.getResponseBody()) { body.write(bytes); }
 		}); server.start(); return server;
 	}
+	static Limits shortAckLimits() {
+		var l=configuration(SESSION,0L).limits();
+		return new Limits(l.windowSeconds(),l.requests(),l.receivedBytes(),l.retainedBytes(),l.subscriptionBytes(),l.rpcHundredths(),
+				l.messageBytes(),l.responseBytes(),l.queueItems(),l.queueBytes(),1,l.retries(),l.reconnects(),l.recoveryPages(),l.recoverySeconds(),l.requestsPerSecond(),l.leaseSeconds());
+	}
+	private static JdkPumpSwapTransport wsAdapter(URI websocket) {
+		return wsAdapter(websocket,new JdkPumpSwapTransport.Accounting() {
+					public Instant now() { return START; }
+					public void start(long cu) { }
+					public void received(long bytes,boolean subscription) { }
+					public void nextMessage() { }
+				});
+	}
+	private static JdkPumpSwapTransport wsAdapter(URI websocket,JdkPumpSwapTransport.Accounting accounting) {
+		return new JdkPumpSwapTransport(URI.create("http://127.0.0.1/"),websocket,"synthetic-provider-secret",shortAckLimits(),accounting);
+	}
+	@Test void webSocketHeadroomFailureBeforeFirstDemandPreservesLimitReason() throws Exception {
+		try(var fixture=new LocalCaptureWebSocket(subscription->List.of(),false); var adapter=wsAdapter(fixture.uri(),new JdkPumpSwapTransport.Accounting() {
+			public Instant now() { return START; }
+			public void start(long cu) { throw new AssertionError("no request may start after demand headroom failure"); }
+			public void received(long bytes,boolean subscription) { }
+			public void nextMessage() { throw new IllegalStateException("SUBSCRIPTION_BYTE_HEADROOM_LIMIT"); }
+		})) {
+			assertThatThrownBy(()->adapter.connect(configuration(SESSION,0L).pools(),n->{ },r->{ }))
+					.hasMessage("SUBSCRIPTION_BYTE_HEADROOM_LIMIT").hasNoCause();
+		}
+	}
+	@Test void actualWebSocketAckCannotSucceedBeforeEvidenceCommits() throws Exception {
+		try(var fixture=new LocalCaptureWebSocket(subscription->List.of(),false); var adapter=wsAdapter(fixture.uri(),new JdkPumpSwapTransport.Accounting() {
+			public Instant now() { return START; }
+			public void start(long cu) { }
+			public void received(long bytes,boolean subscription) { }
+			public void nextMessage() { }
+			public void evidence(String kind,String envelope) { throw new IllegalStateException("CAPTURE_LEASE_LOST"); }
+		})) {
+			assertThatThrownBy(()->adapter.connect(configuration(SESSION,0L).pools(),n->{ },r->{ }))
+					.hasMessage("CAPTURE_LEASE_LOST").hasNoCause();
+		}
+	}
+	@Test void actualWebSocketSecretAckIsRejectedBeforeEvidence() throws Exception {
+		var saved=new AtomicLong();
+		try(var fixture=new LocalCaptureWebSocket(subscription->List.of(),false,id->"{\"id\":"+id+",\"error\":\"synthetic\\u002dprovider\\u002dsecret\"}"); var adapter=wsAdapter(fixture.uri(),new JdkPumpSwapTransport.Accounting() {
+			public Instant now() { return START; }
+			public void start(long cu) { }
+			public void received(long bytes,boolean subscription) { }
+			public void nextMessage() { }
+			public void evidence(String kind,String envelope) { saved.incrementAndGet(); }
+		})) {
+			assertThatThrownBy(()->adapter.connect(configuration(SESSION,0L).pools(),n->{ },r->{ }))
+					.hasMessage("PROVIDER_SECRET_ECHO").hasNoCause();
+			assertThat(saved.get()).isZero();
+		}
+	}
+	@Test void actualWebSocketMissingAckHasSpecificBoundedTimeoutReason() throws Exception {
+		try(var fixture=new LocalCaptureWebSocket(subscription->List.of(),false,id->null); var adapter=wsAdapter(fixture.uri())) {
+			assertThatThrownBy(()->adapter.connect(configuration(SESSION,0L).pools(),n->{ },r->{ }))
+					.hasMessage("WS_ACK_TIMEOUT");
+		}
+	}
+	@Test void actualWebSocketRejectedAckPreservesSanitizedSpecificReason() throws Exception {
+		try(var fixture=new LocalCaptureWebSocket(subscription->List.of(),false,id->"{\"jsonrpc\":\"2.0\",\"id\":"+id+",\"error\":{\"code\":-1,\"message\":\"wss://untrusted.example/private-token\"}}"); var adapter=wsAdapter(fixture.uri())) {
+			assertThatThrownBy(()->adapter.connect(configuration(SESSION,0L).pools(),n->{ },r->{ }))
+					.hasMessage("SUBSCRIPTION_REJECTED").hasNoCause();
+		}
+	}
+	@Test void actualWebSocketConnectFailureCannotBeMislabelledAckOrProviderError() throws Exception {
+		URI absent;
+		try(var server=new java.net.ServerSocket(0,1,java.net.InetAddress.getByName("127.0.0.1"))) {
+			absent=URI.create("ws://127.0.0.1:"+server.getLocalPort()+"/private-token");
+		}
+		try(var adapter=wsAdapter(absent)) {
+			assertThatThrownBy(()->adapter.connect(configuration(SESSION,0L).pools(),n->{ },r->{ }))
+					.hasMessage("WS_CONNECT_FAILURE").hasNoCause();
+		}
+	}
+	@Test void actualWebSocketProtocolErrorReportsOnlySanitizedListenerCategory() throws Exception {
+		var interrupted=new AtomicReference<String>();
+		try(var fixture=new LocalCaptureWebSocket(subscription->List.of("wss://untrusted.example/private-token"),false,
+				id->"{\"id\":"+id+",\"result\":"+(10000+id)+"}",3); var adapter=wsAdapter(fixture.uri())) {
+			// Reserved opcode exercises the actual JDK onError path, not a fabricated callback.
+			try { adapter.connect(configuration(SESSION,0L).pools(),n->{ },interrupted::set); }
+			catch(IllegalStateException failure) { assertThat(failure).hasMessage("WS_LISTENER_FAILURE").hasNoCause(); }
+			for(var i=0;i<100 && interrupted.get()==null;i++) Thread.sleep(10);
+			assertThat(interrupted.get()).isEqualTo("WS_LISTENER_FAILURE");
+		}
+	}
+	@Test void sequentialAckWaitsDoNotRenewOriginalCaptureTimeAllowance() throws Exception {
+		var time=new AtomicReference<>(START); var starts=new AtomicLong(); var saved=new AtomicLong();
+		try(var fixture=new LocalCaptureWebSocket(subscription->List.of(),false); var adapter=wsAdapter(fixture.uri(),new JdkPumpSwapTransport.Accounting() {
+			public Instant now() { return time.get(); }
+			public void waitSeconds(long seconds) { if(!now().plusSeconds(seconds).isBefore(START.plusSeconds(2))) throw new IllegalStateException("CAPTURE_TIME_LIMIT"); }
+			public void start(long cu) { starts.incrementAndGet(); }
+			public void received(long bytes,boolean subscription) { }
+			public void nextMessage() { }
+			public void evidence(String kind,String envelope) { saved.incrementAndGet(); time.set(START.plusSeconds(1)); }
+		})) {
+			assertThatThrownBy(()->adapter.connect(configuration(SESSION,0L).pools(),n->{ },r->{ })).hasMessage("CAPTURE_TIME_LIMIT");
+			assertThat(starts.get()).isEqualTo(1); assertThat(saved.get()).isEqualTo(1);
+		}
+	}
 
 	private static JdkPumpSwapTransport adapter(HttpServer server,AtomicLong received) {
 		var uri=URI.create("http://127.0.0.1:"+server.getAddress().getPort()+"/");
