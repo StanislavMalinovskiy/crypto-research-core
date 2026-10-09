@@ -16,6 +16,7 @@ import tools.jackson.databind.JsonNode;
 @Service
 public class PumpSwapPoolCollector {
 	private static final org.slf4j.Logger log=org.slf4j.LoggerFactory.getLogger(PumpSwapPoolCollector.class);
+	private static final int RAW_TRANSACTION_VERSION=1;
 	static JsonNode historyRows(String result) { return tools.jackson.databind.json.JsonMapper.builder().build().readTree(result).path("data"); }
 	static boolean reconnectAllowed(int total,int consecutive,int configured) { return total<configured && total<20 && consecutive<3; }
 	static int stableFailures(int count,java.time.Instant acknowledged,java.time.Instant now,boolean healthyWriter) { return healthyWriter && acknowledged!=null && !now.isBefore(acknowledged.plusSeconds(300))?0:count; }
@@ -317,7 +318,18 @@ public class PumpSwapPoolCollector {
 			retained(envelope.getBytes(StandardCharsets.UTF_8).length);
 			onWriter(envelope.getBytes(StandardCharsets.UTF_8).length,()->ledger.pendingAt(c.sessionId(),holder,pool,signature,slot,envelope,received));
 			JdkPumpSwapTransport.Response response;
-			try { response=transport.rpc("getTransaction","[\""+signature+"\",{\"commitment\":\"finalized\",\"encoding\":\"json\",\"maxSupportedTransactionVersion\":0}]"); }
+			try { response=transport.rpc("getTransaction","[\""+signature+"\",{\"commitment\":\"finalized\",\"encoding\":\"json\",\"maxSupportedTransactionVersion\":"+RAW_TRANSACTION_VERSION+"}]"); }
+			catch(JdkPumpSwapTransport.UnsupportedTransactionVersion unsupported) {
+				time(); var failed=unsupported.response();
+				var fields=new java.util.LinkedHashMap<String,Object>(); fields.put("session",c.sessionId().toString()); fields.put("sourcePolicy",c.version()); fields.put("attempt",reconnectAttempts); fields.put("episode",episode.stream().map(Gap::id).toList()); fields.put("pool",pool); fields.put("signature",signature); fields.put("slot",slot); fields.put("requestedCeiling",RAW_TRANSACTION_VERSION); fields.put("errorDigest",PayloadFingerprint.sha256(failed.envelope()));
+				fields.put("diagnostic",json.readTree(JdkPumpSwapTransport.diagnostic("TX_FETCH","UNSUPPORTED_TRANSACTION_VERSION",null,200,-32015,null,null,failed.receivedAt())));
+				var diagnostic=json.writeValueAsString(fields); var diagnosticBytes=diagnostic.getBytes(StandardCharsets.UTF_8).length;
+				if(diagnosticBytes>8192) throw new IllegalStateException("CAPTURE_DIAGNOSTIC_BYTE_LIMIT");
+				var bytes=failed.envelope().getBytes(StandardCharsets.UTF_8).length+(long)diagnosticBytes; retained(bytes);
+				onWriter(bytes,()->ledger.unsupportedTransactionVersion(c.sessionId(),holder,pool,signature,failed.envelope(),diagnostic,failed.receivedAt()));
+				log.info("PumpSwap capture diagnostic {}",diagnostic);
+				return "UNSUPPORTED_TRANSACTION_VERSION";
+			}
 			catch(RuntimeException failure) {
 				var reason=JdkPumpSwapTransport.safeReason(failure);
 				if(reason.startsWith("PROVIDER_") || reason.startsWith("MALFORMED_") || reason.equals("HTTP_RESPONSE_BYTE_LIMIT")) onWriter(()->{
@@ -345,7 +357,7 @@ public class PumpSwapPoolCollector {
 				String cursor=null; boolean continuity=true; long previous=Long.MAX_VALUE; var seen=new java.util.HashSet<String>();
 				for(var page=episodePages.getOrDefault(pool.address(),0);page<c.limits().recoveryPages();page++) {
 					time(); episodePages.put(pool.address(),page+1); recoveryPages++;
-					var params="[\""+pool.address()+"\",{\"commitment\":\"finalized\",\"transactionDetails\":\"full\",\"encoding\":\"json\",\"maxSupportedTransactionVersion\":0,\"sortOrder\":\"desc\",\"filters\":{\"status\":\"any\"},\"limit\":100"
+					var params="[\""+pool.address()+"\",{\"commitment\":\"finalized\",\"transactionDetails\":\"full\",\"encoding\":\"json\",\"maxSupportedTransactionVersion\":"+RAW_TRANSACTION_VERSION+",\"sortOrder\":\"desc\",\"filters\":{\"status\":\"any\"},\"limit\":100"
 							+(cursor==null?"":",\"paginationToken\":\""+cursor+"\"")+"}]";
 					var response=transport.rpc("getTransactionsForAddress",params); retained(response.envelope().getBytes(StandardCharsets.UTF_8).length);
 					var result=json.readTree(response.result()); var transactions=historyRows(response.result());
@@ -361,9 +373,9 @@ public class PumpSwapPoolCollector {
 						var prior=ledger.dispositions(c.sessionId()).stream().anyMatch(d->d.pool().equals(pool.address()) && d.signature().equals(signature) && d.rawDigest()!=null);
 						var status=transaction(pool.address(),signature,slot.longValue(),response.envelope(),response.receivedAt());
 						if(java.util.Set.of("CAPTURED","FAILED_TRANSACTION").contains(status)) { if(prior) recoveryDuplicates++; else recoveryNewlyDurable++; }
-						if(!java.util.Set.of("CAPTURED","FAILED_TRANSACTION").contains(status)) { if("UNAVAILABLE".equals(status)) continuity=false; else throw new IllegalStateException("RECOVERY_EVIDENCE_FAILURE"); }
+						if(!java.util.Set.of("CAPTURED","FAILED_TRANSACTION").contains(status)) { if(java.util.Set.of("UNAVAILABLE","UNSUPPORTED_TRANSACTION_VERSION").contains(status)) continuity=false; else throw new IllegalStateException("RECOVERY_EVIDENCE_FAILURE"); }
 					}
-					if(reached) { if(continuity) onWriter(()->ledger.recoveredGap(c.sessionId(),holder,gap)); summary(continuity?"RECOVERED_TRANSACTIONS":"PARTIAL_UNAVAILABLE"); break; }
+					if(reached) { if(continuity) onWriter(()->ledger.recoveredGap(c.sessionId(),holder,gap)); summary(continuity?"RECOVERED_TRANSACTIONS":"PARTIAL_UNAVAILABLE_OR_UNSUPPORTED"); break; }
 					var next=result.path("paginationToken").asText("");
 					if(next.isBlank() || next.equals(cursor) || !next.matches("[A-Za-z0-9_:-]{1,512}")) throw new IllegalStateException("RECOVERY_CONTINUITY_UNPROVED");
 					if(page+1==c.limits().recoveryPages()) throw new IllegalStateException("RECOVERY_PAGE_LIMIT");

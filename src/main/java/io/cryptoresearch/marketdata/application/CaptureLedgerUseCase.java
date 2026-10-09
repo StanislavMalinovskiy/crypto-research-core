@@ -89,6 +89,12 @@ public class CaptureLedgerUseCase {
 		fence(session,holder);
 		for (var p:configuration(session).pools()) { store.gap(session,p.address(),"TRANSACTION",reason,now()); store.gap(session,p.address(),"STATE",reason,now()); }
 	}
+	@Transactional(timeout=10) public void unsupportedTransactionVersion(UUID session,String holder,String pool,String signature,String envelope,String diagnostic,Instant observed) {
+		fence(session,holder);
+		store.finish(session,pool,signature,"FETCH_FAILURE",null,envelope,now(),false);
+		store.gap(session,pool,"TRANSACTION","UNSUPPORTED_TRANSACTION_VERSION",observed);
+		store.envelope(session,"CAPTURE_DIAGNOSTIC",PayloadFingerprint.sha256(diagnostic),diagnostic,observed);
+	}
 	@Transactional public void recovered(UUID session, String holder, String pool, String boundary) {
 		fence(session,holder); store.recovered(session,pool,boundary,now());
 	}

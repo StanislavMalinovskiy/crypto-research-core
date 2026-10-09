@@ -154,3 +154,31 @@ The collector SHALL retain versioned bounded secret-free operation diagnostics a
 - **WHEN** diagnostics encounter bounded queue/cap exhaustion, construction failure, unavailable writer or lost lease
 - **THEN** the original operational reason and conservative accounting/reservation SHALL remain observable with an explicit unknown undurable tail
 - **AND** diagnostics SHALL NOT mask the cause, claim a committed record or start another paid operation/reconnect.
+
+### Requirement: Raw-only supported transaction versions and narrow unsupported failures
+The collector SHALL request maxSupportedTransactionVersion1 with finalized/json for live getTransaction and full history recovery, and SHALL preserve exact supported legacy/v0/v1 raw JSON under existing admission/identity/time/hash rules without requiring v0 ALT fields or interpreting v1 economics. A known higher-version failure SHALL become a durable per-TX FETCH_FAILURE with explicit UNSUPPORTED_TRANSACTION_VERSION gap/diagnostic only under the strict recognition policy below; all other errors SHALL retain their existing terminal/retry policy. Behavioral policy SHALL participate in immutable configuration/source identity, without rewriting old raw evidence.
+
+#### Scenario: Supported v1 raw payload has no ALT fields
+- **WHEN** finalized v1 result has existing required slot/signatures/message-object/meta.err shape, including transactionConfig but no ALT fields
+- **THEN** exact version/JSON/meta.err SHALL be preserved as successful or failed-on-chain raw evidence with unchanged hash/identity/time rules
+- **AND** missing ALT fields SHALL NOT cause unsupported classification or imply normalized economics.
+
+#### Scenario: Known future version cannot be fetched
+- **WHEN** getTransaction HTTP200 passes existing secret/UTF8/JSONRPC2.0/matching-ID/exclusive-error guards and exact integral code-32015 with the complete observed unsupported-version message template containing matching canonical decimal N tokens greater than requested ceiling1
+- **THEN** the single fenced writer SHALL retain exact safe error/notification identity and atomically commit FETCH_FAILURE with an explicit UNSUPPORTED_TRANSACTION_VERSION TX gap/diagnostic before continuing unrelated transactions/account notifications
+- **AND** no raw transaction, successful checkpoint, retry/reconnect/automatic ceiling increase or recovered-gap claim SHALL be fabricated.
+
+#### Scenario: Unsupported-version resemblance is not recognition
+- **WHEN** code alone, another method/HTTP status, altered/free-form message, claimed N<=1, mismatched version tokens, malformed response/identity or security/protocol/unknown failure occurs
+- **THEN** the response SHALL NOT qualify for nonterminal unsupported degradation
+- **AND** its existing strict failure policy and secret-safe evidence handling SHALL remain effective.
+
+#### Scenario: Recovery reaches boundary with unsupported transaction
+- **WHEN** scoped overlap reaches the exact successful boundary but a specific getTransaction has a recognized higher-version failure
+- **THEN** its episode transaction gap SHALL remain explicitly partial/unresolved while bounded current capture MAY continue
+- **AND** missing established boundary, invalid/nonadvancing history, whole-page RPC error or capacity/writer/lease failure SHALL remain blocking and STATE/unrelated gaps SHALL NOT be closed.
+
+#### Scenario: New owner authority continues toward a bounded six-hour result
+- **WHEN** the recorded standing owner authority permits Main-managed fresh windows after reviewed repairs until one successful configured6h
+- **THEN** each prospective window SHALL preserve original cumulative account/time/storage/resource authority and old immutable session/terminal evidence, with startup/ACK/recovery inside its original<=21,600s end
+- **AND** a complete stability/evidence analysis MAY report explicit incomplete coverage but SHALL NOT imply full chain coverage/admission, extend the window, grant12h or cause an in-code terminal restart.

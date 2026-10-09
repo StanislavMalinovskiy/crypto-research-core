@@ -35,6 +35,19 @@ public final class JdkPumpSwapTransport implements AutoCloseable {
 		}
 	}
 	public record Response(String result, String envelope,java.time.Instant receivedAt) { }
+	public static final class UnsupportedTransactionVersion extends IllegalStateException {
+		private final Response response;
+		private UnsupportedTransactionVersion(String envelope,java.time.Instant receivedAt) { super("UNSUPPORTED_TRANSACTION_VERSION"); response=new Response(null,envelope,receivedAt); }
+		public Response response() { return response; }
+	}
+	private static final java.util.regex.Pattern UNSUPPORTED_VERSION=java.util.regex.Pattern.compile("Transaction version \\((0|[1-9][0-9]{0,9})\\) is not supported by the requesting client\\. Please try the request again with the following configuration parameter: \\\"maxSupportedTransactionVersion\\\": (0|[1-9][0-9]{0,9})");
+	private boolean knownUnsupportedVersion(String method,String params,tools.jackson.databind.JsonNode error) {
+		if(!method.equals("getTransaction") || !error.path("code").isIntegralNumber() || !error.path("code").asText().equals("-32015") || !error.path("message").isString()) return false;
+		var ceiling=json.readTree(params).path(1).path("maxSupportedTransactionVersion");
+		if(!ceiling.isIntegralNumber() || !ceiling.asText().equals("1")) return false;
+		var match=UNSUPPORTED_VERSION.matcher(error.path("message").asText());
+		return match.matches() && match.group(1).equals(match.group(2)) && Long.parseLong(match.group(1))>1;
+	}
 	public record Notification(String pool, String account, String signature, long slot, String payload, String envelope,java.time.Instant receivedAt) { }
 	public static String exactValue(String text,String path) { return ExactCaptureJson.value(text,path); }
 	private final URI rpc;
@@ -142,11 +155,12 @@ public final class JdkPumpSwapTransport implements AutoCloseable {
 				if(response.statusCode()!=200) { report("TX_FETCH","PROVIDER_HTTP_FAILURE",null,response.statusCode(),null,null,null); throw new IllegalStateException("PROVIDER_HTTP_FAILURE"); }
 				var node=json.readTree(text);
 				if(!"2.0".equals(node.path("jsonrpc").asText()) || !node.path("id").isIntegralNumber() || node.path("id").longValue()!=id || node.has("result")==node.has("error")) throw new IllegalStateException("MALFORMED_RPC_RESPONSE");
-				if(node.has("error")) { var code=node.path("error").path("code"); if(!code.isIntegralNumber()) throw new IllegalStateException("MALFORMED_RPC_RESPONSE"); report("TX_FETCH","PROVIDER_RPC_FAILURE",null,response.statusCode(),code.intValue(),null,null); throw new IllegalStateException("PROVIDER_RPC_FAILURE"); }
+				if(node.has("error")) { var code=node.path("error").path("code"); if(!code.isIntegralNumber()) throw new IllegalStateException("MALFORMED_RPC_RESPONSE"); if(knownUnsupportedVersion(method,params,node.path("error"))) throw new UnsupportedTransactionVersion(text,subscriber.receivedAt); report("TX_FETCH","PROVIDER_RPC_FAILURE",null,response.statusCode(),code.intValue(),null,null); throw new IllegalStateException("PROVIDER_RPC_FAILURE"); }
 				var result=ExactCaptureJson.value(text,"/result");
 				if("getTransaction".equals(method) && "null".equals(result) && attempt<limits.retries()) { report("TX_FETCH","NULL_AVAILABILITY_RETRY",null,200,null,null,null); pause(attempt==0?2:5); continue; }
 				return new Response(result==null?"null":result,text,subscriber.receivedAt);
 			}
+			catch(UnsupportedTransactionVersion unsupported) { throw unsupported; }
 			catch(IllegalStateException safe) { report("getAccountInfo".equals(method)?"LINKAGE_READ":"getTransactionsForAddress".equals(method)?"HISTORY_RECOVERY":"TX_FETCH",safeReason(safe),safe,null,null,null,null); throw safe; }
 			catch(InterruptedException stopped) { Thread.currentThread().interrupt(); throw new IllegalStateException("CAPTURE_INTERRUPTED"); }
 			catch(Exception failure) {

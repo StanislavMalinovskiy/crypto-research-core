@@ -224,6 +224,33 @@ class PumpSwapPoolCaptureTest {
 			assertThat(saved.get()).isEqualTo(envelope);
 		} finally { server.stop(0); }
 	}
+	static String unsupportedVersionMessage(String first,String second) {
+		return "Transaction version ("+first+") is not supported by the requesting client. Please try the request again with the following configuration parameter: \"maxSupportedTransactionVersion\": "+second;
+	}
+	static String rpcVersionError(long id,String code,String message) {
+		return "{\"jsonrpc\":\"2.0\",\"id\":"+id+",\"error\":{\"code\":"+code+",\"message\":"+tools.jackson.databind.json.JsonMapper.builder().build().writeValueAsString(message)+"}}";
+	}
+	@Test void recognizedHigherVersionErrorIsExplicitWithoutRetryOrMessageLeak() throws Exception {
+		var request=new AtomicReference<String>(); var envelope=rpcVersionError(1,"-32015",unsupportedVersionMessage("2","2")); var server=server(envelope,request);
+		try(var adapter=adapter(server,new AtomicLong())) {
+			assertThatThrownBy(()->adapter.rpc("getTransaction","[\""+"1".repeat(64)+"\",{\"maxSupportedTransactionVersion\":1}]"))
+				.hasMessage("UNSUPPORTED_TRANSACTION_VERSION").hasNoCause();
+			assertThat(request.get()).contains("\"maxSupportedTransactionVersion\":1");
+		} finally { server.stop(0); }
+	}
+	@Test void unsupportedResemblanceRetainsStrictRpcAndSecurityPolicy() throws Exception {
+		var cases=List.of(new String[]{"-32015",unsupportedVersionMessage("1","1"),"getTransaction"},new String[]{"-32015",unsupportedVersionMessage("2","3"),"getTransaction"},new String[]{"-32015",unsupportedVersionMessage("02","02"),"getTransaction"},new String[]{"-32015",unsupportedVersionMessage("2","2")+" extra","getTransaction"},new String[]{"-32015","version 2 unavailable","getTransaction"},new String[]{"-32015",unsupportedVersionMessage("2","2"),"getTransactionsForAddress"},new String[]{"-32000",unsupportedVersionMessage("2","2"),"getTransaction"},new String[]{"4294935281",unsupportedVersionMessage("2","2"),"getTransaction"});
+		for(var value:cases) {
+			var server=server(rpcVersionError(1,value[0],value[1]),new AtomicReference<>());
+			try(var adapter=adapter(server,new AtomicLong())) { assertThatThrownBy(()->adapter.rpc(value[2],"[\"synthetic\",{\"maxSupportedTransactionVersion\":1}]" )).hasMessage(value[0].equals("4294935281")?"PROVIDER_TRANSPORT_FAILURE":"PROVIDER_RPC_FAILURE").hasNoCause(); }
+			finally { server.stop(0); }
+		}
+		for(var envelope:List.of(rpcVersionError(9,"-32015",unsupportedVersionMessage("2","2")),rpcVersionError(1,"-32015.0",unsupportedVersionMessage("2","2")))) {
+			var server=server(envelope,new AtomicReference<>()); try(var adapter=adapter(server,new AtomicLong())) { assertThatThrownBy(()->adapter.rpc("getTransaction","[\"synthetic\",{\"maxSupportedTransactionVersion\":1}]")).hasMessage("MALFORMED_RPC_RESPONSE"); } finally { server.stop(0); }
+		}
+		var secretServer=server(rpcVersionError(1,"-32015",unsupportedVersionMessage("2","2")+"synthetic-provider-secret"),new AtomicReference<>());
+		try(var adapter=adapter(secretServer,new AtomicLong())) { assertThatThrownBy(()->adapter.rpc("getTransaction","[]")).hasMessage("PROVIDER_SECRET_ECHO"); } finally { secretServer.stop(0); }
+	}
 	@Test void admittedNotificationCompletesAfterTransportClose() throws Exception {
 		var admitted=new java.util.concurrent.CountDownLatch(1); var commit=new java.util.concurrent.CompletableFuture<Void>();
 		var received=new java.util.concurrent.CopyOnWriteArrayList<JdkPumpSwapTransport.Notification>();

@@ -33,6 +33,52 @@ class PumpSwapPoolCaptureIT {
 	@Autowired org.springframework.jdbc.core.simple.JdbcClient jdbc;
 	@Autowired io.cryptoresearch.marketdata.infrastructure.PumpSwapCaptureSettings settings;
 	@Autowired io.cryptoresearch.marketdata.api.MarketDataApi api;
+	// Synthetic raw v1 JSON based on official Solana format/introspection docs, not captured mainnet evidence.
+	static String syntheticV1(String signature,long slot,boolean failed) {
+		return "{ \"version\" : 1, \"slot\" : "+slot+", \"transaction\":{\"signatures\":[\""+signature+"\"],\"message\":{\"transactionConfig\":{\"computeUnitLimit\":123456},\"syntheticUnknown\":true}}, \"meta\":{\"err\":"+(failed?"{\"InstructionError\":[0,\"Custom\"]}":"null")+"}, \"syntheticUnknown\" : [1, 2] }";
+	}
+	@Test void syntheticV1SuccessAndOnChainFailureRetainExactRawWithoutAltFields() {
+		clock.set(START); ledger.open(configuration(SESSION,0L),"writer");
+		for(var failed:java.util.List.of(false,true)) {
+			var signature="1".repeat(62)+"Y"+(failed?"B":"A"); var payload=syntheticV1(signature,failed?102:101,failed);
+			ledger.pending(SESSION,"writer",address(0),signature,failed?102:101,"{}");
+			assertThat(capture.transaction(SESSION,"writer",address(0),signature,payload,"{}",START,true)).isEqualTo(failed?"FAILED_TRANSACTION":"CAPTURED");
+			var stored=rawStore.find(ChainId.SOLANA_MAINNET,new TransactionId(ChainId.SOLANA_MAINNET,signature),"alchemy").orElseThrow();
+			assertThat(stored.payload()).isEqualTo(payload); assertThat(stored.payloadHash()).isEqualTo(PayloadFingerprint.sha256(payload)); assertThat(stored.payload()).doesNotContain("addressTableLookups","loadedAddresses");
+		}
+	}
+	@Test void liveCeilingOneAndUnsupportedFutureVersionContinueSameConnection() throws Exception { versionContinuation(false,false); }
+	@Test void historyCeilingOneAndUnsupportedFutureVersionLeaveRecoveryPartial() throws Exception { versionContinuation(true,false); }
+	@Test void unsupportedGapWriterFailureRollsBackDispositionAndStops() throws Exception { versionContinuation(false,true); }
+	private void versionContinuation(boolean recovery,boolean failGap) throws Exception {
+		clock.set(START); var c=configuration(SESSION,0L); var boundary="1".repeat(62)+"ZD"; var future="1".repeat(62)+"ZE"; var supported="1".repeat(62)+"ZF";
+		if(recovery) seedRecovery(c,boundary);
+		if(failGap) org.mockito.Mockito.doThrow(new IllegalStateException("CAPTURE_WRITER_FAILURE")).when(captureStore).gap(org.mockito.ArgumentMatchers.eq(SESSION),org.mockito.ArgumentMatchers.eq(address(0)),org.mockito.ArgumentMatchers.eq("TRANSACTION"),org.mockito.ArgumentMatchers.eq("UNSUPPORTED_TRANSACTION_VERSION"),org.mockito.ArgumentMatchers.any());
+		var transactionStarts=new java.util.concurrent.atomic.AtomicInteger(); var historyStarts=new java.util.concurrent.atomic.AtomicInteger(); var ceilings=new java.util.concurrent.CopyOnWriteArrayList<Integer>(); var errors=new java.util.concurrent.CopyOnWriteArrayList<String>();
+		try(var websocket=new LocalCaptureWebSocket(subscription->{
+			var notifications=new java.util.ArrayList<String>(); if(!recovery) for(var signature:java.util.List.of(future,supported)) notifications.add("{\"params\":{\"subscription\":"+(subscription-1)+",\"result\":{\"context\":{\"slot\":"+(signature.equals(future)?101:102)+"},\"value\":{\"signature\":\""+signature+"\"}}}}");
+			notifications.add("{\"params\":{\"subscription\":"+subscription+",\"result\":{\"context\":{\"slot\":103},\"value\":{\"data\":[\"AQ==\",\"base64\"]}}}}"); return notifications;
+		},false)) {
+			var http=mockAccounts(c,boundary,false,null,null,(method,result)->result,200,(request,body)->{
+				var method=request.path("method").asText();
+				if(method.equals("getTransactionsForAddress")) { historyStarts.incrementAndGet(); ceilings.add(request.path("params").path(1).path("maxSupportedTransactionVersion").intValue()); return "{\"jsonrpc\":\"2.0\",\"id\":"+request.path("id").longValue()+",\"result\":{\"data\":[{\"slot\":101,\"transaction\":{\"signatures\":[\""+future+"\"]}},{\"slot\":100,\"transaction\":{\"signatures\":[\""+boundary+"\"]}}],\"paginationToken\":null}}"; }
+				if(method.equals("getTransaction")) { transactionStarts.incrementAndGet(); ceilings.add(request.path("params").path(1).path("maxSupportedTransactionVersion").intValue()); if(request.path("params").path(0).asText().equals(future)) { var error=rpcVersionError(request.path("id").longValue(),"-32015",unsupportedVersionMessage("2","2")); errors.add(error); return error; } return "{\"jsonrpc\":\"2.0\",\"id\":"+request.path("id").longValue()+",\"result\":"+syntheticV1(supported,102,false)+"}"; }
+				return body;
+			});
+			try {
+				launch(c,http,websocket); websocket.awaitSent();
+				for(var i=0;i<300;i++) { var done=ledger.dispositions(SESSION).stream().anyMatch(d->d.signature().equals(failGap?future:recovery?future:supported) && !d.status().equals("PENDING")); if(failGap?api.captureStatus(SESSION).state().equals("STOPPED"):done && api.captureStatus(SESSION).states()==16) break; Thread.sleep(30); }
+				if(failGap) { assertThat(api.captureStatus(SESSION).state()).isEqualTo("STOPPED"); assertThat(ledger.dispositions(SESSION)).filteredOn(d->d.signature().equals(future)).singleElement().satisfies(d->assertThat(d.status()).isEqualTo("PENDING")); assertThat(api.captureStatus(SESSION).gaps()).noneMatch(g->g.reason().equals("UNSUPPORTED_TRANSACTION_VERSION")); return; }
+				org.assertj.core.api.SoftAssertions.assertSoftly(softly->{ softly.assertThat(ceilings).containsOnly(1); softly.assertThat(api.captureStatus(SESSION).state()).as("recognized future version cannot stop unrelated same-connection work").isEqualTo("RUNNING"); });
+				assertThat(transactionStarts.get()).isEqualTo(recovery?1:2); assertThat(historyStarts.get()).isEqualTo(recovery?1:0); assertThat(errors).hasSize(1);
+				assertThat(ledger.dispositions(SESSION)).filteredOn(d->d.signature().equals(future)).singleElement().satisfies(d->{ assertThat(d.status()).isEqualTo("FETCH_FAILURE"); assertThat(d.rawDigest()).isNull(); assertThat(d.response()).isEqualTo(errors.getFirst()); });
+				assertThat(rawStore.find(ChainId.SOLANA_MAINNET,new TransactionId(ChainId.SOLANA_MAINNET,future),"alchemy")).isEmpty(); assertThat(ledger.boundary(SESSION,address(0))).contains(recovery?boundary:supported);
+				assertThat(api.captureStatus(SESSION).gaps()).anySatisfy(g->{ assertThat(g.reason()).isEqualTo("UNSUPPORTED_TRANSACTION_VERSION"); assertThat(g.status()).isEqualTo("UNRESOLVED_TRANSACTION_GAP"); });
+				assertThat(api.captureStatus(SESSION).states()).isEqualTo(16); assertThat(api.replayCapture(SESSION).envelopes()).anySatisfy(e->{ assertThat(e.kind()).isEqualTo("CAPTURE_DIAGNOSTIC"); assertThat(e.payload()).contains("UNSUPPORTED_TRANSACTION_VERSION",future); });
+				if(recovery) assertThat(api.captureStatus(SESSION).gaps()).noneMatch(g->g.status().equals("RECOVERED_TRANSACTIONS"));
+			} finally { collector.stop(SESSION); settings.setEnabled(false); http.stop(0); }
+		}
+	}
 	@Test void legacyUnsuccessfulCheckpointResolvesOnlyMatchingSuccessfulRawEvidenceWithoutMutation() {
 		clock.set(START); ledger.open(configuration(SESSION,0L),"writer");
 		var good="1".repeat(63)+"U"; var bad="1".repeat(63)+"V";
@@ -839,6 +885,11 @@ class PumpSwapPoolCaptureIT {
 	private static com.sun.net.httpserver.HttpServer mockAccounts(io.cryptoresearch.marketdata.api.PumpSwapCapture.Configuration c,String signature,boolean badOwner,
 			java.util.concurrent.atomic.AtomicBoolean subscriptions,java.util.concurrent.atomic.AtomicBoolean historyAfterSubscriptions,
 			java.util.function.BiFunction<String,String,String> override,int transactionHttpStatus) throws Exception {
+		return mockAccounts(c,signature,badOwner,subscriptions,historyAfterSubscriptions,override,transactionHttpStatus,(request,body)->body);
+	}
+	private static com.sun.net.httpserver.HttpServer mockAccounts(io.cryptoresearch.marketdata.api.PumpSwapCapture.Configuration c,String signature,boolean badOwner,
+			java.util.concurrent.atomic.AtomicBoolean subscriptions,java.util.concurrent.atomic.AtomicBoolean historyAfterSubscriptions,
+			java.util.function.BiFunction<String,String,String> override,int transactionHttpStatus,java.util.function.BiFunction<tools.jackson.databind.JsonNode,String,String> responseOverride) throws Exception {
 		var http=com.sun.net.httpserver.HttpServer.create(new java.net.InetSocketAddress("127.0.0.1",0),0);
 		http.createContext("/",exchange->{
 			var mapper=tools.jackson.databind.json.JsonMapper.builder().build();
@@ -859,7 +910,7 @@ class PumpSwapPoolCaptureIT {
 				result="{\"data\":[{\"slot\":100,\"transaction\":{\"signatures\":[\""+signature+"\"]}}],\"paginationToken\":null}";
 			} else result="{\"slot\":101,\"blockTime\":null,\"transaction\":{\"signatures\":[\""+signature+"\"],\"message\":{}},\"meta\":{\"err\":null}}";
 			var method=request.path("method").asText(); result=override.apply(method,result);
-			var bytes=("{\"jsonrpc\":\"2.0\",\"id\":"+id+",\"result\":"+result+"}").getBytes(java.nio.charset.StandardCharsets.UTF_8);
+			var bytes=responseOverride.apply(request,"{\"jsonrpc\":\"2.0\",\"id\":"+id+",\"result\":"+result+"}").getBytes(java.nio.charset.StandardCharsets.UTF_8);
 			var status=method.equals("getTransaction")?transactionHttpStatus:200;
 			if(status==0) status=result.contains("\"retry\":true")?503:200;
 			exchange.sendResponseHeaders(status,bytes.length); try(var body=exchange.getResponseBody()) { body.write(bytes); }
