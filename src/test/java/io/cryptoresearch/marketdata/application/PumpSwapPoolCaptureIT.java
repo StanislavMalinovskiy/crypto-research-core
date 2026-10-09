@@ -33,6 +33,119 @@ class PumpSwapPoolCaptureIT {
 	@Autowired org.springframework.jdbc.core.simple.JdbcClient jdbc;
 	@Autowired io.cryptoresearch.marketdata.infrastructure.PumpSwapCaptureSettings settings;
 	@Autowired io.cryptoresearch.marketdata.api.MarketDataApi api;
+	// Controlled internal execution uses the actual PostgreSQL ledger, not provider evidence.
+	private Object controlledRun(io.cryptoresearch.marketdata.api.PumpSwapCapture.Configuration c) throws Exception {
+		var type=java.util.Arrays.stream(PumpSwapPoolCollector.class.getDeclaredClasses()).filter(t->t.getSimpleName().equals("Run")).findFirst().orElseThrow();
+		var constructor=type.getDeclaredConstructors()[0]; constructor.setAccessible(true); return constructor.newInstance(collector,c,"writer");
+	}
+	private void runField(Object run,String name,Object value) throws Exception { var field=run.getClass().getDeclaredField(name); field.setAccessible(true); field.set(run,value); }
+	private void runCall(Object run,String name,Class<?>[] types,Object... args) throws Exception {
+		var method=run.getClass().getDeclaredMethod(name,types); method.setAccessible(true);
+		try { method.invoke(run,args); } catch(java.lang.reflect.InvocationTargetException failure) { if(failure.getCause() instanceof RuntimeException runtime) throw runtime; throw failure; }
+	}
+	@Test void compactSummaryUsesDurableProjectionWithoutPayloadBearingReads() throws Exception {
+		clock.set(START); var c=configuration(SESSION,0L); ledger.open(c,"writer");
+		for(var i=0;i<68;i++) ledger.stateAt(SESSION,"writer",address(1),100+i,"{\"data\":[\"AQ==\",\"base64\"]}","{}",START);
+		for(var i=0;i<10;i++) { var sig="1".repeat(62)+"R"+"ABCDEFGHJK".charAt(i); ledger.pending(SESSION,"writer",address(0),sig,200+i,"{}"); capture.transaction(SESSION,"writer",address(0),sig,syntheticV1(sig,200+i,false),"{}",START,true); }
+		var run=controlledRun(c); org.mockito.Mockito.clearInvocations(captureStore);
+		// 500ms per selected DB read is represented by clock increments, not wall sleeps.
+		org.mockito.Mockito.doAnswer(invocation->{ clock.set(clock.instant().plusMillis(500)); return invocation.callRealMethod(); }).when(captureStore).dispositions(SESSION);
+		org.mockito.Mockito.doAnswer(invocation->{ clock.set(clock.instant().plusMillis(500)); return invocation.callRealMethod(); }).when(captureStore).boundary(org.mockito.ArgumentMatchers.eq(SESSION),org.mockito.ArgumentMatchers.anyString());
+		// Execute on the owning writer so the summary's commit is real and synchronous.
+		runField(run,"databaseWriter",Thread.currentThread()); runCall(run,"summary",new Class<?>[]{String.class},"CONTROLLED_COMPACT");
+		org.mockito.Mockito.verify(captureStore,org.mockito.Mockito.never()).dispositions(SESSION);
+		org.mockito.Mockito.verify(captureStore,org.mockito.Mockito.never()).boundary(org.mockito.ArgumentMatchers.eq(SESSION),org.mockito.ArgumentMatchers.anyString());
+		var summary=ledger.replay(SESSION).envelopes().stream().filter(e->e.kind().equals("CAPTURE_SUMMARY")).findFirst().orElseThrow();
+		assertThat(summary.payload()).contains("\"CAPTURED\":10","\"slot\":209").doesNotContain("transactionConfig"); assertThat(summary.payload().getBytes(java.nio.charset.StandardCharsets.UTF_8).length).isLessThanOrEqualTo(8192); assertThat(ledger.status(SESSION).states()).isEqualTo(68);
+	}
+	@Test void unknownBoundarySummaryCrossingDeadlineCannotCompleteRecovery() throws Exception {
+		clock.set(START); var c=configuration(SESSION,0L); ledger.open(c,"writer"); var gaps=ledger.episode(SESSION,"writer","DISCONNECT",START);
+		jdbc.sql("UPDATE marketdata.capture_sessions SET locked_until=:until WHERE session_id=:id").param("until",START.plusSeconds(600).atOffset(java.time.ZoneOffset.UTC)).param("id",SESSION).update();
+		var run=controlledRun(c); runField(run,"episode",java.util.List.of(gaps.getFirst())); runField(run,"recoveryDeadline",START.plusSeconds(300)); runField(run,"databaseWriter",Thread.currentThread());
+		org.mockito.Mockito.doAnswer(invocation->{ var result=invocation.callRealMethod(); clock.set(START.plusSeconds(301)); return result; }).when(captureStore).envelope(org.mockito.ArgumentMatchers.eq(SESSION),org.mockito.ArgumentMatchers.eq("CAPTURE_SUMMARY"),org.mockito.ArgumentMatchers.anyString(),org.mockito.ArgumentMatchers.anyString(),org.mockito.ArgumentMatchers.any());
+		org.assertj.core.api.Assertions.assertThatThrownBy(()->runCall(run,"recover",new Class<?>[]{})).hasMessage("RECOVERY_TIME_LIMIT");
+		assertThat(ledger.gaps(SESSION)).noneMatch(g->g.status().equals("RECOVERED_TRANSACTIONS"));
+	}
+	@Test void latchedInterruptionCannotCompleteUnknownBoundaryRecovery() throws Exception {
+		clock.set(START); var c=configuration(SESSION,0L); ledger.open(c,"writer"); var run=controlledRun(c); runField(run,"episode",ledger.episode(SESSION,"writer","DISCONNECT",START)); runField(run,"recoveryDeadline",START.plusSeconds(300));
+		var field=run.getClass().getDeclaredField("interruption"); field.setAccessible(true); ((java.util.concurrent.atomic.AtomicReference<String>)field.get(run)).set("RECOVERY_TIME_LIMIT"); runField(run,"databaseWriter",Thread.currentThread());
+		org.assertj.core.api.Assertions.assertThatThrownBy(()->runCall(run,"recover",new Class<?>[]{})).hasMessage("RECOVERY_TIME_LIMIT");
+		assertThat(ledger.replay(SESSION).envelopes()).noneMatch(e->e.kind().equals("CAPTURE_SUMMARY"));
+	}
+	@Test void naturalEndClosingRetainsAdmittedCountersAndAccountTailWithoutClaim() throws Exception {
+		clock.set(START); var c=configuration(SESSION,0L); ledger.open(c,"writer"); var run=controlledRun(c);
+		var n=new io.cryptoresearch.marketdata.infrastructure.JdkPumpSwapTransport.Notification(address(0),address(1),null,104,"{\"data\":[\"AQ==\",\"base64\"]}","{}",START);
+		runCall(run,"enqueue",new Class<?>[]{n.getClass()},n); runField(run,"requests",3L); runField(run,"rpc",4000L); runField(run,"received",11L); runField(run,"subscription",7L); runField(run,"retained",13L);
+		var end=CaptureLedgerUseCase.end(c); jdbc.sql("UPDATE marketdata.capture_sessions SET locked_until=:until WHERE session_id=:id").param("until",end.plusSeconds(30).atOffset(java.time.ZoneOffset.UTC)).param("id",SESSION).update(); clock.set(end);
+		runField(run,"writerClosing",true); runField(run,"drainDeadline",System.nanoTime()+java.util.concurrent.TimeUnit.SECONDS.toNanos(11)); var field=run.getClass().getDeclaredField("interruption"); field.setAccessible(true); ((java.util.concurrent.atomic.AtomicReference<String>)field.get(run)).set("CAPTURE_TIME_LIMIT");
+		runCall(run,"writerLoop",new Class<?>[]{}); var status=ledger.status(SESSION);
+		assertThat(status.state()).isEqualTo("STOPPED"); assertThat(status.reason()).isEqualTo("CAPTURE_TIME_LIMIT"); assertThat(status.requests()).isEqualTo(3); assertThat(status.rpcHundredths()).isEqualTo(4000); assertThat(status.receivedBytes()).isEqualTo(11); assertThat(status.states()).isEqualTo(1);
+		assertThat(ledger.states(SESSION)).singleElement().satisfies(s->assertThat(s.receivedAt()).isEqualTo(START));
+	}
+	@Test void optionalTerminalSummaryCannotExpireLeaseBeforeStop() throws Exception {
+		clock.set(START); var c=configuration(SESSION,0L); ledger.open(c,"writer"); var run=controlledRun(c); runField(run,"writerClosing",true); runField(run,"drainDeadline",System.nanoTime()+java.util.concurrent.TimeUnit.SECONDS.toNanos(11));
+		runField(run,"databaseWriter",Thread.currentThread());
+		var field=run.getClass().getDeclaredField("interruption"); field.setAccessible(true); ((java.util.concurrent.atomic.AtomicReference<String>)field.get(run)).set("RECOVERY_TIME_LIMIT");
+		org.mockito.Mockito.doAnswer(invocation->{ var result=invocation.callRealMethod(); clock.set(START.plusSeconds(31)); return result; }).when(captureStore).envelope(org.mockito.ArgumentMatchers.eq(SESSION),org.mockito.ArgumentMatchers.eq("CAPTURE_SUMMARY"),org.mockito.ArgumentMatchers.anyString(),org.mockito.ArgumentMatchers.anyString(),org.mockito.ArgumentMatchers.any());
+		runCall(run,"writerLoop",new Class<?>[]{}); assertThat(ledger.status(SESSION).state()).isEqualTo("STOPPED"); assertThat(ledger.status(SESSION).reason()).isEqualTo("RECOVERY_TIME_LIMIT");
+	}
+	@Test void queuedRecoveredGapCrossingDeadlineRollsBackItsTransition() {
+		clock.set(START); var c=configuration(SESSION,0L); ledger.open(c,"writer"); var sig="1".repeat(62)+"TA"; ledger.pending(SESSION,"writer",address(0),sig,100,"{}"); capture.transaction(SESSION,"writer",address(0),sig,syntheticV1(sig,100,false),"{}",START,true);
+		var gap=ledger.episode(SESSION,"writer","DISCONNECT",START).getFirst();
+		org.mockito.Mockito.doAnswer(invocation->{ var result=invocation.callRealMethod(); clock.set(START.plusSeconds(301)); return result; }).when(captureStore).recoveredGap(org.mockito.ArgumentMatchers.eq(SESSION),org.mockito.ArgumentMatchers.eq(gap.id()),org.mockito.ArgumentMatchers.eq(sig),org.mockito.ArgumentMatchers.any());
+		org.assertj.core.api.Assertions.assertThatThrownBy(()->ledger.recoveredGap(c,"writer",gap,()->{ if(!clock.instant().isBefore(START.plusSeconds(300))) throw new IllegalStateException("RECOVERY_TIME_LIMIT"); })).hasMessage("RECOVERY_TIME_LIMIT");
+		assertThat(ledger.gaps(SESSION)).filteredOn(g->g.id()==gap.id()).singleElement().satisfies(g->assertThat(g.status()).isEqualTo("UNRESOLVED_TRANSACTION_GAP"));
+	}
+	@Test void closingCannotReacquireExpiredFenceOrCommitPastDrain() throws Exception {
+		clock.set(START); var c=configuration(SESSION,0L); ledger.open(c,"writer"); clock.set(START.plusSeconds(31));
+		org.assertj.core.api.Assertions.assertThatThrownBy(()->ledger.close(c,"writer","RECOVERY_TIME_LIMIT",System.nanoTime()+java.util.concurrent.TimeUnit.SECONDS.toNanos(11),"{}",()->{})).hasMessage("CAPTURE_LEASE_LOST");
+		assertThat(ledger.status(SESSION).state()).isEqualTo("RUNNING"); assertThat(ledger.gaps(SESSION)).isEmpty();
+		clock.set(START); var run=controlledRun(c); runField(run,"drainDeadline",System.nanoTime()+java.util.concurrent.TimeUnit.SECONDS.toNanos(11));
+		org.mockito.Mockito.doAnswer(invocation->{ var result=invocation.callRealMethod(); runField(run,"drainDeadline",System.nanoTime()-1); return result; }).when(captureStore).stop(SESSION,"RECOVERY_TIME_LIMIT");
+		org.assertj.core.api.Assertions.assertThatThrownBy(()->ledger.close(c,"writer","RECOVERY_TIME_LIMIT",System.nanoTime()+java.util.concurrent.TimeUnit.SECONDS.toNanos(11),"{}",()->{ try { runCall(run,"closingTime",new Class<?>[]{}); } catch(RuntimeException failure) { throw failure; } catch(Exception failure) { throw new AssertionError(failure); } })).hasMessage("CAPTURE_WRITER_DRAIN_TIMEOUT");
+		assertThat(ledger.status(SESSION).state()).isEqualTo("RUNNING"); assertThat(ledger.gaps(SESSION)).isEmpty(); assertThat(ledger.replay(SESSION).envelopes()).isEmpty();
+	}
+	@Test void threePageTenIdentityRecoveryWithControlledRoundTripsUsesCompactSnapshots() throws Exception {
+		clock.set(START); var c=configuration(SESSION,0L); ledger.open(c,"writer"); var boundary="1".repeat(62)+"UA"; ledger.pending(SESSION,"writer",address(0),boundary,100,"{}"); capture.transaction(SESSION,"writer",address(0),boundary,syntheticV1(boundary,100,false),"{}",START,true);
+		for(var i=0;i<68;i++) ledger.stateAt(SESSION,"writer",address(1),300+i,"{\"data\":[\"AQ==\",\"base64\"]}","{}",START);
+		var run=controlledRun(c); runField(run,"episode",ledger.episode(SESSION,"writer","DISCONNECT",START)); runField(run,"recoveryDeadline",START.plusSeconds(300));
+		var pages=new java.util.concurrent.atomic.AtomicInteger(); var starts=new java.util.concurrent.atomic.AtomicInteger(); var transport=org.mockito.Mockito.mock(io.cryptoresearch.marketdata.infrastructure.JdkPumpSwapTransport.class);
+		var signatures=java.util.stream.IntStream.range(0,10).mapToObj(i->"1".repeat(62)+"V"+"ABCDEFGHJK".charAt(i)).toList();
+		org.mockito.Mockito.when(transport.rpc(org.mockito.ArgumentMatchers.anyString(),org.mockito.ArgumentMatchers.anyString())).thenAnswer(invocation->{
+			clock.set(clock.instant().plusMillis(500)); var method=(String)invocation.getArgument(0); String result;
+			if(method.equals("getTransactionsForAddress")) { var page=pages.getAndIncrement(); var rows=new java.util.ArrayList<String>(); for(var i=page*4;i<Math.min(10,page*4+4);i++) rows.add("{\"slot\":"+(200-i)+",\"transaction\":{\"signatures\":[\""+signatures.get(i)+"\"]}}"); if(page==2) rows.add("{\"slot\":100,\"transaction\":{\"signatures\":[\""+boundary+"\"]}}"); result="{\"data\":["+String.join(",",rows)+"],\"paginationToken\":"+(page==2?"null":"\"page-"+(page+1)+"\"")+"}"; }
+			else { var params=tools.jackson.databind.json.JsonMapper.builder().build().readTree((String)invocation.getArgument(1)); var sig=params.path(0).asText(); starts.incrementAndGet(); result=syntheticV1(sig,200-signatures.indexOf(sig),false); }
+			return new io.cryptoresearch.marketdata.infrastructure.JdkPumpSwapTransport.Response(result,"{}",clock.instant());
+		}); runField(run,"transport",transport);
+		org.mockito.Mockito.doAnswer(invocation->{ clock.set(clock.instant().plusMillis(500)); return invocation.callRealMethod(); }).when(captureStore).summarySnapshot(SESSION);
+		var writer=Thread.ofVirtual().start(()->{ try { runCall(run,"writerLoop",new Class<?>[]{}); } catch(Exception failure) { throw new AssertionError(failure); } }); runField(run,"databaseWriter",writer);
+		try { runCall(run,"recover",new Class<?>[]{}); assertThat(pages.get()).isEqualTo(3); assertThat(starts.get()).isEqualTo(10); assertThat(ledger.status(SESSION).states()).isEqualTo(68); assertThat(ledger.dispositions(SESSION)).hasSize(11); assertThat(ledger.gaps(SESSION)).filteredOn(g->g.pool().equals(address(0)) && g.kind().equals("TRANSACTION")).singleElement().satisfies(g->assertThat(g.status()).isEqualTo("RECOVERED_TRANSACTIONS")); org.mockito.Mockito.verify(captureStore,org.mockito.Mockito.times(3)).summarySnapshot(SESSION); }
+		finally { runCall(run,"terminal",new Class<?>[]{String.class},"OWNER_STOP"); writer.join(java.time.Duration.ofSeconds(11)); assertThat(writer.isAlive()).isFalse(); }
+	}
+	@Test void concurrentTerminalCallsShareOneAdmissionDrainAndOriginalDeadline() throws Exception {
+		clock.set(START); var c=configuration(SESSION,0L); ledger.open(c,"writer"); var run=controlledRun(c); var transport=org.mockito.Mockito.mock(io.cryptoresearch.marketdata.infrastructure.JdkPumpSwapTransport.class); runField(run,"transport",transport);
+		var firstEntered=new java.util.concurrent.CountDownLatch(1); var release=new java.util.concurrent.CountDownLatch(1); var calls=new java.util.concurrent.atomic.AtomicInteger();
+		org.mockito.Mockito.doAnswer(invocation->{ if(calls.incrementAndGet()==1) { firstEntered.countDown(); if(!release.await(5,java.util.concurrent.TimeUnit.SECONDS)) throw new AssertionError("controlled drain was not released"); } return null; }).when(transport).awaitAdmitted();
+		try(var threads=java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor()) {
+			var first=threads.submit(()->{ runCall(run,"terminal",new Class<?>[]{String.class},"RECOVERY_TIME_LIMIT"); return true; });
+			try { assertThat(firstEntered.await(2,java.util.concurrent.TimeUnit.SECONDS)).isTrue(); var deadline=run.getClass().getDeclaredField("drainDeadline"); deadline.setAccessible(true); var original=deadline.getLong(run); var second=threads.submit(()->{ runCall(run,"terminal",new Class<?>[]{String.class},"OWNER_STOP"); return true; }); assertThat(second.get(2,java.util.concurrent.TimeUnit.SECONDS)).isTrue(); assertThat(calls.get()).as("only the first terminal caller may wait for admitted frames").isEqualTo(1); assertThat(deadline.getLong(run)).isEqualTo(original); }
+			finally { release.countDown(); first.get(2,java.util.concurrent.TimeUnit.SECONDS); }
+		}
+	}
+	@Test void exhaustedRetainedAllowanceCannotBlockPrimaryStopOrDropRaw() throws Exception {
+		clock.set(START); var c=configuration(SESSION,0L); ledger.open(c,"writer"); var sig="1".repeat(62)+"WA"; var payload=syntheticV1(sig,100,false); ledger.pending(SESSION,"writer",address(0),sig,100,"{}"); capture.transaction(SESSION,"writer",address(0),sig,payload,"{}",START,true);
+		jdbc.sql("UPDATE marketdata.capture_sessions SET retained_bytes=:retained,received_bytes=13 WHERE session_id=:id").param("retained",c.limits().retainedBytes()).param("id",SESSION).update(); var run=controlledRun(c); runField(run,"writerClosing",true); runField(run,"drainDeadline",System.nanoTime()+java.util.concurrent.TimeUnit.SECONDS.toNanos(11)); var field=run.getClass().getDeclaredField("interruption"); field.setAccessible(true); ((java.util.concurrent.atomic.AtomicReference<String>)field.get(run)).set("CAPTURE_RESOURCE_LIMIT");
+		runCall(run,"writerLoop",new Class<?>[]{}); var status=ledger.status(SESSION); assertThat(status.state()).isEqualTo("STOPPED"); assertThat(status.reason()).isEqualTo("CAPTURE_RESOURCE_LIMIT"); assertThat(status.retainedBytes()).isEqualTo(c.limits().retainedBytes()); assertThat(status.receivedBytes()).isEqualTo(13);
+		assertThat(rawStore.find(ChainId.SOLANA_MAINNET,new TransactionId(ChainId.SOLANA_MAINNET,sig),"alchemy").orElseThrow().payload()).isEqualTo(payload); assertThat(ledger.dispositions(SESSION)).singleElement().satisfies(d->assertThat(d.status()).isEqualTo("CAPTURED"));
+	}
+	@Test void renewalAtNaturalSixHourEndUsesValidFenceNotPostEndClaim() throws Exception {
+		clock.set(START); var source=configuration(SESSION,0L); var l=source.limits(); var c=new io.cryptoresearch.marketdata.api.PumpSwapCapture.Configuration(source.sessionId(),source.version(),source.provider(),source.startsAt(),source.pools(),new io.cryptoresearch.marketdata.api.PumpSwapCapture.Limits(21600,l.requests(),l.receivedBytes(),l.retainedBytes(),l.subscriptionBytes(),l.rpcHundredths(),l.messageBytes(),l.responseBytes(),l.queueItems(),l.queueBytes(),l.timeoutSeconds(),l.retries(),l.reconnects(),l.recoveryPages(),l.recoverySeconds(),l.requestsPerSecond(),l.leaseSeconds()),source.authority()); ledger.open(c,"writer"); var run=controlledRun(c); runField(run,"requests",3L); runField(run,"rpc",4000L);
+		var end=CaptureLedgerUseCase.end(c); jdbc.sql("UPDATE marketdata.capture_sessions SET locked_until=:until WHERE session_id=:id").param("until",end.plusSeconds(30).atOffset(java.time.ZoneOffset.UTC)).param("id",SESSION).update(); var ready=new java.util.concurrent.CountDownLatch(1); var write=run.getClass().getDeclaredMethod("write",long.class,boolean.class,Runnable.class); write.setAccessible(true); write.invoke(run,0L,false,(Runnable)ready::countDown);
+		var writer=Thread.ofVirtual().start(()->{ try { runCall(run,"writerLoop",new Class<?>[]{}); } catch(Exception failure) { throw new AssertionError(failure); } }); runField(run,"databaseWriter",writer);
+		try { assertThat(ready.await(2,java.util.concurrent.TimeUnit.SECONDS)).isTrue(); clock.set(end.plusSeconds(11)); var field=run.getClass().getDeclaredField("interruption"); field.setAccessible(true); var reason=(java.util.concurrent.atomic.AtomicReference<String>)field.get(run); for(var i=0;i<200 && reason.get()==null;i++) Thread.sleep(10); assertThat(reason.get()).as("the existing valid fence survives the original21600s end").isEqualTo("CAPTURE_TIME_LIMIT"); }
+		finally { runCall(run,"terminal",new Class<?>[]{String.class},"CAPTURE_TIME_LIMIT"); writer.join(java.time.Duration.ofSeconds(11)); }
+		assertThat(ledger.status(SESSION).state()).isEqualTo("STOPPED"); assertThat(ledger.status(SESSION).requests()).isEqualTo(3); assertThat(ledger.status(SESSION).rpcHundredths()).isEqualTo(4000); org.mockito.Mockito.verify(captureStore,org.mockito.Mockito.never()).claim(org.mockito.ArgumentMatchers.eq(SESSION),org.mockito.ArgumentMatchers.eq("writer"),org.mockito.ArgumentMatchers.any(),org.mockito.ArgumentMatchers.any());
+	}
 	// Synthetic raw v1 JSON based on official Solana format/introspection docs, not captured mainnet evidence.
 	static String syntheticV1(String signature,long slot,boolean failed) {
 		return "{ \"version\" : 1, \"slot\" : "+slot+", \"transaction\":{\"signatures\":[\""+signature+"\"],\"message\":{\"transactionConfig\":{\"computeUnitLimit\":123456},\"syntheticUnknown\":true}}, \"meta\":{\"err\":"+(failed?"{\"InstructionError\":[0,\"Custom\"]}":"null")+"}, \"syntheticUnknown\" : [1, 2] }";
@@ -663,8 +776,14 @@ class PumpSwapPoolCaptureIT {
 					assertThat(waiting).as("table lock alone does not establish that the actual writer entered its blocked INSERT").isPositive(); collector.stop(SESSION);
 					var next=configuration(UUID.fromString("00000000-0000-0000-0000-0000000000b1"),0L);
 					assertThat(api.startCapture(next).reason()).as("bounded join is not evidence that a blocked writer exited").isEqualTo("COLLECTOR_ALREADY_RUNNING");
-					lock.rollback(); for(var i=0;i<100 && api.captureStatus(SESSION).state().equals("RUNNING");i++) Thread.sleep(30);
-					assertThat(api.captureStatus(SESSION).state()).isEqualTo("STOPPED");
+					lock.rollback(); var activeField=PumpSwapPoolCollector.class.getDeclaredField("active"); activeField.setAccessible(true); var active=(java.util.concurrent.atomic.AtomicReference<?>)activeField.get(collector);
+					for(var i=0;i<100 && active.get()!=null;i++) Thread.sleep(30); assertThat(active.get()).as("ownership is released only after actual coordinator and writer exit").isNull();
+					assertThat(api.captureStatus(SESSION).state()).as("the2s drain expired before the lock was released; no postdeadline STOP may be fabricated").isEqualTo("RUNNING");
+					assertThat(api.replayCapture(SESSION).envelopes()).noneMatch(e->e.kind().equals("CAPTURE_TERMINAL") || e.kind().equals("CAPTURE_SUMMARY") && e.payload().contains("RECOVERY_COMPLETE")); assertThat(ledger.reserved(c.authority().accountPeriod())).isEqualTo(95000000);
+					clock.set(START.plusSeconds(31));
+					var contender=api.startCapture(next);
+					try { assertThat(contender.reason()).as("an unfinished expired historical row is not live local worker ownership; other admission constraints still apply").isNotEqualTo("COLLECTOR_ALREADY_RUNNING"); }
+					finally { if(contender.state().equals("RUNNING")) collector.stop(next.sessionId()); }
 				} finally { lock.rollback(); collector.stop(SESSION); settings.setEnabled(false); http.stop(0); }
 			}
 		}

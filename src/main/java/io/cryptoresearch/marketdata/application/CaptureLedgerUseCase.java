@@ -16,7 +16,8 @@ import io.cryptoresearch.marketdata.api.PumpSwapCapture.*;
 public class CaptureLedgerUseCase {
 	private final JdbcCaptureStore store;
 	private final Clock clock;
-	public CaptureLedgerUseCase(JdbcCaptureStore store, Clock clock) { this.store=store; this.clock=clock; }
+	private final org.springframework.transaction.PlatformTransactionManager transactionManager;
+	public CaptureLedgerUseCase(JdbcCaptureStore store, Clock clock,org.springframework.transaction.PlatformTransactionManager transactionManager) { this.store=store; this.clock=clock; this.transactionManager=transactionManager; }
 	public Configuration configuration(UUID session) { return store.configuration(session); }
 	public Instant now() { return clock.instant().truncatedTo(ChronoUnit.MICROS); }
 	@Transactional public boolean open(Configuration configuration, String holder) {
@@ -57,17 +58,25 @@ public class CaptureLedgerUseCase {
 	public long reserved(String period) { return store.reserved(period); }
 	/** One writer already holds the immutable configuration acquired before provider work. */
 	@Transactional(timeout=10) public boolean captureWrite(Configuration c,String holder,long requests,long received,long subscription,long retained,long rpc,String kind,String text,Instant receivedAt) {
+		return captureWrite(c,holder,requests,received,subscription,retained,rpc,kind,text,receivedAt,false,()->{});
+	}
+	@Transactional(timeout=10) public boolean captureWrite(Configuration c,String holder,long requests,long received,long subscription,long retained,long rpc,String kind,String text,Instant receivedAt,boolean closing,Runnable guard) {
+		guard.run();
 		if(requests<0 || received<0 || subscription<0 || retained<0 || rpc<0) throw new IllegalArgumentException("NEGATIVE_CAPTURE_ACCOUNTING");
-		var fits=store.captureAdvance(c,holder,now(),requests,received,subscription,retained,rpc);
+		var fits=closing?store.captureAdvance(c,holder,now(),requests,received,subscription,retained,rpc,true):store.captureAdvance(c,holder,now(),requests,received,subscription,retained,rpc);
 		if(text!=null) store.envelope(c.sessionId(),kind,PayloadFingerprint.sha256(text),text,receivedAt.truncatedTo(ChronoUnit.MICROS));
+		guard.run();
 		return fits;
 	}
 	@Transactional(timeout=10) public boolean captureAccount(Configuration c,String holder,long requests,long received,long subscription,long retained,long rpc,String account,long slot,String payload,String envelope,Instant at) {
-		if(!captureWrite(c,holder,requests,received,subscription,retained,rpc,null,null,null)) return false;
+		return captureAccount(c,holder,requests,received,subscription,retained,rpc,account,slot,payload,envelope,at,false,()->{});
+	}
+	@Transactional(timeout=10) public boolean captureAccount(Configuration c,String holder,long requests,long received,long subscription,long retained,long rpc,String account,long slot,String payload,String envelope,Instant at,boolean closing,Runnable guard) {
+		if(!captureWrite(c,holder,requests,received,subscription,retained,rpc,null,null,null,closing,guard)) return false;
 		if(slot<0 || c.pools().stream().flatMap(p->p.accounts().stream()).noneMatch(account::equals)) throw new IllegalArgumentException("UNKNOWN_ACCOUNT_OR_SLOT");
 		var data=tools.jackson.databind.json.JsonMapper.builder().build().readTree(payload).path("data");
 		var encoding=data.isArray() && data.size()==2?data.get(1).asText():data.path("program").asText("UNKNOWN");
-		store.state(c.sessionId(),c,account,slot,payload,envelope,PayloadFingerprint.sha256(payload),encoding,at.truncatedTo(ChronoUnit.MICROS),now()); return true;
+		store.state(c.sessionId(),c,account,slot,payload,envelope,PayloadFingerprint.sha256(payload),encoding,at.truncatedTo(ChronoUnit.MICROS),now()); guard.run(); return true;
 	}
 	@Transactional
 	public void pending(UUID session, String holder, String pool, String signature, long slot,
@@ -105,6 +114,27 @@ public class CaptureLedgerUseCase {
 	}
 	@Transactional(timeout=10) public void recoveredGap(UUID session,String holder,Gap gap) {
 		fence(session,holder); store.recoveredGap(session,gap.id(),gap.boundarySignature(),now());
+	}
+	@Transactional(timeout=10) public void recoveredGap(Configuration c,String holder,Gap gap,Runnable guard) {
+		guard.run(); store.fence(c.sessionId(),holder,now(),now().plusSeconds(c.limits().leaseSeconds())); guard.run();
+		store.recoveredGap(c.sessionId(),gap.id(),gap.boundarySignature(),now()); guard.run();
+	}
+	@Transactional(readOnly=true,isolation=org.springframework.transaction.annotation.Isolation.REPEATABLE_READ,timeout=10)
+	public java.util.Map<String,Object> summarySnapshot(Configuration c) { return store.summarySnapshot(c.sessionId()); }
+	/** A closing transaction cannot start unless its complete existing operation bound fits the remaining drain. */
+	public void closingWork(Configuration c,String holder,long deadline,Runnable work,Runnable guard) {
+		guard.run(); var remaining=java.util.concurrent.TimeUnit.NANOSECONDS.toSeconds(deadline-System.nanoTime());
+		if(remaining<1) throw new IllegalStateException("CAPTURE_WRITER_DRAIN_TIMEOUT");
+		var transaction=new org.springframework.transaction.support.TransactionTemplate(transactionManager);
+		transaction.setTimeout((int)Math.min(c.limits().timeoutSeconds(),remaining));
+		transaction.executeWithoutResult(status->{ guard.run(); store.fence(c.sessionId(),holder,now(),now().plusSeconds(c.limits().leaseSeconds())); guard.run(); work.run(); guard.run(); });
+	}
+	public void close(Configuration c,String holder,String reason,long deadline,String receipt,Runnable guard) {
+		closingWork(c,holder,deadline,()->{
+			store.terminalGaps(c.sessionId(),reason,now()); guard.run();
+			if(receipt!=null) store.envelope(c.sessionId(),"CAPTURE_TERMINAL",PayloadFingerprint.sha256(receipt),receipt,now());
+			guard.run(); store.stop(c.sessionId(),reason); guard.run();
+		},guard);
 	}
 	public java.util.Optional<String> boundary(UUID session,String pool) { return store.boundary(session,pool); }
 	public List<Gap> gaps(UUID session) { return store.gaps(session); }

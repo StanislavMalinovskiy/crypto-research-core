@@ -201,12 +201,15 @@ public class JdbcCaptureStore {
 				.param("maxRpc",l.rpcHundredths()).query(Integer.class).optional().isPresent();
 	}
 	public boolean captureAdvance(Configuration c,String holder,Instant now,long requests,long received,long subscription,long retained,long rpc) {
+		return captureAdvance(c,holder,now,requests,received,subscription,retained,rpc,false);
+	}
+	public boolean captureAdvance(Configuration c,String holder,Instant now,long requests,long received,long subscription,long retained,long rpc,boolean closing) {
 		var l=c.limits();
 		var result=jdbc.sql("""
 				WITH admission AS (
 				SELECT session_id,requests<=:maxRequests-:requests AND received_bytes<=:maxReceived-:received
 				AND subscription_bytes<=:maxSubscription-:subscription AND retained_bytes<=:maxRetained-:retained
-				AND rpc_hundredths<=:maxRpc-:rpc AND ends_at>:now
+				AND rpc_hundredths<=:maxRpc-:rpc AND (:closing OR ends_at>:now)
 				AND NOT EXISTS (SELECT 1 FROM marketdata.capture_periods p WHERE p.account_period=s.account_period
 				AND p.known_overage_hundredths>p.ceiling_hundredths-p.reserved_hundredths) AS fits
 				FROM marketdata.capture_sessions s WHERE session_id=:id AND holder=:holder AND locked_until>:now AND state='RUNNING' FOR UPDATE
@@ -215,7 +218,7 @@ public class JdbcCaptureStore {
 				received_bytes=received_bytes+:received,subscription_bytes=subscription_bytes+:subscription,
 				retained_bytes=retained_bytes+:retained,rpc_hundredths=rpc_hundredths+CASE WHEN a.fits THEN :rpc ELSE 0 END,locked_until=:until
 				FROM admission a WHERE s.session_id=a.session_id RETURNING s.subscription_bytes,a.fits
-				""").param("id",c.sessionId()).param("holder",holder).param("now",time(now)).param("until",time(now.plusSeconds(l.leaseSeconds())))
+				""").param("id",c.sessionId()).param("holder",holder).param("now",time(now)).param("until",time(now.plusSeconds(l.leaseSeconds()))).param("closing",closing)
 				.param("requests",requests).param("received",received).param("subscription",subscription).param("retained",retained).param("rpc",rpc)
 				.param("maxRequests",l.requests()).param("maxReceived",l.receivedBytes()).param("maxSubscription",l.subscriptionBytes())
 				.param("maxRetained",l.retainedBytes()).param("maxRpc",l.rpcHundredths())
@@ -228,6 +231,47 @@ public class JdbcCaptureStore {
 	public void stop(UUID id, String reason) {
 		jdbc.sql("UPDATE marketdata.capture_sessions SET state='STOPPED',reason=:reason WHERE session_id=:id")
 				.param("id",id).param("reason",reason).update();
+	}
+	/** One statement/snapshot; no notification, response or account payload leaves this projection. */
+	public java.util.Map<String,Object> summarySnapshot(UUID id) {
+		return jdbc.sql("""
+				WITH supported AS (
+				SELECT d.pool,d.signature,d.slot FROM marketdata.capture_dispositions d
+				JOIN marketdata.capture_sessions s USING(session_id)
+				JOIN marketdata.raw_transactions r ON r.chain_id='solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp'
+				AND r.provider=(s.configuration_json::jsonb->>'provider') AND r.transaction_value=d.signature
+				AND r.payload_hash=d.raw_digest AND r.observed_block_position=d.slot
+				WHERE d.session_id=:id AND d.status IN ('CAPTURED','FAILED_TRANSACTION')),
+				positions AS (SELECT DISTINCT ON (d.pool COLLATE "C") d.pool,d.signature,d.slot FROM supported d
+				WHERE NOT EXISTS (SELECT 1 FROM supported other WHERE other.pool=d.pool AND other.slot=d.slot AND other.signature<>d.signature)
+				ORDER BY d.pool COLLATE "C",d.slot DESC)
+				SELECT jsonb_build_object('requests',s.requests,'received',s.received_bytes,'wss',s.subscription_bytes,
+				'retained',s.retained_bytes,'rpcHundredths',s.rpc_hundredths,'reservedHundredths',s.reserved_hundredths)::text AS durable,
+				COALESCE((SELECT jsonb_object_agg(status,n) FROM (SELECT status,count(*) AS n FROM marketdata.capture_dispositions WHERE session_id=:id GROUP BY status) counts),'{}'::jsonb)::text AS counts,
+				(SELECT jsonb_object_agg(pool.value->>'address',COALESCE((SELECT jsonb_build_object('signature',p.signature,'slot',p.slot) FROM positions p WHERE p.pool=pool.value->>'address'),'"UNKNOWN"'::jsonb)) FROM jsonb_array_elements(s.configuration_json::jsonb->'pools') pool(value))::text AS positions
+				FROM marketdata.capture_sessions s WHERE s.session_id=:id
+				""").param("id",id).query((r,n)->{
+			var result=new java.util.LinkedHashMap<String,Object>();
+			result.put("durable",json.readTree(r.getString("durable"))); result.put("durableDispositions",json.readTree(r.getString("counts"))); result.put("committedPositions",json.readTree(r.getString("positions"))); return result;
+		}).single();
+	}
+	/** Closing gaps use the same immutable raw-position proof as boundary(), in one fixed-pool statement. */
+	public void terminalGaps(UUID id,String reason,Instant now) {
+		jdbc.sql("""
+				WITH supported AS (
+				SELECT d.pool,d.signature,d.slot FROM marketdata.capture_dispositions d JOIN marketdata.capture_sessions s USING(session_id)
+				JOIN marketdata.raw_transactions r ON r.chain_id='solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp'
+				AND r.provider=(s.configuration_json::jsonb->>'provider') AND r.transaction_value=d.signature AND r.payload_hash=d.raw_digest AND r.observed_block_position=d.slot
+				WHERE d.session_id=:id AND d.status IN ('CAPTURED','FAILED_TRANSACTION')),
+				positions AS (SELECT DISTINCT ON (d.pool COLLATE "C") d.pool,d.signature,d.slot FROM supported d
+				WHERE NOT EXISTS (SELECT 1 FROM supported other WHERE other.pool=d.pool AND other.slot=d.slot AND other.signature<>d.signature)
+				ORDER BY d.pool COLLATE "C",d.slot DESC)
+				INSERT INTO marketdata.capture_gaps(session_id,pool,kind,reason,from_slot,opened_at,boundary_signature,status)
+				SELECT s.session_id,pool.value->>'address',k.kind,:reason,p.slot,:now,p.signature,
+				CASE WHEN k.kind='TRANSACTION' THEN 'UNRESOLVED_TRANSACTION_GAP' ELSE 'UNRESOLVED_STATE_GAP' END
+				FROM marketdata.capture_sessions s CROSS JOIN LATERAL jsonb_array_elements(s.configuration_json::jsonb->'pools') pool(value)
+				CROSS JOIN (VALUES ('TRANSACTION'),('STATE')) k(kind) LEFT JOIN positions p ON p.pool=pool.value->>'address' WHERE s.session_id=:id
+				""").param("id",id).param("reason",reason).param("now",time(now)).update();
 	}
 	public void observe(UUID id,String holder,long bytes,long subscription) {
 		var changed=jdbc.sql("""

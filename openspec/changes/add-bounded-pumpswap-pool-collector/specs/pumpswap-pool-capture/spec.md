@@ -182,3 +182,26 @@ The collector SHALL request maxSupportedTransactionVersion1 with finalized/json 
 - **WHEN** the recorded standing owner authority permits Main-managed fresh windows after reviewed repairs until one successful configured6h
 - **THEN** each prospective window SHALL preserve original cumulative account/time/storage/resource authority and old immutable session/terminal evidence, with startup/ACK/recovery inside its original<=21,600s end
 - **AND** a complete stability/evidence analysis MAY report explicit incomplete coverage but SHALL NOT imply full chain coverage/admission, extend the window, grant12h or cause an in-code terminal restart.
+
+### Requirement: Deadline-safe recovery and fenced bounded closing
+Recovery SHALL recheck its original episode/window deadline, writer health and latched interruption after blocking work and before queued recovered-gap transitions, completion publication or clearing the episode deadline, including unknown-boundary branches. Diagnostic summaries SHALL use bounded coherent durable projections without repeatedly materializing all payload-bearing dispositions; optional diagnostics SHALL NOT delay primary terminal persistence or authorize work after expiry. Closing SHALL disable new provider admission and finish only already-admitted bounded tail/accounting and terminal gaps/status under the current valid fence, preserving original terminal cause and all conservative resource authority. Closing SHALL respect the existing timeoutSeconds+1 drain bound and existing10s operation/30s lease limits, including natural configured-window end; no timeout/window/budget increase or expired-lease reacquisition SHALL be introduced.
+
+#### Scenario: Blocking summary or callback crosses recovery deadline
+- **WHEN** recovery reaches or passes its original deadline or an interruption is latched while summary/read/write work is pending, including a pool with unknown boundary
+- **THEN** subsequent completion or recovered-gap transition SHALL recheck that condition in the owning execution path and SHALL NOT publish successful completion, clear/extend the deadline or close a gap based on post-expiry work
+- **AND** it SHALL retain the original explicit terminal cause/unresolved interval without mutating already valid committed evidence.
+
+#### Scenario: Slow optional diagnostics cannot expire terminal ownership
+- **WHEN** an original terminal reason requires bounded closing while storage and the current unexpired lease are available
+- **THEN** new provider admission SHALL cease and known admitted accounting/tail/gaps plus fenced terminal status SHALL take priority over optional full summaries, with valid ownership maintained only through the original bounded drain
+- **AND** unavailable diagnostics or a secondary closing failure SHALL remain distinct from the original cause without a fence bypass, fabricated committed summary or renewed window.
+
+#### Scenario: Natural configured-window end persists already-admitted facts
+- **WHEN** the original configured6h end arrives with already-admitted unflushed counters or notification tail and a valid current holder
+- **THEN** bounded cleanup SHALL retain those known facts and commit the original time-limit terminal status through its valid fence without a post-end provider call or claim-based renewal of capture admission
+- **AND** cleanup SHALL NOT discard admitted request/RPC facts merely because normal admission has ended or treat unfinished cleanup as a successful6h result.
+
+#### Scenario: Storage or fence cannot complete closing
+- **WHEN** the drain limit, database failure or lost/stolen/expired lease prevents terminal persistence
+- **THEN** the collector SHALL stop owned admission/transport/work where bounded mechanisms permit and expose unfinished durable state and an explicit unknown tail under retained reservation
+- **AND** it SHALL NOT reacquire expired ownership, rewrite historical evidence, publish healthy completion or automatically restart.
