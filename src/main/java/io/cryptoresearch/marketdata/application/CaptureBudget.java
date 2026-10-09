@@ -45,7 +45,7 @@ public final class CaptureBudget {
 				|| l.retainedBytes() <= 0 || l.subscriptionBytes() <= 0 || l.rpcHundredths() <= 0
 				|| l.messageBytes() <= 0 || l.responseBytes() <= 0 || l.queueItems() <= 0 || l.queueBytes() <= 0
 				|| l.timeoutSeconds() <= 0 || l.timeoutSeconds() > 10 || l.retries() < 0 || l.retries() > 2
-				|| l.reconnects() < 0 || l.reconnects() > 3 || l.recoveryPages() <= 0 || l.recoveryPages() > 10
+				|| l.reconnects() < 0 || l.reconnects() > 20 || l.recoveryPages() <= 0 || l.recoveryPages() > 10
 				|| l.recoverySeconds() <= 0 || l.recoverySeconds() > 300 || l.requestsPerSecond() <= 0
 				|| l.requestsPerSecond() > 2 || l.leaseSeconds() <= l.timeoutSeconds()) return "INVALID_FINITE_LIMITS";
 		if (c.pools().size() != 3) return "MISSING_THREE_POOL_ALLOWLIST";

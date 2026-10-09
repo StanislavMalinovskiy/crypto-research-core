@@ -92,6 +92,14 @@ public class CaptureLedgerUseCase {
 	@Transactional public void recovered(UUID session, String holder, String pool, String boundary) {
 		fence(session,holder); store.recovered(session,pool,boundary,now());
 	}
+	@Transactional(timeout=10) public List<Gap> episode(UUID session,String holder,String reason,Instant observed) {
+		fence(session,holder); var before=store.gaps(session).stream().mapToLong(Gap::id).max().orElse(0);
+		for(var p:configuration(session).pools()) { store.gap(session,p.address(),"TRANSACTION",reason,observed); store.gap(session,p.address(),"STATE",reason,observed); }
+		return store.gaps(session).stream().filter(g->g.id()>before).toList();
+	}
+	@Transactional(timeout=10) public void recoveredGap(UUID session,String holder,Gap gap) {
+		fence(session,holder); store.recoveredGap(session,gap.id(),gap.boundarySignature(),now());
+	}
 	public java.util.Optional<String> boundary(UUID session,String pool) { return store.boundary(session,pool); }
 	public List<Gap> gaps(UUID session) { return store.gaps(session); }
 	public List<Disposition> dispositions(UUID session) { return store.dispositions(session); }

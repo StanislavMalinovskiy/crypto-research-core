@@ -30,9 +30,15 @@ final class LocalCaptureWebSocket implements AutoCloseable {
 		this(notifications,fragments,acknowledgement,notificationOpcode,beforeAcknowledgement,()->{ });
 	}
 	LocalCaptureWebSocket(LongFunction<java.util.List<String>> notifications,boolean fragments,LongFunction<String> acknowledgement,int notificationOpcode,LongFunction<java.util.List<String>> beforeAcknowledgement,Runnable betweenFragments) throws Exception {
-		server=new ServerSocket(0,1,java.net.InetAddress.getByName("127.0.0.1")); server.setSoTimeout(10000);
+		this(1,(index,subscription)->notifications.apply(subscription),fragments,acknowledgement,notificationOpcode,beforeAcknowledgement,betweenFragments,index->{ });
+	}
+	LocalCaptureWebSocket(int connections,java.util.function.BiFunction<Integer,Long,java.util.List<String>> notifications,java.util.function.IntConsumer afterSent) throws Exception {
+		this(connections,notifications,false,id->"{\"id\":"+id+",\"result\":"+(10000+id)+"}",1,id->java.util.List.of(),()->{ },afterSent);
+	}
+	private LocalCaptureWebSocket(int connections,java.util.function.BiFunction<Integer,Long,java.util.List<String>> notifications,boolean fragments,LongFunction<String> acknowledgement,int notificationOpcode,LongFunction<java.util.List<String>> beforeAcknowledgement,Runnable betweenFragments,java.util.function.IntConsumer afterSent) throws Exception {
+		server=new ServerSocket(0,1,java.net.InetAddress.getByName("127.0.0.1")); server.setSoTimeout(connections>1?30000:10000);
 		thread=Thread.ofPlatform().daemon(true).start(()->{
-			try(var socket=server.accept()) {
+			try { for(var index=0;index<connections;index++) { try(var socket=server.accept()) {
 				connection=socket; socket.setSoTimeout(10000); var input=socket.getInputStream(); var output=socket.getOutputStream();
 				var headers=new StringBuilder(); while(!headers.toString().endsWith("\r\n\r\n")) { var b=input.read(); if(b<0 || headers.length()>8192) throw new java.io.IOException(); headers.append((char)b); }
 				var key=headers.toString().lines().filter(line->line.toLowerCase().startsWith("sec-websocket-key:"))
@@ -50,17 +56,22 @@ final class LocalCaptureWebSocket implements AutoCloseable {
 					for(var text:beforeAcknowledgement.apply(id)) frame(output,text,1,true);
 					if(response!=null) frame(output,response,1,true);
 				}
-				for(var text:notifications.apply(firstAccount)) {
+				for(var text:notifications.apply(index,firstAccount)) {
 					if(fragments) { var middle=text.length()/2; frame(output,text.substring(0,middle),1,false); betweenFragments.run(); frame(output,text.substring(middle),0,true); }
 					else frame(output,text,notificationOpcode,true);
 				}
 				sent.complete(null);
+				afterSent.accept(index);
 				try { while(input.read()!=-1) { } } catch(java.io.IOException closed) { }
-			} catch(Throwable failure) { sent.completeExceptionally(failure); }
+			} } } catch(Throwable failure) { sent.completeExceptionally(failure); }
 		});
 	}
 	URI uri() { return URI.create("ws://127.0.0.1:"+server.getLocalPort()+"/"); }
 	void awaitSent() throws Exception { sent.get(30,TimeUnit.SECONDS); }
+	void disconnect(int code,String reason) {
+		try { var output=connection.getOutputStream(); var text=reason.getBytes(StandardCharsets.UTF_8); output.write(136); output.write(text.length+2); output.write(code>>8); output.write(code); output.write(text); output.flush(); }
+		catch(Exception failure) { throw new AssertionError(failure); }
+	}
 	private static String readFrame(InputStream input) throws Exception {
 		var first=input.read(); var second=input.read(); if(first<0 || second<0) throw new java.io.EOFException();
 		long length=second&127;

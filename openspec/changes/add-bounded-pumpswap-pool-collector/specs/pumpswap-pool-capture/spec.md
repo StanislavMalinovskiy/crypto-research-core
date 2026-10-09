@@ -61,6 +61,36 @@ The collector SHALL commit raw evidence before interpretation, preserve equal re
 ### Requirement: Explicit bounded interruption recovery
 The collector SHALL durably record disconnect, queue overflow, fetch failure and shutdown intervals with affected pools/accounts and known slot/time boundaries. Transaction recovery SHALL use only finite overlap history for the configured pool and verify continuity to the last committed transaction boundary before closing that transaction gap. Missing historical state SHALL remain UNRESOLVED_STATE_GAP even if transaction recovery succeeds. Exhausted pagination, nonadvancing cursors and unproved continuity SHALL remain unresolved rather than claim continuous coverage.
 
+#### Scenario: Actual reconnect preserves the interruption episode
+- **WHEN** an authorized transient interruption occurs inside the original finite session
+- **THEN** the collector SHALL preserve admitted frames/accounting/receive clocks and commit episode-specific TX/STATE gaps and frozen committed boundaries through its bounded writer before reconnect work
+- **AND** it SHALL revalidate linkage, obtain durable subscription ACKs and verify finite overlap continuity to those exact boundaries without replacing them with newer callback checkpoints or closing earlier unrelated fetch gaps.
+
+#### Scenario: Unavailable fetch is not a successful recovery checkpoint
+- **WHEN** a transaction disposition is unavailable, pending, fetch-failed, provisional or conflicting
+- **THEN** it SHALL NOT advance the successful recovery boundary, which SHALL reference committed CAPTURED or FAILED_TRANSACTION raw evidence
+- **AND** verified recovery SHALL close only its exact episode gap IDs/interval, leaving older unrelated null/fetch gaps and historical sessions unchanged.
+
+#### Scenario: Reconnect allowance and heartbeat are finite
+- **WHEN** the current configuration permits reconnects and transport liveness is observed
+- **THEN** the collector SHALL allow at most20 total reconnect attempts and at most3 consecutive attempts, resetting only the consecutive count after at least300s stable acknowledged connection, with minimum1s/3s backoff and one ping each30s requiring its matching pong within10s
+- **AND** heartbeat/control traffic, retries, drain, ACKs and recovery SHALL consume the original request/byte/time/CU/cost limits, with no renewed session/window or reset total count.
+
+#### Scenario: Permanent or terminal failure cannot reconnect
+- **WHEN** security/authentication/TLS/protocol/linkage/conflict/unknown failure, writer/lease/overflow failure, owner stop or a resource/time/recovery limit occurs
+- **THEN** the collector SHALL stop with its explicit cause and unresolved coverage where applicable
+- **AND** it SHALL NOT reconnect, retry a terminal operation or grant another launch automatically.
+
+#### Scenario: Historical recovery has partial unavailable evidence
+- **WHEN** an episode reaches its known boundary but a transaction remains explicitly unavailable after finite availability retries, or a pool had no committed boundary at interruption
+- **THEN** its transaction gap SHALL remain unresolved with the exact partial reason and missing identity/boundary
+- **AND** bounded current capture MAY continue with explicit incomplete coverage, without treating a quiet pool, null response or new current account read as recovered historical evidence.
+
+#### Scenario: Established history continuity cannot be verified
+- **WHEN** a known committed boundary is absent from finite history, cursor/order is invalid or recovery capacity is exhausted
+- **THEN** recovery SHALL stop the session with an explicit unresolved episode
+- **AND** returned rows alone SHALL NOT authorize a recovered-gap claim.
+
 #### Scenario: Transaction backfill succeeds after disconnect
 - **WHEN** bounded history reaches the exact previous committed boundary and all returned identities have durable dispositions
 - **THEN** only the transaction gap SHALL be marked recovered with its evidence references
@@ -101,3 +131,26 @@ The collector SHALL expose a synchronous immutable session status including raw 
 - **WHEN** saved session evidence is inspected without provider access
 - **THEN** exact payload hashes, identities, immutable configuration and ordered dispositions SHALL reproduce the recorded capture result
 - **AND** inspection SHALL require no secret and SHALL disclose unresolved gaps and unknown actual billing.
+
+### Requirement: Accurate bounded sanitized capture diagnostics
+The collector SHALL retain versioned bounded secret-free operation diagnostics and summaries in its existing replayable envelopes. They SHALL identify actual phase, observation time, attempt/episode, stable category, available HTTP/RPC/WS numeric codes, sanitized close/error text or explicit redaction/unavailability, and bounded safe cause/stack evidence. It SHALL distinguish valid null/no-error RPC availability from RPC failure, malformed responses, provisional evidence and failed on-chain transactions. Durable summaries SHALL identify actual disposition counts, committed last positions, cumulative counters/reservations and reconnect/recovery counts separately from local unflushed attempts/tails. It SHALL NOT claim an exact root cause from a category, stack or remote reason alone.
+
+#### Scenario: Null transaction availability is delayed
+- **WHEN** finalized getTransaction returns a valid matching result:null with no JSON-RPC error
+- **THEN** the collector SHALL permit at most2 delayed availability retries at minimum2s and5s, sharing the existing per-operation retry allowance and all original limits
+- **AND** exhaustion SHALL retain UNAVAILABLE and its explicit transaction gap without synthetic raw evidence or a global capture stop solely for null availability.
+
+#### Scenario: RPC error is not a null result
+- **WHEN** an HTTP response contains a matching JSON-RPC error or invalid result/error/identity shape
+- **THEN** the collector SHALL retain the actual safe error envelope/code or explicit malformed-response category and FETCH_FAILURE where applicable
+- **AND** it SHALL NOT classify that response as a successful null/no-error availability result or retry a JSON-RPC error without an explicit allowed policy.
+
+#### Scenario: WebSocket close or nested exception is observed
+- **WHEN** a close callback or operational exception is observed
+- **THEN** diagnostics SHALL retain the actual available close code and safe allowlisted reason or explicit redaction, plus safe exception classes and stack locations with at most8 cause levels/32 frames/8,192UTF8 bytes per record
+- **AND** raw Throwable messages, nested/suppressed sensitive text, authenticated URLs, provider/DB secrets and local secret paths SHALL NOT enter logs, public errors or persisted diagnostics; missing peer codes/causes SHALL remain unavailable.
+
+#### Scenario: Diagnostics cannot be persisted
+- **WHEN** diagnostics encounter bounded queue/cap exhaustion, construction failure, unavailable writer or lost lease
+- **THEN** the original operational reason and conservative accounting/reservation SHALL remain observable with an explicit unknown undurable tail
+- **AND** diagnostics SHALL NOT mask the cause, claim a committed record or start another paid operation/reconnect.

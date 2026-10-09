@@ -98,7 +98,7 @@ public class JdbcCaptureStore {
 				""").param("id", id).param("pool", pool).param("sig", signature).param("status", status)
 				.param("hash", hash, java.sql.Types.VARCHAR).param("response", response).param("admitted", time(admitted))
 				.param("duplicate", duplicate ? 1 : 0).param("conflict", "CONFLICT".equals(status) ? 1 : 0).update();
-		if (!"CONFLICT".equals(status)) {
+		if (java.util.Set.of("CAPTURED","FAILED_TRANSACTION").contains(status) && hash!=null) {
 			jdbc.sql("""
 					INSERT INTO marketdata.capture_checkpoints VALUES (:id,:pool,:sig)
 					ON CONFLICT(session_id,pool) DO UPDATE SET signature=EXCLUDED.signature
@@ -111,7 +111,19 @@ public class JdbcCaptureStore {
 		}
 	}
 	public Optional<String> boundary(UUID id, String pool) {
-		return jdbc.sql("SELECT signature FROM marketdata.capture_checkpoints WHERE session_id=:id AND pool=:pool")
+		// Legacy checkpoints may reference unavailable fetches. Resolve evidence without mutating old rows.
+		// Signatures are identities, not intra-slot order: ambiguous latest slots use a known older slot.
+		return jdbc.sql("""
+				WITH supported AS (
+				SELECT d.signature,d.slot FROM marketdata.capture_dispositions d
+				JOIN marketdata.capture_sessions s USING(session_id)
+				JOIN marketdata.raw_transactions r ON r.chain_id='solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp'
+				AND r.provider=(s.configuration_json::jsonb->>'provider') AND r.transaction_value=d.signature AND r.payload_hash=d.raw_digest AND r.observed_block_position=d.slot
+				WHERE d.session_id=:id AND d.pool=:pool AND d.status IN ('CAPTURED','FAILED_TRANSACTION'))
+				SELECT d.signature FROM supported d WHERE NOT EXISTS
+				(SELECT 1 FROM supported other WHERE other.slot=d.slot AND other.signature<>d.signature)
+				ORDER BY d.slot DESC LIMIT 1
+				""")
 				.param("id", id).param("pool", pool).query(String.class).optional();
 	}
 	public List<Disposition> dispositions(UUID id) {
@@ -148,12 +160,15 @@ public class JdbcCaptureStore {
 						instant(r,"ingested_at"),"UNKNOWN_TRANSACTION_POSITION","UNKNOWN",r.getBoolean("ambiguous"))).list();
 	}
 	public void gap(UUID id, String pool, String kind, String reason, Instant now) {
+		var signature=boundary(id,pool).orElse(null);
+		var slot=signature==null?null:jdbc.sql("SELECT slot FROM marketdata.capture_dispositions WHERE session_id=:id AND pool=:pool AND signature=:sig")
+			.param("id",id).param("pool",pool).param("sig",signature).query(Long.class).single();
 		jdbc.sql("""
 				INSERT INTO marketdata.capture_gaps(session_id,pool,kind,reason,from_slot,opened_at,boundary_signature,status)
 				VALUES (:id,:pool,:kind,:reason,
-				(SELECT d.slot FROM marketdata.capture_checkpoints c JOIN marketdata.capture_dispositions d USING(session_id,pool,signature) WHERE c.session_id=:id AND c.pool=:pool),
-				:now,(SELECT signature FROM marketdata.capture_checkpoints WHERE session_id=:id AND pool=:pool),:status)
+				:slot,:now,:signature,:status)
 				""").param("id", id).param("pool", pool).param("kind", kind).param("reason", reason).param("now", time(now))
+				.param("slot",slot,java.sql.Types.BIGINT).param("signature",signature,java.sql.Types.VARCHAR)
 				.param("status", "STATE".equals(kind) ? "UNRESOLVED_STATE_GAP" : "UNRESOLVED_TRANSACTION_GAP").update();
 	}
 	public void recovered(UUID id, String pool, String boundary, Instant now) {
@@ -162,6 +177,10 @@ public class JdbcCaptureStore {
 				WHERE session_id=:id AND pool=:pool AND kind='TRANSACTION' AND boundary_signature=:boundary
 				AND NOT EXISTS(SELECT 1 FROM marketdata.capture_dispositions WHERE session_id=:id AND pool=:pool AND status IN ('PENDING','CONFLICT','UNVERIFIED_FINALITY','UNAVAILABLE','FETCH_FAILURE'))
 				""").param("id", id).param("pool", pool).param("boundary", boundary).param("now", time(now)).update();
+	}
+	public void recoveredGap(UUID id,long gap,String boundary,Instant now) {
+		jdbc.sql("UPDATE marketdata.capture_gaps SET status='RECOVERED_TRANSACTIONS',closed_at=:now WHERE session_id=:id AND gap_id=:gap AND kind='TRANSACTION' AND boundary_signature=:boundary AND status='UNRESOLVED_TRANSACTION_GAP'")
+			.param("id",id).param("gap",gap).param("boundary",boundary).param("now",time(now)).update();
 	}
 	public List<Gap> gaps(UUID id) {
 		return jdbc.sql("SELECT * FROM marketdata.capture_gaps WHERE session_id=:id ORDER BY opened_at,pool COLLATE \"C\",gap_id")

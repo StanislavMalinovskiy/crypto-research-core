@@ -33,6 +33,110 @@ class PumpSwapPoolCaptureIT {
 	@Autowired org.springframework.jdbc.core.simple.JdbcClient jdbc;
 	@Autowired io.cryptoresearch.marketdata.infrastructure.PumpSwapCaptureSettings settings;
 	@Autowired io.cryptoresearch.marketdata.api.MarketDataApi api;
+	@Test void legacyUnsuccessfulCheckpointResolvesOnlyMatchingSuccessfulRawEvidenceWithoutMutation() {
+		clock.set(START); ledger.open(configuration(SESSION,0L),"writer");
+		var good="1".repeat(63)+"U"; var bad="1".repeat(63)+"V";
+		ledger.pending(SESSION,"writer",address(0),good,100,"{}");
+		capture.transaction(SESSION,"writer",address(0),good,"{\"slot\":100,\"transaction\":{\"signatures\":[\""+good+"\"],\"message\":{}},\"meta\":{\"err\":null}}","{}",START,true);
+		for(var pool:java.util.List.of(address(0),address(5))) {
+			ledger.pending(SESSION,"writer",pool,bad,101,"{}");
+			jdbc.sql("UPDATE marketdata.capture_dispositions SET status='UNAVAILABLE' WHERE session_id=:id AND pool=:pool AND signature=:sig").param("id",SESSION).param("pool",pool).param("sig",bad).update();
+			jdbc.sql("INSERT INTO marketdata.capture_checkpoints VALUES (:id,:pool,:sig) ON CONFLICT(session_id,pool) DO UPDATE SET signature=EXCLUDED.signature").param("id",SESSION).param("pool",pool).param("sig",bad).update();
+		}
+		assertThat(ledger.boundary(SESSION,address(0))).as("legacy null checkpoint cannot replace successful raw boundary").contains(good);
+		assertThat(ledger.boundary(SESSION,address(5))).as("no successful raw evidence remains UNKNOWN").isEmpty();
+		var gaps=ledger.episode(SESSION,"writer","DISCONNECT",START);
+		assertThat(gaps).filteredOn(g->g.pool().equals(address(0))).allSatisfy(g->{ assertThat(g.boundarySignature()).isEqualTo(good); assertThat(g.fromSlot()).isEqualTo(100L); });
+		assertThat(gaps).filteredOn(g->g.pool().equals(address(5))).allSatisfy(g->{ assertThat(g.boundarySignature()).isNull(); assertThat(g.fromSlot()).isNull(); });
+		assertThat(jdbc.sql("SELECT signature FROM marketdata.capture_checkpoints WHERE session_id=:id").param("id",SESSION).query(String.class).list()).containsOnly(bad);
+		jdbc.sql("UPDATE marketdata.capture_dispositions SET raw_digest='sha256:'||repeat('0',64) WHERE session_id=:id AND signature=:sig").param("id",SESSION).param("sig",good).update();
+		assertThat(ledger.boundary(SESSION,address(0))).as("successful disposition must match persisted raw digest").isEmpty();
+	}
+	@Test void mismatchingRawPositionCannotBeFrozenOrRecoveredAsTransactionBoundary() {
+		clock.set(START); ledger.open(configuration(SESSION,0L),"writer"); var signature="1".repeat(63)+"T";
+		ledger.pending(SESSION,"writer",address(0),signature,100,"{}");
+		capture.transaction(SESSION,"writer",address(0),signature,"{\"slot\":101,\"transaction\":{\"signatures\":[\""+signature+"\"],\"message\":{}},\"meta\":{\"err\":null}}","{}",START,true);
+		assertThat(rawStore.find(ChainId.SOLANA_MAINNET,new TransactionId(ChainId.SOLANA_MAINNET,signature),"alchemy").orElseThrow().blockPosition().value()).isEqualTo(101L);
+		assertThat(ledger.boundary(SESSION,address(0))).as("immutable raw slot101 cannot prove disposition slot100").isEmpty();
+		var gap=ledger.episode(SESSION,"writer","DISCONNECT",START).stream().filter(g->g.pool().equals(address(0)) && g.kind().equals("TRANSACTION")).findFirst().orElseThrow();
+		assertThat(gap.boundarySignature()).isNull(); assertThat(gap.fromSlot()).isNull(); ledger.recoveredGap(SESSION,"writer",gap);
+		assertThat(ledger.gaps(SESSION)).filteredOn(g->g.id()==gap.id()).singleElement().satisfies(g->assertThat(g.status()).isEqualTo("UNRESOLVED_TRANSACTION_GAP"));
+		assertThat(ledger.dispositions(SESSION)).singleElement().satisfies(d->assertThat(d.slot()).isEqualTo(100L));
+	}
+	@Test void twoReconnectEpisodesRetainSeparateUpperPositionsAndImmutableSummaries() throws Exception {
+		clock.set(START); var c=configuration(SESSION,0L); var first="1".repeat(63)+"W"; var second="1".repeat(63)+"X";
+		var connection=new java.util.concurrent.atomic.AtomicInteger(); var fixtureRef=new java.util.concurrent.atomic.AtomicReference<LocalCaptureWebSocket>();
+		try(var websocket=new LocalCaptureWebSocket(3,(index,subscription)->{
+			connection.set(index+1); return index<2?java.util.List.of("{\"params\":{\"subscription\":"+(subscription-1)+",\"result\":{\"context\":{\"slot\":"+(101+index)+"},\"value\":{\"signature\":\""+(index==0?first:second)+"\"}}}}"):
+				java.util.List.of("{\"params\":{\"subscription\":"+subscription+",\"result\":{\"context\":{\"slot\":103},\"value\":{\"data\":[\"AQ==\",\"base64\"]}}}}");
+		},index->{ if(index<2) {
+			try { for(var i=0;i<400;i++) { var ready=ledger.boundary(SESSION,address(0)).filter(s->s.equals(index==0?first:second)).isPresent(); var recovered=index==0 || api.replayCapture(SESSION).envelopes().stream().anyMatch(e->e.kind().equals("CAPTURE_SUMMARY") && e.payload().contains("RECOVERY_COMPLETE_WITH_EXPLICIT_GAPS")); if(ready && recovered) break; Thread.sleep(30); } }
+			catch(InterruptedException failure) { throw new AssertionError(failure); }
+			fixtureRef.get().disconnect(1001,"going away");
+		} })) {
+			fixtureRef.set(websocket);
+			var http=mockAccounts(c,first,false,null,null,(method,result)->{
+				if(method.equals("getTransactionsForAddress")) { var later=connection.get()>=3; return "{\"data\":[{\"slot\":"+(later?102:101)+",\"transaction\":{\"signatures\":[\""+(later?second:first)+"\"]}}],\"paginationToken\":null}"; }
+				if(method.equals("getTransaction") && connection.get()>=2) return result.replace(first,second).replace("\"slot\":101","\"slot\":102"); return result;
+			},200);
+			try {
+				launch(c,http,websocket);
+				java.util.List<tools.jackson.databind.JsonNode> summaries=java.util.List.of(); var mapper=tools.jackson.databind.json.JsonMapper.builder().build();
+				for(var i=0;i<3000;i++) { summaries=api.replayCapture(SESSION).envelopes().stream().filter(e->e.kind().equals("CAPTURE_SUMMARY") && e.payload().contains("RECOVERY_COMPLETE_WITH_EXPLICIT_GAPS")).map(e->mapper.readTree(e.payload())).toList(); if(summaries.size()==2 && api.captureStatus(SESSION).states()==16) break; Thread.sleep(30); }
+				assertThat(connection.get()).isEqualTo(3); assertThat(summaries).hasSize(2);
+				var ordered=summaries.stream().sorted(java.util.Comparator.comparingInt(n->n.path("attempts").intValue())).toList();
+				assertThat(ordered.get(0).path("recoveryUpper").path(address(0)).path("signature").asText()).isEqualTo(first);
+				assertThat(ordered.get(1).path("recoveryUpper").path(address(0)).path("signature").asText()).as("second episode must not reuse first upper position").isEqualTo(second);
+				assertThat(ordered.get(0).path("episodeGaps")).isNotEqualTo(ordered.get(1).path("episodeGaps"));
+				assertThat(ordered.get(1).path("recoveryPages").intValue()).isGreaterThan(ordered.get(0).path("recoveryPages").intValue());
+				assertThat(api.captureStatus(SESSION).states()).isEqualTo(16); assertThat(api.captureStatus(SESSION).state()).isEqualTo("RUNNING");
+			} finally { collector.stop(SESSION); settings.setEnabled(false); http.stop(0); }
+		}
+	}
+	@Test void unavailableDispositionCannotAdvanceCommittedTransactionBoundary() {
+		clock.set(START); ledger.open(configuration(SESSION,0L),"writer");
+		var good="1".repeat(63)+"U"; var missing="1".repeat(63)+"V";
+		ledger.pending(SESSION,"writer",address(0),good,100,"{}");
+		capture.transaction(SESSION,"writer",address(0),good,"{\"slot\":100,\"transaction\":{\"signatures\":[\""+good+"\"],\"message\":{}},\"meta\":{\"err\":null}}","{}",START,true);
+		ledger.pending(SESSION,"writer",address(0),missing,101,"{}"); capture.transaction(SESSION,"writer",address(0),missing,"null","{\"result\":null}",START,true);
+		assertThat(ledger.boundary(SESSION,address(0))).as("only committed finalized raw evidence is a recovery boundary").contains(good);
+	}
+	@Test void exactEpisodeClosureLeavesOlderSameBoundaryUnavailableGapOpen() {
+		clock.set(START); var c=configuration(SESSION,0L); var boundary="1".repeat(63)+"Y"; var missing="1".repeat(63)+"Z";
+		ledger.open(c,"writer"); ledger.pending(SESSION,"writer",address(0),boundary,100,"{}");
+		capture.transaction(SESSION,"writer",address(0),boundary,"{\"slot\":100,\"transaction\":{\"signatures\":[\""+boundary+"\"],\"message\":{}},\"meta\":{\"err\":null}}","{}",START,true);
+		ledger.pending(SESSION,"writer",address(0),missing,99,"{}"); capture.transaction(SESSION,"writer",address(0),missing,"null","{\"result\":null}",START,true);
+		var old=ledger.gaps(SESSION).getFirst(); var first=ledger.episode(SESSION,"writer","DISCONNECT",START); var second=ledger.episode(SESSION,"writer","DISCONNECT",START.plusSeconds(1));
+		var verified=second.stream().filter(g->g.kind().equals("TRANSACTION") && g.pool().equals(address(0))).findFirst().orElseThrow(); ledger.recoveredGap(SESSION,"writer",verified);
+		assertThat(ledger.gaps(SESSION)).filteredOn(g->g.id()==old.id()).singleElement().satisfies(g->{ assertThat(g.boundarySignature()).isEqualTo(boundary); assertThat(g.status()).isEqualTo("UNRESOLVED_TRANSACTION_GAP"); });
+		assertThat(ledger.gaps(SESSION)).filteredOn(g->first.stream().anyMatch(v->v.id()==g.id())).noneMatch(g->g.status().equals("RECOVERED_TRANSACTIONS"));
+		assertThat(ledger.gaps(SESSION)).filteredOn(g->g.id()==verified.id()).singleElement().satisfies(g->assertThat(g.status()).isEqualTo("RECOVERED_TRANSACTIONS"));
+	}
+	@Test void actualReconnectCommitsEpisodeGapsAndContinuesAfterExactHistory() throws Exception {
+		clock.set(START); var c=configuration(SESSION,0L); var boundary="1".repeat(63)+"W";
+		var connections=new java.util.concurrent.atomic.AtomicInteger(); var fixtureRef=new java.util.concurrent.atomic.AtomicReference<LocalCaptureWebSocket>();
+		try(var websocket=new LocalCaptureWebSocket(2,(index,subscription)->{
+			connections.incrementAndGet(); return index==0?java.util.List.of("{\"params\":{\"subscription\":"+(subscription-1)+",\"result\":{\"context\":{\"slot\":101},\"value\":{\"signature\":\""+boundary+"\"}}}}"):
+				java.util.List.of("{\"params\":{\"subscription\":"+subscription+",\"result\":{\"context\":{\"slot\":102},\"value\":{\"data\":[\"AQ==\",\"base64\"]}}}}");
+		},index->{ if(index==0) {
+			try { for(var i=0;i<200 && ledger.dispositions(SESSION).isEmpty();i++) Thread.sleep(30); for(var i=0;i<200 && ledger.boundary(SESSION,address(0)).isEmpty();i++) Thread.sleep(30); }
+			catch(InterruptedException failure) { throw new AssertionError(failure); }
+			fixtureRef.get().disconnect(1001,"going away");
+		} })) {
+			fixtureRef.set(websocket); var history=new java.util.concurrent.atomic.AtomicInteger();
+			var http=mockAccounts(c,boundary,false,null,null,(method,result)->{ if(method.equals("getTransactionsForAddress")) { history.incrementAndGet(); return "{\"data\":[{\"slot\":101,\"transaction\":{\"signatures\":[\""+boundary+"\"]}}],\"paginationToken\":null}"; } return result; },200);
+			try {
+				launch(c,http,websocket);
+				for(var i=0;i<2000 && (connections.get()<2 || api.captureStatus(SESSION).states()<16);i++) Thread.sleep(30);
+				var status=api.captureStatus(SESSION);
+				assertThat(connections.get()).as("actual second finalized subscription connection after transient close").isEqualTo(2);
+				assertThat(status.state()).isEqualTo("RUNNING"); assertThat(status.states()).isEqualTo(16);
+				assertThat(history.get()).isPositive(); assertThat(status.gaps()).anySatisfy(g->{ assertThat(g.pool()).isEqualTo(address(0)); assertThat(g.status()).isEqualTo("RECOVERED_TRANSACTIONS"); });
+				assertThat(status.gaps()).anySatisfy(g->assertThat(g.status()).isEqualTo("UNRESOLVED_STATE_GAP"));
+				assertThat(ledger.reserved(c.authority().accountPeriod())).isEqualTo(95000000); assertThat(ledger.configuration(SESSION).startsAt()).isEqualTo(START);
+			} finally { collector.stop(SESSION); settings.setEnabled(false); http.stop(0); }
+		}
+	}
 	@org.springframework.test.context.bean.override.mockito.MockitoSpyBean javax.sql.DataSource dataSource;
 	@org.springframework.test.context.bean.override.mockito.MockitoSpyBean io.cryptoresearch.marketdata.infrastructure.persistence.JdbcCaptureStore captureStore;
 
@@ -57,7 +161,7 @@ class PumpSwapPoolCaptureIT {
 					var status=api.captureStatus(SESSION);
 					assertThat(status.reason()).as("ACK arrived while notification persistence was blocked, but did not commit before the shared deadline").isEqualTo("WS_DURABLE_ACK_TIMEOUT");
 					assertThat(status.state()).isEqualTo("STOPPED");
-					assertThat(status.states()).isEqualTo(15);
+					assertThat(status.states()).isEqualTo(16);
 					assertThat(api.replayCapture(SESSION).envelopes()).anySatisfy(e->assertThat(e.payload()).contains("\"id\":18"));
 					assertThat(status.gaps()).hasSize(6);
 				} finally { lock.rollback(); collector.stop(SESSION); settings.setEnabled(false); http.stop(0); }

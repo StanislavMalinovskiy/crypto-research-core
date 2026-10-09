@@ -51,8 +51,45 @@ class PumpSwapPoolCaptureTest {
 		assertThat(CaptureBudget.cost(95000000, new BigDecimal("0.525"))).isEqualByComparingTo("0.49875");
 		assertThat(CaptureBudget.cost(4, new BigDecimal("0.525"))).isEqualByComparingTo("0.000000021");
 	}
+	@Test void resourceLimitCloseNeverHoldsAccountingLockWhileWaitingForCallbackAdmission() throws Exception {
+		var ledger=org.mockito.Mockito.mock(CaptureLedgerUseCase.class);
+		org.mockito.Mockito.when(ledger.status(SESSION)).thenReturn(org.mockito.Mockito.mock(Status.class));
+		var closeEntered=new java.util.concurrent.CountDownLatch(1);
+		org.mockito.Mockito.when(ledger.now()).thenAnswer(call->{ closeEntered.countDown(); return START; });
+		var collector=new PumpSwapPoolCollector(new io.cryptoresearch.marketdata.infrastructure.PumpSwapCaptureSettings(),ledger,null,tools.jackson.databind.json.JsonMapper.builder().build());
+		var type=java.util.Arrays.stream(PumpSwapPoolCollector.class.getDeclaredClasses()).filter(t->t.getSimpleName().equals("Run")).findFirst().orElseThrow();
+		var constructor=type.getDeclaredConstructors()[0]; constructor.setAccessible(true);
+		var run=constructor.newInstance(collector,configuration(SESSION,0L),"synthetic-holder");
+		var localField=type.getDeclaredField("local"); localField.setAccessible(true); var local=localField.get(run);
+		try(var adapter=wsAdapter(URI.create("ws://127.0.0.1/"))) {
+			var transport=type.getDeclaredField("transport"); transport.setAccessible(true); transport.set(run,adapter);
+			var admissionField=JdkPumpSwapTransport.class.getDeclaredField("callbackAdmission"); admissionField.setAccessible(true); var admission=admissionField.get(adapter);
+			var received=type.getDeclaredMethod("received",long.class,boolean.class); received.setAccessible(true);
+			var accountingAvailable=new java.util.concurrent.CountDownLatch(1);
+			Thread limitThread;
+			synchronized(admission) {
+				limitThread=Thread.ofVirtual().start(()->{ try { received.invoke(run,configuration(SESSION,0L).limits().receivedBytes()+1,false); } catch(java.lang.reflect.InvocationTargetException expected) { assertThat(expected.getCause()).isInstanceOf(IllegalStateException.class).hasMessage("CAPTURE_RESOURCE_LIMIT"); } catch(Exception failure) { throw new AssertionError(failure); } });
+				assertThat(closeEntered.await(2,java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+				Thread.ofVirtual().start(()->{ synchronized(local) { accountingAvailable.countDown(); } });
+				assertThat(accountingAvailable.await(2,java.util.concurrent.TimeUnit.SECONDS)).as("callback accounting remains available while budget close waits for admission").isTrue();
+			}
+			limitThread.join(java.time.Duration.ofSeconds(2));
+		}
+	}
 	@Test void accountCuCeilingNeverRoundsUpFromFifteenDollars() {
 		assertThat(CaptureBudget.ceiling(configuration(SESSION,0L))).isEqualTo(2857142800L);
+	}
+	@Test void twentyReconnectsAreFiniteAndTwentyOneIsRejected() {
+		var c=configuration(SESSION,0L); var l=c.limits();
+		for(var count:List.of(20,21)) {
+			var limits=new Limits(l.windowSeconds(),l.requests(),l.receivedBytes(),l.retainedBytes(),l.subscriptionBytes(),l.rpcHundredths(),l.messageBytes(),l.responseBytes(),l.queueItems(),l.queueBytes(),l.timeoutSeconds(),l.retries(),count,l.recoveryPages(),l.recoverySeconds(),l.requestsPerSecond(),l.leaseSeconds());
+			assertThat(CaptureBudget.launchProblem(new Configuration(c.sessionId(),c.version(),c.provider(),c.startsAt(),c.pools(),limits,c.authority()))).isEqualTo(count==20?"":"INVALID_FINITE_LIMITS");
+		}
+	}
+	@Test void reconnectTotalNeverResetsAndOnlyFiveStableMinutesResetConsecutiveFailures() {
+		assertThat(PumpSwapPoolCollector.reconnectAllowed(19,2,20)).isTrue(); assertThat(PumpSwapPoolCollector.reconnectAllowed(20,0,20)).isFalse(); assertThat(PumpSwapPoolCollector.reconnectAllowed(1,3,20)).isFalse();
+		assertThat(PumpSwapPoolCollector.stableFailures(3,START,START.plusSeconds(299),true)).isEqualTo(3); assertThat(PumpSwapPoolCollector.stableFailures(3,START,START.plusSeconds(300),false)).isEqualTo(3);
+		assertThat(PumpSwapPoolCollector.stableFailures(3,START,START.plusSeconds(300),true)).isZero(); assertThat(PumpSwapPoolCollector.reconnectAllowed(20,0,20)).isFalse();
 	}
 
 	@Test void unknownOpeningBalanceCannotBecomeZero() {
@@ -126,7 +163,7 @@ class PumpSwapPoolCaptureTest {
 		var bytes=new AtomicLong(); var server=server(envelope,new AtomicReference<>());
 		try(var adapter=adapter(server,bytes)) {
 			assertThat(adapter.rpc("getTransaction","[]").result()).isEqualTo("null");
-			assertThat(bytes.get()).isEqualTo(envelope.getBytes(StandardCharsets.UTF_8).length);
+			assertThat(bytes.get()).isEqualTo(3L*envelope.getBytes(StandardCharsets.UTF_8).length);
 		} finally { server.stop(0); }
 	}
 
@@ -181,11 +218,98 @@ class PumpSwapPoolCaptureTest {
 					public void start(long cu) { }
 					public void received(long bytes,boolean subscription) { }
 					public void nextMessage() { }
-					public void evidence(String kind,String text) { saved.set(text); }
+					public void evidence(String kind,String text) { if(kind.equals("HTTP_getTransaction")) saved.set(text); }
 				})) {
-			adapter.rpc("getTransaction","[]");
+			assertThatThrownBy(()->adapter.rpc("getTransaction","[]")).hasMessage("PROVIDER_RPC_FAILURE");
 			assertThat(saved.get()).isEqualTo(envelope);
 		} finally { server.stop(0); }
+	}
+	@Test void admittedNotificationCompletesAfterTransportClose() throws Exception {
+		var admitted=new java.util.concurrent.CountDownLatch(1); var commit=new java.util.concurrent.CompletableFuture<Void>();
+		var received=new java.util.concurrent.CopyOnWriteArrayList<JdkPumpSwapTransport.Notification>();
+		var materialized=new java.util.concurrent.CountDownLatch(1);
+		try(var fixture=new LocalCaptureWebSocket(subscription->List.of("{\"params\":{\"subscription\":"+subscription+",\"result\":{\"context\":{\"slot\":101},\"value\":{\"data\":[\"AA==\",\"base64\"]}}}}"),false);
+			var adapter=wsAdapter(fixture.uri(),new JdkPumpSwapTransport.Accounting() {
+				public Instant now() { return START; } public void start(long cu) { } public void received(long bytes,boolean subscription) { } public void nextMessage() { }
+				public java.util.concurrent.CompletableFuture<Void> websocketEvidence(String text,Instant at) {
+					if(text.contains("params")) { admitted.countDown(); return commit; } return java.util.concurrent.CompletableFuture.completedFuture(null);
+				}
+			})) {
+			adapter.connect(configuration(SESSION,0L).pools(),n->{ received.add(n); materialized.countDown(); },r->{ });
+			assertThat(admitted.await(5,java.util.concurrent.TimeUnit.SECONDS)).isTrue(); adapter.close(); commit.complete(null);
+			materialized.await(5,java.util.concurrent.TimeUnit.SECONDS);
+			assertThat(received).as("an admitted exact frame is materialized despite subsequent connection closure").hasSize(1);
+		}
+	}
+	@Test void remoteCloseRetainsActualCodeAndRedactsUntrustedReason() throws Exception {
+		var saved=new java.util.concurrent.CopyOnWriteArrayList<String>(); var interrupted=new AtomicReference<String>();
+		try(var fixture=new LocalCaptureWebSocket(subscription->List.of(),false); var adapter=wsAdapter(fixture.uri(),new JdkPumpSwapTransport.Accounting() {
+			public Instant now() { return START; } public void start(long cu) { } public void received(long bytes,boolean subscription) { } public void nextMessage() { }
+			public void evidence(String kind,String text) { if(kind.equals("CAPTURE_DIAGNOSTIC")) saved.add(text); }
+		})) {
+			adapter.connect(configuration(SESSION,0L).pools(),n->{ },interrupted::set); fixture.awaitSent(); fixture.disconnect(1008,"https://private.example/provider-key");
+			for(var i=0;i<100 && interrupted.get()==null;i++) Thread.sleep(10);
+			assertThat(saved).as("actual peer close metadata is safe and replayable").anySatisfy(text->{ assertThat(text).contains("1008","REDACTED_UNTRUSTED_TEXT","WS_LISTENER").doesNotContain("private.example","provider-key"); assertThat(text.getBytes(StandardCharsets.UTF_8).length).isLessThanOrEqualTo(8192); });
+		}
+	}
+	@Test void heartbeatChargesControlAndRequiresPongWithinOriginalTenSeconds() throws Exception {
+		var time=new AtomicReference<>(START); var starts=new AtomicLong(); var interrupted=new AtomicReference<String>();
+		try(var fixture=new LocalCaptureWebSocket(subscription->List.of(),false); var adapter=wsAdapter(fixture.uri(),new JdkPumpSwapTransport.Accounting() {
+			public Instant now() { return time.get(); } public void start(long cu) { starts.incrementAndGet(); } public void received(long bytes,boolean subscription) { } public void nextMessage() { }
+		})) {
+			adapter.connect(configuration(SESSION,0L).pools(),n->{ },interrupted::set); fixture.awaitSent(); assertThat(starts.get()).isEqualTo(18);
+			time.set(START.plusSeconds(29)); adapter.heartbeat(); assertThat(starts.get()).isEqualTo(18);
+			time.set(START.plusSeconds(30)); adapter.heartbeat(); assertThat(starts.get()).isEqualTo(19);
+			time.set(START.plusSeconds(39)); adapter.heartbeat(); assertThat(interrupted.get()).isNull();
+			time.set(START.plusSeconds(40)); adapter.heartbeat(); assertThat(interrupted.get()).isEqualTo("WS_PONG_TIMEOUT"); assertThat(adapter.reconnectable()).isTrue();
+		}
+	}
+	@Test void heartbeatSendFailurePreservesPermanentUnknownAndTransientClassification() throws Exception {
+		for(var failure:List.of(new SecurityException("synthetic"),new javax.net.ssl.SSLException("synthetic"),new java.net.ProtocolException("synthetic"),new IllegalStateException("synthetic"),new java.io.IOException("synthetic"),new java.util.concurrent.TimeoutException("synthetic"))) {
+			var interrupted=new AtomicReference<String>();
+			try(var adapter=wsAdapter(URI.create("ws://127.0.0.1/"))) {
+				var socket=org.mockito.Mockito.mock(java.net.http.WebSocket.class); org.mockito.Mockito.when(socket.sendPing(org.mockito.ArgumentMatchers.any())).thenReturn(java.util.concurrent.CompletableFuture.failedFuture(failure));
+				for(var entry:java.util.Map.of("socket",socket,"nextPing",START,"interruption",(java.util.function.Consumer<String>)interrupted::set).entrySet()) { var field=JdkPumpSwapTransport.class.getDeclaredField(entry.getKey()); field.setAccessible(true); field.set(adapter,entry.getValue()); }
+				adapter.heartbeat(); assertThat(interrupted.get()).isEqualTo("WS_SEND_FAILURE");
+				assertThat(adapter.reconnectable()).as("heartbeat must not grant another connection for %s",failure.getClass().getSimpleName()).isEqualTo(failure instanceof java.io.IOException && !(failure instanceof javax.net.ssl.SSLException) && !(failure instanceof java.net.ProtocolException) || failure instanceof java.util.concurrent.TimeoutException);
+			}
+		}
+	}
+	@Test void forbiddenNestedCauseOverridesEligibleHandshakeStatus() throws Exception {
+		var response=org.mockito.Mockito.mock(java.net.http.HttpResponse.class); org.mockito.Mockito.when(response.statusCode()).thenReturn(503);
+		var handshake=new java.net.http.WebSocketHandshakeException(response); handshake.initCause(new javax.net.ssl.SSLException("synthetic"));
+		var classify=JdkPumpSwapTransport.class.getDeclaredMethod("transientNetwork",Throwable.class); classify.setAccessible(true);
+		assertThat(classify.invoke(null,handshake)).as("TLS cause remains terminal even after observed eligible HTTP503").isEqualTo(false);
+	}
+	@Test void authenticationHandshakeDenialCannotBeOverriddenByNestedTransientHandshake() throws Exception {
+		var classify=JdkPumpSwapTransport.class.getDeclaredMethod("transientNetwork",Throwable.class); classify.setAccessible(true);
+		for(var status:List.of(401,403)) {
+			var rejected=org.mockito.Mockito.mock(java.net.http.HttpResponse.class); org.mockito.Mockito.when(rejected.statusCode()).thenReturn(status);
+			var eligible=org.mockito.Mockito.mock(java.net.http.HttpResponse.class); org.mockito.Mockito.when(eligible.statusCode()).thenReturn(503);
+			var outer=new java.net.http.WebSocketHandshakeException(rejected); outer.initCause(new java.net.http.WebSocketHandshakeException(eligible));
+			assertThat(classify.invoke(null,outer)).as("observed HTTP%s denial remains terminal despite inner HTTP503",status).isEqualTo(false);
+		}
+	}
+	@Test void nestedDiagnosticRetainsOnlyBoundedSafeCauseAndStackMetadata() {
+		Throwable cause=null; for(var i=0;i<12;i++) cause=new IllegalStateException("https://database-user:database-password@private-host/key?provider-secret",cause);
+		var text=JdkPumpSwapTransport.diagnostic("TX_FETCH","PROVIDER_TRANSPORT_FAILURE",cause,503,null,null,"untrusted-password",START);
+		var node=tools.jackson.databind.json.JsonMapper.builder().build().readTree(text); int frames=0; for(var item:node.path("causes")) frames+=item.path("stack").size();
+		assertThat(node.path("causes").size()).isEqualTo(8); assertThat(frames).isLessThanOrEqualTo(32); assertThat(node.path("truncated").booleanValue()).isTrue();
+		assertThat(text.getBytes(StandardCharsets.UTF_8).length).isLessThanOrEqualTo(8192); assertThat(text).doesNotContain("database-user","database-password","private-host","provider-secret","untrusted-password").contains("IllegalStateException","REDACTED_UNTRUSTED_TEXT");
+	}
+	@Test void authenticationHandshakeFailureIsNeverReconnectable() throws Exception {
+		var server=HttpServer.create(new InetSocketAddress("127.0.0.1",0),0); server.createContext("/",exchange->{ exchange.sendResponseHeaders(401,-1); exchange.close(); }); server.start();
+		try(var adapter=wsAdapter(URI.create("ws://127.0.0.1:"+server.getAddress().getPort()+"/"))) {
+			assertThatThrownBy(()->adapter.connect(configuration(SESSION,0L).pools(),n->{ },r->{ })).hasMessage("WS_CONNECT_FAILURE");
+			assertThat(adapter.reconnectable()).as("observed HTTP401 authentication rejection cannot grant paid reconnect").isFalse();
+		} finally { server.stop(0); }
+	}
+	@Test void rpcResponseIdentityAndExclusiveShapeAreRequired() throws Exception {
+		for(var text:List.of("{\"jsonrpc\":\"2.0\",\"id\":9,\"result\":null}","{\"jsonrpc\":\"2.0\",\"id\":1}","{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":null,\"error\":{\"code\":-1}}")) {
+			var server=server(text,new AtomicReference<>());
+			try(var adapter=adapter(server,new AtomicLong())) { assertThatThrownBy(()->adapter.rpc("getTransaction","[]")).hasMessage("MALFORMED_RPC_RESPONSE"); }
+			finally { server.stop(0); }
+		}
 	}
 
 	@Test void actualHttpAdapterRejectsOversizedBodyAndCountsAlreadyDeliveredBytes() throws Exception {
@@ -215,7 +339,8 @@ class PumpSwapPoolCaptureTest {
 		var server=HttpServer.create(new InetSocketAddress("127.0.0.1",0),0);
 		server.createContext("/",exchange->{
 			request.set(new String(exchange.getRequestBody().readAllBytes(),StandardCharsets.UTF_8));
-			var bytes=response.getBytes(StandardCharsets.UTF_8); exchange.sendResponseHeaders(200,bytes.length);
+			var id=tools.jackson.databind.json.JsonMapper.builder().build().readTree(request.get()).path("id").longValue();
+			var bytes=response.replace("\"id\":1","\"id\":"+id).getBytes(StandardCharsets.UTF_8); exchange.sendResponseHeaders(200,bytes.length);
 			try(var body=exchange.getResponseBody()) { body.write(bytes); }
 		}); server.start(); return server;
 	}
@@ -265,7 +390,7 @@ class PumpSwapPoolCaptureTest {
 			public void start(long cu) { }
 			public void received(long bytes,boolean subscription) { }
 			public void nextMessage() { }
-			public void evidence(String kind,String envelope) { saved.incrementAndGet(); }
+			public void evidence(String kind,String envelope) { if(kind.equals("WEBSOCKET")) saved.incrementAndGet(); }
 		})) {
 			assertThatThrownBy(()->adapter.connect(configuration(SESSION,0L).pools(),n->{ },r->{ }))
 					.hasMessage("PROVIDER_SECRET_ECHO").hasNoCause();
@@ -313,7 +438,7 @@ class PumpSwapPoolCaptureTest {
 			public void start(long cu) { starts.incrementAndGet(); }
 			public void received(long bytes,boolean subscription) { }
 			public void nextMessage() { }
-			public void evidence(String kind,String envelope) { saved.incrementAndGet(); time.set(START.plusSeconds(1)); }
+			public void evidence(String kind,String envelope) { if(kind.equals("WEBSOCKET")) { saved.incrementAndGet(); time.set(START.plusSeconds(1)); } }
 		})) {
 			assertThatThrownBy(()->adapter.connect(configuration(SESSION,0L).pools(),n->{ },r->{ })).hasMessage("CAPTURE_TIME_LIMIT");
 			assertThat(starts.get()).isEqualTo(1); assertThat(saved.get()).isEqualTo(1);
