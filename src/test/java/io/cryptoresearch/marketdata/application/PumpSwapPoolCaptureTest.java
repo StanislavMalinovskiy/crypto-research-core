@@ -45,7 +45,19 @@ class PumpSwapPoolCaptureTest {
 						opening, 0, 2860000000L, new BigDecimal("15"), new BigDecimal("0.525"),
 						new BigDecimal("0.04"), "owner-first-window-2026-10-07", true,true));
 	}
+	@Test void exactHistoryRowsCannotAliasLiteralSlashOrTildeObjectKeys() {
+		var real="{ \"slot\":123,\"transaction\":{\"signatures\":[\"same\"]},\"text\":\"雪\\n\" }"; var fake="{\"slot\":123,\"transaction\":{\"signatures\":[\"same\"]},\"text\":\"different\"}";
+		for(var text:List.of("{\"result/data\":{\"0\":"+fake+"},\"result\":{\"data\":["+real+"]}}","{\"result\":{\"data\":["+real+"]},\"result/data\":{\"0\":"+fake+"}}")) { assertThat(JdkPumpSwapTransport.exactElements(text,"/result/data")).as("literal key slash is not a structural path separator").containsExactly(real); assertThat(JdkPumpSwapTransport.exactValue(text,"/result/data/0")).isEqualTo(real); }
+		assertThat(JdkPumpSwapTransport.exactValue("{\"literal/path\":{\"~key\":\"雪\\n\"}}","/literal~1path/~0key")).isEqualTo("\"雪\\n\"");
+	}
 
+	@Test void exactHistoryRowsRejectDuplicateDecodedStructuralKeys() {
+		var real="{\"slot\":123,\"transaction\":{\"signatures\":[\"same\"]},\"text\":\"real\"}"; var fake=real.replace("real","fake");
+		for(var page:List.of("{\"result\":{\"data\":["+fake+"]},\"result\":{\"data\":["+real+"]}}", "{\"result\":{\"data\":["+fake+"],\"data\":["+real+"]}}", "{\"result\":{\"data\":["+fake+"],\"d\\u0061ta\":["+real+"]}}")) {
+			assertThatThrownBy(()->JdkPumpSwapTransport.exactElements(page,"/result/data")).hasMessage("MALFORMED_PROVIDER_JSON");
+			assertThatThrownBy(()->JdkPumpSwapTransport.exactValue(page,"/result/data/0")).hasMessage("MALFORMED_PROVIDER_JSON");
+		}
+	}
 	@Test void wholeWindowReservationIsExactAndIncludesRpcControl() {
 		assertThat(CaptureBudget.reservation(configuration(SESSION, 0L))).isEqualTo(95000000);
 		assertThat(CaptureBudget.cost(95000000, new BigDecimal("0.525"))).isEqualByComparingTo("0.49875");

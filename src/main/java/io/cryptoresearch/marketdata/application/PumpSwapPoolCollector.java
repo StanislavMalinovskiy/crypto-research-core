@@ -86,6 +86,7 @@ public class PumpSwapPoolCollector {
 		private boolean fragmentHeld; private long fragmentBytes;
 		private volatile boolean admitting=true,writerClosing,writerFailed;
 		private volatile long drainDeadline=Long.MAX_VALUE;
+		private boolean terminalStarted;
 		private volatile boolean coordinatorDone,writerDone;
 		private void releaseActive() { if(coordinatorDone && writerDone) active.compareAndSet(this,null); }
 		private Thread databaseWriter;
@@ -154,6 +155,11 @@ public class PumpSwapPoolCollector {
 			var fits=ledger.captureAccount(c,holder,r-writtenRequests,b-writtenReceived,s-writtenSubscription,t-writtenRetained,cu-writtenRpc,n.account(),n.slot(),n.payload(),n.envelope(),at,closing,closing?this::closingTime:()->{});
 			accounted(r,b,s,t,cu,fits);
 		}
+		private void flushClosingAccounting() {
+			closingTime();
+			boolean pending; synchronized(local) { pending=requests!=writtenRequests || received!=writtenReceived || subscription!=writtenSubscription || retained!=writtenRetained || rpc!=writtenRpc; }
+			if(pending) ledger.closingWork(c,holder,drainDeadline,()->flush(null,null,null),this::closingTime);
+		}
 		private void accounted(long r,long b,long s,long t,long cu,boolean fits) {
 			writtenReceived=b; writtenSubscription=s; writtenRetained=t;
 			if(!fits) {
@@ -173,6 +179,7 @@ public class PumpSwapPoolCollector {
 					if(work!=null) {
 						long began=System.nanoTime();
 						try {
+							if(!ledger.now().isBefore(CaptureLedgerUseCase.end(c))) beginClosing("CAPTURE_TIME_LIMIT");
 							closingOperation=drainDeadline!=Long.MAX_VALUE;
 							if(closingOperation) ledger.closingWork(c,holder,drainDeadline,work.action(),this::closingTime); else work.action().run();
 							closingTime();
@@ -193,18 +200,18 @@ public class PumpSwapPoolCollector {
 					}
 				}
 				closingOperation=true;
-				Queued tail; while((tail=queue.poll())!=null) { var n=tail.notification(); try {
-					closingTime(); ledger.closingWork(c,holder,drainDeadline,()->{
-						if(n.account()==null) { retained(n.envelope().getBytes(StandardCharsets.UTF_8).length); ledger.pendingAt(c.sessionId(),holder,n.pool(),n.signature(),n.slot(),n.envelope(),n.receivedAt()); }
-						else { retained(n.envelope().getBytes(StandardCharsets.UTF_8).length+(long)n.payload().getBytes(StandardCharsets.UTF_8).length); flushAccount(n,n.receivedAt()); }
-					},this::closingTime);
-				} finally { var bytes=size(n); queuedBytes.addAndGet(-bytes); release(bytes); } }
-				ledger.closingWork(c,holder,drainDeadline,()->flush(null,null,null),this::closingTime);
+				var tail=new java.util.ArrayList<Notification>(); Queued item; while((item=queue.poll())!=null) tail.add(item.notification());
+				if(!tail.isEmpty()) try {
+					for(var n:tail) retained(n.envelope().getBytes(StandardCharsets.UTF_8).length+(n.account()==null?0L:n.payload().getBytes(StandardCharsets.UTF_8).length));
+					long r,b,s,t,cu; synchronized(local) { r=requests; b=received; s=subscription; t=retained; cu=rpc; }
+					ledger.closingTail(c,holder,drainDeadline,tail,r-writtenRequests,b-writtenReceived,s-writtenSubscription,t-writtenRetained,cu-writtenRpc,this::closingTime); accounted(r,b,s,t,cu,true);
+				} finally { for(var n:tail) { var bytes=size(n); queuedBytes.addAndGet(-bytes); release(bytes); } }
+				flushClosingAccounting();
 				var reason=interruption.get()==null?"OWNER_STOP":interruption.get();
 				var receipt=json.writeValueAsString(java.util.Map.of("version","capture-terminal-v1","session",c.sessionId().toString(),"result","TERMINAL_"+reason,"at",ledger.now().toString(),"knownAdmitted",java.util.Map.of("requests",writtenRequests,"received",writtenReceived,"wss",writtenSubscription,"retained",writtenRetained,"rpcHundredths",writtenRpc),"coverage","EXPLICIT_GAPS_NOT_COMPLETE_CHAIN","outsideEvidenceDelivery","UNKNOWN"));
 				var bytes=receipt.getBytes(StandardCharsets.UTF_8).length;
 				synchronized(local) { if(bytes>8192 || bytes>c.limits().retainedBytes()-retained) receipt=null; else retained+=bytes; }
-				ledger.closingWork(c,holder,drainDeadline,()->flush(null,null,null),this::closingTime);
+				flushClosingAccounting();
 				ledger.close(c,holder,reason,drainDeadline,receipt,this::closingTime);
 			} catch(InterruptedException failure) { Thread.currentThread().interrupt(); interrupted("CAPTURE_WRITER_INTERRUPTED"); }
 			catch(RuntimeException failure) {
@@ -346,9 +353,13 @@ public class PumpSwapPoolCollector {
 			}
 		}
 		private String transaction(String pool,String signature,long slot,String envelope,java.time.Instant received) {
+			return transaction(pool,signature,slot,envelope,received,null);
+		}
+		private String transaction(String pool,String signature,long slot,String envelope,java.time.Instant received,CaptureLedgerUseCase.HistoryPage page) {
 			CaptureBudget.signature(signature);
+			if(page!=null) ledger.verifyHistoryReference(c,page,pool,signature,slot,envelope,received);
 			retained(envelope.getBytes(StandardCharsets.UTF_8).length);
-			onWriter(envelope.getBytes(StandardCharsets.UTF_8).length,()->ledger.pendingAt(c.sessionId(),holder,pool,signature,slot,envelope,received));
+			onWriter(envelope.getBytes(StandardCharsets.UTF_8).length,()->{ if(page==null) ledger.pendingAt(c.sessionId(),holder,pool,signature,slot,envelope,received); else ledger.pendingHistory(c,holder,pool,signature,slot,envelope,received,page); });
 			JdkPumpSwapTransport.Response response;
 			try { response=transport.rpc("getTransaction","[\""+signature+"\",{\"commitment\":\"finalized\",\"encoding\":\"json\",\"maxSupportedTransactionVersion\":"+RAW_TRANSACTION_VERSION+"}]"); }
 			catch(JdkPumpSwapTransport.UnsupportedTransactionVersion unsupported) {
@@ -392,9 +403,15 @@ public class PumpSwapPoolCollector {
 					recoveryTime(); episodePages.put(pool.address(),page+1); recoveryPages++;
 					var params="[\""+pool.address()+"\",{\"commitment\":\"finalized\",\"transactionDetails\":\"full\",\"encoding\":\"json\",\"maxSupportedTransactionVersion\":"+RAW_TRANSACTION_VERSION+",\"sortOrder\":\"desc\",\"filters\":{\"status\":\"any\"},\"limit\":100"
 							+(cursor==null?"":",\"paginationToken\":\""+cursor+"\"")+"}]";
-					var response=transport.rpc("getTransactionsForAddress",params); recoveryTime(); retained(response.envelope().getBytes(StandardCharsets.UTF_8).length);
+					var response=transport.rpc("getTransactionsForAddress",params); recoveryTime(); if(!c.version().equals("capture-provenance-v5")) retained(response.envelope().getBytes(StandardCharsets.UTF_8).length);
 					var result=json.readTree(response.result()); var transactions=historyRows(response.result());
 					if(!transactions.isArray() || transactions.size()>100) throw new IllegalStateException("RECOVERY_CONTINUITY_UNPROVED");
+					CaptureLedgerUseCase.HistoryPage proof=null;
+					if(c.version().equals("capture-provenance-v5")) {
+						var digest=PayloadFingerprint.sha256(response.envelope()); var firstReceived=ledger.historyPageReceivedAt(c,digest); recoveryTime(); var context=new java.util.LinkedHashMap<String,Object>(); context.put("version","capture-history-context-v1"); context.put("session",c.sessionId().toString()); context.put("method","getTransactionsForAddress"); context.put("pool",pool.address()); context.put("cursor",cursor==null?"":cursor); context.put("pageDigest",digest); context.put("receivedAt",firstReceived.toString()); var text=json.writeValueAsString(context); retained(text.getBytes(StandardCharsets.UTF_8).length);
+						var verified=new AtomicReference<CaptureLedgerUseCase.HistoryPage>(); onWriter(text.getBytes(StandardCharsets.UTF_8).length,()->verified.set(ledger.historyPage(c,holder,text))); recoveryTime(); proof=verified.get();
+					}
+					var keys=new java.util.ArrayList<String>(); for(var row:transactions) keys.add(row.path("transaction").path("signatures").path(0).asText()); var priorKeys=new java.util.HashSet<>(ledger.successfulPage(c,pool.address(),keys)); recoveryTime(); var rowIndex=0;
 					boolean reached=false;
 					for(var row:transactions) {
 						recoveryTime();
@@ -403,10 +420,11 @@ public class PumpSwapPoolCollector {
 						previous=slot.longValue();
 						recoveryUpper.putIfAbsent(pool.address(),java.util.Map.of("slot",slot.longValue(),"signature",signature));
 						if(signature.equals(boundary.get())) { if(gap.fromSlot()==null || slot.longValue()!=gap.fromSlot()) throw new IllegalStateException("RECOVERY_BOUNDARY_CONFLICT"); reached=true; break; }
-						var prior=ledger.dispositions(c.sessionId()).stream().anyMatch(d->d.pool().equals(pool.address()) && d.signature().equals(signature) && d.rawDigest()!=null); recoveryTime();
-						var status=transaction(pool.address(),signature,slot.longValue(),response.envelope(),response.receivedAt());
+						var prior=priorKeys.contains(signature); String notification=response.envelope();
+						if(proof!=null) { var ref=new java.util.LinkedHashMap<String,Object>(); ref.put("version","capture-history-row-v1"); ref.put("session",c.sessionId().toString()); ref.put("method","getTransactionsForAddress"); ref.put("pool",pool.address()); ref.put("cursor",proof.cursor()); ref.put("pageDigest",proof.envelope().digest()); ref.put("rowIndex",rowIndex); ref.put("rowDigest",PayloadFingerprint.sha256(proof.rows().get(rowIndex))); ref.put("signature",signature); ref.put("slot",slot.longValue()); ref.put("receivedAt",proof.envelope().receivedAt().toString()); notification=json.writeValueAsString(ref); }
+						var status=transaction(pool.address(),signature,slot.longValue(),notification,proof==null?response.receivedAt():proof.envelope().receivedAt(),proof); rowIndex++;
 						recoveryTime();
-						if(java.util.Set.of("CAPTURED","FAILED_TRANSACTION").contains(status)) { if(prior) recoveryDuplicates++; else recoveryNewlyDurable++; }
+						if(java.util.Set.of("CAPTURED","FAILED_TRANSACTION").contains(status)) { if(prior) recoveryDuplicates++; else recoveryNewlyDurable++; priorKeys.add(signature); }
 						if(!java.util.Set.of("CAPTURED","FAILED_TRANSACTION").contains(status)) { if(java.util.Set.of("UNAVAILABLE","UNSUPPORTED_TRANSACTION_VERSION").contains(status)) continuity=false; else throw new IllegalStateException("RECOVERY_EVIDENCE_FAILURE"); }
 					}
 					if(reached) { recoveryTime(); if(continuity) onWriter(()->ledger.recoveredGap(c,holder,gap,this::recoveryTime)); recoveryTime(); summary(continuity?"RECOVERED_TRANSACTIONS":"PARTIAL_UNAVAILABLE_OR_UNSUPPORTED",this::recoveryTime); recoveryTime(); break; }
@@ -441,9 +459,17 @@ public class PumpSwapPoolCollector {
 			}
 		}
 		private void retryPending() {
-			for(var d:ledger.dispositions(c.sessionId())) if("PENDING".equals(d.status())) {
-				time(); transaction(d.pool(),d.signature(),d.slot(),d.notification(),d.receivedAt());
+			var pages=new java.util.HashMap<java.util.List<String>,CaptureLedgerUseCase.HistoryPage>(); var payloads=new java.util.HashMap<String,CaptureLedgerUseCase.HistoryPage>(); long bytes=0;
+			for(var d:ledger.pending(c)) {
+				time(); CaptureLedgerUseCase.HistoryPage page=null;
+				if(historyReference(d.notification())) { var n=json.readTree(d.notification()); var digest=n.path("pageDigest").asText(); var key=java.util.List.of(c.sessionId().toString(),digest,n.path("pool").asText(),n.path("cursor").asText()); page=pages.get(key); if(page==null) { var cached=payloads.get(digest); page=ledger.historyPage(c,d.notification(),cached); if(cached==null) { bytes=Math.addExact(bytes,page.envelope().payload().getBytes(StandardCharsets.UTF_8).length); if(bytes>c.limits().queueBytes()) throw new IllegalStateException("RECOVERY_PROVENANCE_BYTE_LIMIT"); payloads.put(digest,page); } pages.put(key,page); } ledger.verifyHistoryReference(c,page,d.pool(),d.signature(),d.slot(),d.notification(),d.receivedAt()); }
+				time(); transaction(d.pool(),d.signature(),d.slot(),d.notification(),d.receivedAt(),page);
 			}
+		}
+		private boolean historyReference(String notification) {
+			if(!notification.stripLeading().startsWith("{")) return false;
+			try { var n=json.readTree(notification); return n.isObject() && (n.path("version").asText().startsWith("capture-history-") || c.version().equals("capture-provenance-v5") && n.has("pageDigest") && (n.has("rowIndex") || n.has("rowDigest"))); }
+			catch(RuntimeException malformed) { if(notification.stripLeading().matches("(?s)\\{\\s*\"version\"\\s*:\\s*\"capture-history-.*")) throw new IllegalStateException("RECOVERY_PROVENANCE_INVALID"); return false; }
 		}
 		private void loop() {
 			String terminal="CAPTURE_TIME_LIMIT"; var consecutive=0; java.time.Instant stableSince=null;
@@ -483,9 +509,13 @@ public class PumpSwapPoolCollector {
 				finally { if(interrupted) Thread.currentThread().interrupt(); }
 			}
 		}
-		private void terminal(String reason) {
+		private void beginClosing(String reason) {
 			interruption.compareAndSet(null,reason); stopped=true; admitting=false;
-			boolean first; synchronized(local) { first=drainDeadline==Long.MAX_VALUE; if(first) drainDeadline=System.nanoTime()+TimeUnit.SECONDS.toNanos(c.limits().timeoutSeconds()+1L); }
+			synchronized(local) { if(drainDeadline==Long.MAX_VALUE) drainDeadline=System.nanoTime()+TimeUnit.SECONDS.toNanos(c.limits().timeoutSeconds()+1L); }
+		}
+		private void terminal(String reason) {
+			beginClosing(reason);
+			boolean first; synchronized(local) { first=!terminalStarted; terminalStarted=true; }
 			if(first) {
 				discardWebsocketMessage(); var current=transport; if(current!=null) { current.close(); try { current.awaitAdmitted(); } catch(RuntimeException secondary) { log.warn("PumpSwap closing diagnostic {}",JdkPumpSwapTransport.diagnostic("SHUTDOWN",JdkPumpSwapTransport.safeReason(secondary),secondary,null,null,null,null,ledger.now())); } }
 				writerClosing=true;

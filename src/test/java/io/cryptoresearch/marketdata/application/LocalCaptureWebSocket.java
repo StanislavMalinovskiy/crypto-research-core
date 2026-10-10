@@ -15,6 +15,7 @@ import tools.jackson.databind.json.JsonMapper;
 final class LocalCaptureWebSocket implements AutoCloseable {
 	private final ServerSocket server;
 	private volatile Socket connection;
+	private volatile long accountSubscription;
 	private final CompletableFuture<Void> sent=new CompletableFuture<>();
 	private final Thread thread;
 	LocalCaptureWebSocket(LongFunction<java.util.List<String>> notifications,boolean fragments) throws Exception {
@@ -56,38 +57,56 @@ final class LocalCaptureWebSocket implements AutoCloseable {
 					for(var text:beforeAcknowledgement.apply(id)) frame(output,text,1,true);
 					if(response!=null) frame(output,response,1,true);
 				}
+				accountSubscription=firstAccount;
 				for(var text:notifications.apply(index,firstAccount)) {
 					if(fragments) { var middle=text.length()/2; frame(output,text.substring(0,middle),1,false); betweenFragments.run(); frame(output,text.substring(middle),0,true); }
 					else frame(output,text,notificationOpcode,true);
 				}
 				sent.complete(null);
 				afterSent.accept(index);
-				try { while(input.read()!=-1) { } } catch(java.io.IOException closed) { }
+				try { while(true) {
+					Packet control;
+					try { control=readPacket(input); } catch(java.net.SocketTimeoutException idle) { if("IDLE_BEFORE_FRAME".equals(idle.getMessage())) continue; throw idle; }
+					if(control.opcode()==8) break; if(control.opcode()==9) frame(output,control.bytes(),10,true);
+				} } catch(java.io.IOException closed) { if(!(closed instanceof java.io.EOFException)) { System.err.println("LocalCaptureWebSocket connection "+index+" partial-frame termination "+closed.getClass().getSimpleName()); closed.printStackTrace(System.err); } }
 			} } } catch(Throwable failure) { sent.completeExceptionally(failure); }
 		});
 	}
 	URI uri() { return URI.create("ws://127.0.0.1:"+server.getLocalPort()+"/"); }
 	void awaitSent() throws Exception { sent.get(30,TimeUnit.SECONDS); }
+	long accountSubscription() { return accountSubscription; }
+	void send(java.util.List<String> notifications) throws Exception { for(var text:notifications) frame(connection.getOutputStream(),text,1,true); }
 	void disconnect(int code,String reason) {
 		try { var output=connection.getOutputStream(); var text=reason.getBytes(StandardCharsets.UTF_8); output.write(136); output.write(text.length+2); output.write(code>>8); output.write(code); output.write(text); output.flush(); }
 		catch(Exception failure) { throw new AssertionError(failure); }
 	}
 	private static String readFrame(InputStream input) throws Exception {
-		var first=input.read(); var second=input.read(); if(first<0 || second<0) throw new java.io.EOFException();
+		return new String(readPacket(input).bytes(),StandardCharsets.UTF_8);
+	}
+	private record Packet(int opcode,byte[] bytes) { }
+	private static Packet readPacket(InputStream input) throws Exception {
+		int first;
+		try { first=input.read(); } catch(java.net.SocketTimeoutException idle) { var failure=new java.net.SocketTimeoutException("IDLE_BEFORE_FRAME"); failure.initCause(idle); throw failure; }
+		var second=input.read(); if(first<0 || second<0) throw new java.io.EOFException();
 		long length=second&127;
 		if(length==126) length=(input.read()<<8)|input.read();
 		if(length==127) { length=0; for(var i=0;i<8;i++) length=(length<<8)|input.read(); }
 		if(length>2000000 || (second&128)==0) throw new java.io.IOException("Invalid fixture frame");
 		var mask=input.readNBytes(4); var bytes=input.readNBytes((int)length); if(bytes.length!=length) throw new java.io.EOFException();
 		for(var i=0;i<bytes.length;i++) bytes[i]^=mask[i%4];
-		return new String(bytes,StandardCharsets.UTF_8);
+		return new Packet(first&15,bytes);
 	}
 	private static void frame(OutputStream output,String value,int opcode,boolean last) throws Exception {
-		var bytes=value.getBytes(StandardCharsets.UTF_8); output.write((last?128:0)|opcode);
+		frame(output,value.getBytes(StandardCharsets.UTF_8),opcode,last);
+	}
+	private static void frame(OutputStream output,byte[] bytes,int opcode,boolean last) throws Exception {
+		synchronized(output) {
+		output.write((last?128:0)|opcode);
 		if(bytes.length<126) output.write(bytes.length);
 		else if(bytes.length<=65535) { output.write(126); output.write(bytes.length>>8); output.write(bytes.length); }
 		else { output.write(127); for(var shift=56;shift>=0;shift-=8) output.write((int)((long)bytes.length>>>shift)); }
 		output.write(bytes); output.flush();
+		}
 	}
 	@Override public void close() throws Exception { if(connection!=null) connection.close(); server.close(); thread.join(1000); }
 }

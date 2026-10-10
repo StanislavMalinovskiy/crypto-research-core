@@ -50,6 +50,7 @@ public final class JdkPumpSwapTransport implements AutoCloseable {
 	}
 	public record Notification(String pool, String account, String signature, long slot, String payload, String envelope,java.time.Instant receivedAt) { }
 	public static String exactValue(String text,String path) { return ExactCaptureJson.value(text,path); }
+	public static List<String> exactElements(String text,String path) { return ExactCaptureJson.elements(text,path); }
 	private final URI rpc;
 	private final URI websocket;
 	private final String secret;

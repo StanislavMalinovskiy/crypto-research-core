@@ -9,6 +9,7 @@ final class ExactCaptureJson {
 	private int at;
 	private String found;
 	private final String wanted;
+	private final java.util.List<String> elements=new java.util.ArrayList<>();
 	private ExactCaptureJson(String text,String wanted) { this.text=text; this.wanted=wanted; }
 	static String value(String text,String path) {
 		try {
@@ -16,6 +17,13 @@ final class ExactCaptureJson {
 			var scan=new ExactCaptureJson(text,path); scan.read(""); scan.space();
 			if(scan.at!=text.length()) throw new IllegalArgumentException();
 			return scan.found;
+		} catch(RuntimeException malformed) { throw new IllegalStateException("MALFORMED_PROVIDER_JSON"); }
+	}
+	static java.util.List<String> elements(String text,String path) {
+		try {
+			if(!JsonMapper.builder().build().readTree(text).at(path).isArray()) throw new IllegalArgumentException();
+			var scan=new ExactCaptureJson(text,path); scan.read(""); scan.space(); if(scan.at!=text.length()) throw new IllegalArgumentException();
+			return java.util.List.copyOf(scan.elements);
 		} catch(RuntimeException malformed) { throw new IllegalStateException("MALFORMED_PROVIDER_JSON"); }
 	}
 	private void read(String path) {
@@ -26,7 +34,7 @@ final class ExactCaptureJson {
 				space(); var begin=at; string();
 				var key=JsonMapper.builder().build().readValue(text.substring(begin,at),String.class);
 				if(!keys.add(key)) throw new IllegalArgumentException();
-				space(); expect(':'); read(path+"/"+key); space();
+				space(); expect(':'); read(path+"/"+key.replace("~","~0").replace("/","~1")); space();
 				if(text.charAt(at)!=',') break; at++;
 			} while(true);
 			expect('}');
@@ -39,6 +47,7 @@ final class ExactCaptureJson {
 		} else if(text.charAt(at)=='"') string();
 		else { while(at<text.length() && ",]} \t\r\n".indexOf(text.charAt(at))<0) at++; }
 		if(path.equals(wanted)) found=text.substring(start,at);
+		else if(path.startsWith(wanted+"/") && path.substring(wanted.length()+1).matches("[0-9]+")) elements.add(text.substring(start,at));
 	}
 	private void string() {
 		expect('"');

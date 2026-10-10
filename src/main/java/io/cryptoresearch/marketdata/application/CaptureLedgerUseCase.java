@@ -136,9 +136,62 @@ public class CaptureLedgerUseCase {
 			guard.run(); store.stop(c.sessionId(),reason); guard.run();
 		},guard);
 	}
+	public void closingTail(Configuration c,String holder,long deadline,List<io.cryptoresearch.marketdata.infrastructure.JdkPumpSwapTransport.Notification> tail,long requests,long received,long subscription,long retained,long rpc,Runnable guard) {
+		if(tail.size()>c.limits().queueItems()) throw new IllegalStateException("QUEUE_OVERFLOW");
+		var rows=new java.util.ArrayList<java.util.Map<String,Object>>(); var equal=new java.util.HashMap<String,String>(); long bytes=0; var ordinal=0;
+		for(var n:tail) {
+			guard.run(); bytes=Math.addExact(bytes,n.envelope().getBytes(java.nio.charset.StandardCharsets.UTF_8).length+(long)n.payload().getBytes(java.nio.charset.StandardCharsets.UTF_8).length); if(bytes>c.limits().queueBytes()) throw new IllegalStateException("QUEUE_OVERFLOW");
+			if(n.slot()<0 || c.pools().stream().noneMatch(p->p.address().equals(n.pool()))) throw new IllegalArgumentException("UNKNOWN_POOL_OR_SLOT");
+			var row=new java.util.LinkedHashMap<String,Object>(); row.put("ord",ordinal++); row.put("pool",n.pool()); row.put("account",n.account()); row.put("sig",n.signature()); row.put("slot",n.slot()); row.put("data",n.payload()); row.put("envelope",n.envelope()); row.put("received",n.receivedAt().truncatedTo(ChronoUnit.MICROS).toString());
+			if(n.account()==null) CaptureBudget.signature(n.signature());
+			else {
+				if(c.pools().stream().flatMap(p->p.accounts().stream()).noneMatch(n.account()::equals)) throw new IllegalArgumentException("UNKNOWN_ACCOUNT_OR_SLOT"); var digest=PayloadFingerprint.sha256(n.payload()); var key=n.account()+":"+n.slot()+":"+digest; var prior=equal.putIfAbsent(key,n.payload()); if(prior!=null && !prior.equals(n.payload())) throw new IllegalStateException("ACCOUNT_CONTENT_CONFLICT"); var data=tools.jackson.databind.json.JsonMapper.builder().build().readTree(n.payload()).path("data"); row.put("digest",digest); row.put("encoding",data.isArray() && data.size()==2?data.get(1).asText():data.path("program").asText("UNKNOWN"));
+			}
+			rows.add(row);
+		}
+		closingWork(c,holder,deadline,()->{ if(requests<0 || received<0 || subscription<0 || retained<0 || rpc<0) throw new IllegalArgumentException("NEGATIVE_CAPTURE_ACCOUNTING"); if(!store.captureAdvance(c,holder,now(),requests,received,subscription,retained,rpc,true)) throw new IllegalStateException("CAPTURE_RESOURCE_LIMIT"); guard.run(); store.tail(c.sessionId(),c,rows,now(),guard); },guard);
+	}
 	public java.util.Optional<String> boundary(UUID session,String pool) { return store.boundary(session,pool); }
 	public List<Gap> gaps(UUID session) { return store.gaps(session); }
 	public List<Disposition> dispositions(UUID session) { return store.dispositions(session); }
+	public List<Disposition> pending(Configuration c) { return store.pending(c.sessionId(),Math.min(100,c.limits().queueItems()),c.limits().queueBytes()); }
+	public java.util.Set<String> successfulPage(Configuration c,String pool,List<String> signatures) { return store.successfulPage(c.sessionId(),pool,signatures); }
+	public record HistoryPage(UUID session,String pool,String cursor,Envelope envelope,List<String> rows,String context) { }
+	private HistoryPage verifiedPage(Configuration c,String context) {
+		return verifiedPage(c,context,null);
+	}
+	private HistoryPage verifiedPage(Configuration c,String context,HistoryPage cached) {
+		var n=tools.jackson.databind.json.JsonMapper.builder().build().readTree(context);
+		if(!"capture-history-context-v1".equals(n.path("version").asText()) || !c.sessionId().toString().equals(n.path("session").asText()) || !"getTransactionsForAddress".equals(n.path("method").asText()) || c.pools().stream().noneMatch(p->p.address().equals(n.path("pool").asText()))) throw new IllegalStateException("RECOVERY_PROVENANCE_INVALID");
+		var cursor=n.path("cursor").asText(); if(!n.path("cursor").isString() || !cursor.isEmpty() && !cursor.matches("[A-Za-z0-9_:-]{1,512}")) throw new IllegalStateException("RECOVERY_PROVENANCE_INVALID");
+		var page=cached==null?store.historyPage(c.sessionId(),n.path("pageDigest").asText()).orElseThrow(()->new IllegalStateException("RECOVERY_PROVENANCE_MISSING")):cached.envelope();
+		if(cached!=null && (!cached.session().equals(c.sessionId()) || !page.digest().equals(n.path("pageDigest").asText()))) throw new IllegalStateException("RECOVERY_PROVENANCE_INVALID");
+		if(!PayloadFingerprint.sha256(page.payload()).equals(page.digest()) || !page.receivedAt().toString().equals(n.path("receivedAt").asText())) throw new IllegalStateException("RECOVERY_PROVENANCE_INVALID");
+		var rows=cached==null?io.cryptoresearch.marketdata.infrastructure.JdkPumpSwapTransport.exactElements(page.payload(),"/result/data"):cached.rows(); if(rows.size()>100) throw new IllegalStateException("RECOVERY_PROVENANCE_INVALID");
+		return new HistoryPage(c.sessionId(),n.path("pool").asText(),cursor,page,rows,context);
+	}
+	@Transactional(timeout=10) public HistoryPage historyPage(Configuration c,String holder,String context) {
+		store.fence(c.sessionId(),holder,now(),now().plusSeconds(c.limits().leaseSeconds())); var page=verifiedPage(c,context); store.envelope(c.sessionId(),"CAPTURE_HISTORY_CONTEXT",PayloadFingerprint.sha256(context),context,page.envelope().receivedAt()); return page;
+	}
+	@Transactional(readOnly=true,timeout=10) public HistoryPage historyPage(Configuration c,String reference) {
+		return historyPage(c,reference,(HistoryPage)null);
+	}
+	@Transactional(readOnly=true,timeout=10) public HistoryPage historyPage(Configuration c,String reference,HistoryPage cached) {
+		var ref=tools.jackson.databind.json.JsonMapper.builder().build().readTree(reference); if(!ref.path("cursor").isString()) throw new IllegalStateException("RECOVERY_PROVENANCE_INVALID"); return verifiedPage(c,store.historyContext(c.sessionId(),ref.path("pageDigest").asText(),ref.path("pool").asText(),ref.path("cursor").asText()),cached);
+	}
+	@Transactional(readOnly=true,timeout=10) public Instant historyPageReceivedAt(Configuration c,String digest) { return store.historyPageReceivedAt(c.sessionId(),digest); }
+	public void verifyHistoryReference(Configuration c,HistoryPage page,String pool,String signature,long slot,String reference,Instant received) {
+		try {
+			var ref=tools.jackson.databind.json.JsonMapper.builder().build().readTree(reference); var index=ref.path("rowIndex");
+			if(!ref.path("cursor").isString()) throw new IllegalArgumentException();
+			if(!"capture-history-row-v1".equals(ref.path("version").asText()) || !index.isIntegralNumber() || index.longValue()<0 || index.longValue()>=page.rows().size() || !page.session().equals(c.sessionId()) || !c.sessionId().toString().equals(ref.path("session").asText()) || !page.pool().equals(pool) || !pool.equals(ref.path("pool").asText()) || !"getTransactionsForAddress".equals(ref.path("method").asText()) || !page.cursor().equals(ref.path("cursor").asText()) || !page.envelope().digest().equals(ref.path("pageDigest").asText()) || !page.envelope().receivedAt().equals(received.truncatedTo(ChronoUnit.MICROS)) || !page.envelope().receivedAt().toString().equals(ref.path("receivedAt").asText()) || !signature.equals(ref.path("signature").asText()) || !ref.path("slot").isIntegralNumber() || ref.path("slot").longValue()!=slot) throw new IllegalArgumentException();
+			var row=page.rows().get(index.intValue()); var n=tools.jackson.databind.json.JsonMapper.builder().build().readTree(row);
+			if(!PayloadFingerprint.sha256(row).equals(ref.path("rowDigest").asText()) || !signature.equals(n.path("transaction").path("signatures").path(0).asText()) || !n.path("slot").isIntegralNumber() || n.path("slot").longValue()!=slot) throw new IllegalArgumentException();
+		} catch(RuntimeException failure) { throw new IllegalStateException("RECOVERY_PROVENANCE_INVALID"); }
+	}
+	@Transactional(timeout=10) public void pendingHistory(Configuration c,String holder,String pool,String signature,long slot,String reference,Instant received,HistoryPage page) {
+		verifyHistoryReference(c,page,pool,signature,slot,reference,received); CaptureBudget.signature(signature); if(slot<0) throw new IllegalArgumentException("UNKNOWN_POOL_OR_SLOT"); store.fence(c.sessionId(),holder,now(),now().plusSeconds(c.limits().leaseSeconds())); store.pending(c.sessionId(),pool,signature,slot,reference,received.truncatedTo(ChronoUnit.MICROS));
+	}
 	public List<AccountSnapshot> states(UUID session) { return store.states(session); }
 	@Transactional public void state(UUID session, String holder, String account, long slot, String payload, String envelope) {
 		stateAt(session,holder,account,slot,payload,envelope,now());

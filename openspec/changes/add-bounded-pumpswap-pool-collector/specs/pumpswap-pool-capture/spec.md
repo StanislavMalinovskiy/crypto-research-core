@@ -205,3 +205,26 @@ Recovery SHALL recheck its original episode/window deadline, writer health and l
 - **WHEN** the drain limit, database failure or lost/stolen/expired lease prevents terminal persistence
 - **THEN** the collector SHALL stop owned admission/transport/work where bounded mechanisms permit and expose unfinished durable state and an explicit unknown tail under retained reservation
 - **AND** it SHALL NOT reacquire expired ownership, rewrite historical evidence, publish healthy completion or automatically restart.
+
+### Requirement: Compact verified recovery provenance and atomic bounded admitted-tail batches
+New recovery provenance SHALL retain each exact full history response once in existing durable envelopes and reference its exact row through versioned page digest/index/exact-row digest/identity/slot/received-time evidence. References SHALL be verified before dependent pending/retry work, preserving legacy readback, actual finalized transaction fetch/raw conflict semantics and explicit gaps. Recovery and PENDING selection SHALL use bounded payload-free identity projections rather than repeated full-session payload reads. Closing MAY batch already-admitted tail under existing queue/byte/time/fence limits, but SHALL retain atomic immutable equality/conflict/accounting semantics and expose unfinished remainder without fabricated STOPPED or complete coverage.
+
+#### Scenario: History page supplies multiple recovery identities
+- **WHEN** a bounded full history page supplies identities before the exact known boundary
+- **THEN** its exact envelope SHALL be retained before verified compact row references, without copying the full page into each disposition or reserializing row digest input
+- **AND** actual getTransaction/raw identity/time/conflict checks, strict errors, recovery deadline and exact episode-gap closure SHALL remain unchanged.
+
+#### Scenario: Reference evidence is missing or inconsistent
+- **WHEN** page kind/session/digest, row index/exact digest/identity/slot or received time cannot be verified for a new reference
+- **THEN** dependent work SHALL fail explicitly without fallback provider admission, fabricated raw evidence or successful recovery
+- **AND** legacy opaque notifications and immutable historical sessions SHALL remain readable unchanged.
+
+#### Scenario: Closing batch fails or crosses its valid fence or deadline
+- **WHEN** an admitted-tail batch encounters conflict, invalid identity, resource failure, mid-batch storage error, expired/stolen ownership or original drain expiry
+- **THEN** that owning transaction SHALL roll back its partial tail/counter/gap/status effects and preserve the original cause, conservative reservation and explicit unfinished remainder
+- **AND** equal retry/state ambiguity/first times SHALL remain unchanged, with no paid drain operation, timeout/cap increase or false terminal completion.
+
+#### Scenario: Local synthetic configured-window soak precedes another paid attempt
+- **WHEN** the repaired source is evaluated through free fake WS/RPC, real PostgreSQL and controlled configured21600s with recurring disconnects and realistic delayed page/tail work
+- **THEN** it SHALL demonstrate continued bounded recovery/capture and natural-end accounting/fenced closing under original limits, with verified provenance and explicit incomplete STATE/null coverage
+- **AND** synthetic success SHALL NOT substitute for independent review, a new Main gate or actual live6h acceptance.
