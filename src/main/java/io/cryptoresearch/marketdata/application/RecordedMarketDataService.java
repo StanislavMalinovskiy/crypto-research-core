@@ -45,6 +45,23 @@ public class RecordedMarketDataService implements MarketDataApi {
     @org.springframework.beans.factory.annotation.Autowired
     private ObjectProvider<DecodePumpSwapOperationsUseCase> operationDecoder;
 
+    @org.springframework.beans.factory.annotation.Autowired
+    private ObjectProvider<PersistPumpSwapOperationsUseCase> operationPersistence;
+    @org.springframework.beans.factory.annotation.Autowired
+    private ObjectProvider<ReadCaptureMonitorUseCase> captureMonitor;
+    @Override public java.util.Optional<io.cryptoresearch.marketdata.api.PumpSwapCaptureMonitor.Snapshot> captureMonitor(java.util.UUID sessionId) {
+        java.util.Objects.requireNonNull(sessionId,"sessionId");
+        try {return captureMonitor.getObject().read(sessionId);}
+        catch(org.springframework.transaction.TransactionException failure) {throw new IllegalStateException("CAPTURE_MONITOR_READ_FAILED");}
+    }
+
+    @Override public io.cryptoresearch.marketdata.api.PumpSwapOperationPersistence.StoredBatch persistPumpSwapOperations(io.cryptoresearch.marketdata.api.PumpSwapOperations.RecordedBatch batch) {
+        return operationPersistence.getObject().persist(batch);
+    }
+    @Override public java.util.Optional<io.cryptoresearch.marketdata.api.PumpSwapOperationPersistence.StoredBatch> persistedPumpSwapOperations(String batchKey) {
+        return operationPersistence.getObject().find(batchKey);
+    }
+
     @Override public io.cryptoresearch.marketdata.api.PumpSwapOperations.Result decodePumpSwapOperations(io.cryptoresearch.marketdata.api.PumpSwapOperations.RecordedBatch batch) {
         return operationDecoder.getObject().decode(batch);
     }

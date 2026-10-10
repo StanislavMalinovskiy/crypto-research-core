@@ -17,11 +17,14 @@ import io.cryptoresearch.kernel.api.WalletAddress;
 public interface MarketDataApi {
 
     PumpSwapOperations.Result decodePumpSwapOperations(PumpSwapOperations.RecordedBatch batch);
+    PumpSwapOperationPersistence.StoredBatch persistPumpSwapOperations(PumpSwapOperations.RecordedBatch batch);
+    java.util.Optional<PumpSwapOperationPersistence.StoredBatch> persistedPumpSwapOperations(String batchKey);
 
 	PumpSwapCapture.Status startCapture(PumpSwapCapture.Configuration configuration);
 	PumpSwapCapture.Status stopCapture(java.util.UUID session);
 	PumpSwapCapture.Status captureStatus(java.util.UUID session);
 	PumpSwapCapture.Replay replayCapture(java.util.UUID session);
+	Optional<PumpSwapCaptureMonitor.Snapshot> captureMonitor(java.util.UUID sessionId);
 
 	ReplayResult replay(RecordedDataset dataset);
 

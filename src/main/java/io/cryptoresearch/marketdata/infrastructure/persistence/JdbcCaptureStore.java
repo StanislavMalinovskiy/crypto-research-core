@@ -16,9 +16,70 @@ import tools.jackson.databind.ObjectMapper;
 /** SQL only; transactions belong to the application use case. */
 @Repository
 public class JdbcCaptureStore {
+    public record MonitorHeader(UUID sessionId,String configurationDigest,String state,String reason,Instant startedAt,Instant endsAt,Instant lockedUntil) { }
+    public record MonitorData(MonitorHeader header,io.cryptoresearch.marketdata.api.PumpSwapCaptureMonitor.Counters counters,
+            List<io.cryptoresearch.marketdata.api.PumpSwapCaptureMonitor.DispositionCount> dispositions,
+            List<io.cryptoresearch.marketdata.api.PumpSwapCaptureMonitor.PoolPosition> positions,
+            List<io.cryptoresearch.marketdata.api.PumpSwapCaptureMonitor.GapCount> gapCounts,List<Gap> details) { }
 	private final JdbcClient jdbc;
 	private final ObjectMapper json;
 	public JdbcCaptureStore(JdbcClient jdbc, ObjectMapper json) { this.jdbc = jdbc; this.json = json; }
+    public void monitorTimeout() {jdbc.sql("set local statement_timeout='10s'").update();}
+    public Optional<MonitorHeader> monitorHeader(UUID id) {
+        return jdbc.sql("""
+            select configuration_digest,started_at,ends_at,locked_until,
+            octet_length(state)+octet_length(reason)<=131072
+            and jsonb_array_length(configuration_json::jsonb->'pools')<=3
+            and coalesce((select sum(octet_length(p.value->>'address')) from jsonb_array_elements(configuration_json::jsonb->'pools') p(value)),0)<=131072 as fits,
+            case when octet_length(state)+octet_length(reason)<=131072 then state end as state,
+            case when octet_length(state)+octet_length(reason)<=131072 then reason end as reason
+            from marketdata.capture_sessions where session_id=:id
+            """).param("id",id).query((r,n)->{
+                if(!r.getBoolean("fits"))throw monitorLimit();
+                return new MonitorHeader(id,r.getString("configuration_digest"),r.getString("state"),r.getString("reason"),instant(r,"started_at"),instant(r,"ends_at"),instant(r,"locked_until"));
+            }).optional();
+    }
+    public List<io.cryptoresearch.marketdata.api.PumpSwapCaptureMonitor.DispositionCount> monitorDispositions(UUID id) {
+        var result=jdbc.sql("""
+            select case when octet_length(status)<=131072 then status end as status,count(*) as n,
+            octet_length(status)<=131072 as fits from marketdata.capture_dispositions where session_id=:id
+            group by status order by status collate "C" limit 33
+            """).param("id",id).query((r,n)->{if(!r.getBoolean("fits"))throw monitorLimit();return new io.cryptoresearch.marketdata.api.PumpSwapCaptureMonitor.DispositionCount(r.getString("status"),r.getLong("n"));}).list();
+        if(result.size()>32)throw monitorLimit();return result;
+    }
+    public long[] monitorEvidenceCounts(UUID id) {
+        return jdbc.sql("""
+            select count(distinct signature) filter(where raw_digest is not null) as tx,
+            coalesce(sum(duplicates),0) as duplicates,coalesce(sum(conflicts),0) as conflicts,
+            count(*) filter(where status not in ('CAPTURED','FAILED_TRANSACTION','PENDING')) as failures,
+            (select count(*) from marketdata.capture_state_members where session_id=:id) as states,
+            (select coalesce(sum(duplicates),0) from marketdata.capture_state_members where session_id=:id) as state_duplicates
+            from marketdata.capture_dispositions where session_id=:id
+            """).param("id",id).query((r,n)->new long[]{r.getLong("tx"),r.getLong("states"),Math.addExact(r.getLong("duplicates"),r.getLong("state_duplicates")),r.getLong("conflicts"),r.getLong("failures")}).single();
+    }
+    public List<io.cryptoresearch.marketdata.api.PumpSwapCaptureMonitor.GapCount> monitorGapCounts(UUID id) {
+        var result=jdbc.sql("""
+            select case when octet_length(pool)+octet_length(kind)+octet_length(status)<=131072 then pool end as pool,
+            case when octet_length(pool)+octet_length(kind)+octet_length(status)<=131072 then kind end as kind,
+            case when octet_length(pool)+octet_length(kind)+octet_length(status)<=131072 then status end as status,
+            octet_length(pool)+octet_length(kind)+octet_length(status)<=131072 as fits,count(*) as n
+            from marketdata.capture_gaps where session_id=:id and not(kind='TRANSACTION' and status='RECOVERED_TRANSACTIONS')
+            group by pool,kind,status order by pool collate "C",kind collate "C",status collate "C" limit 65
+            """).param("id",id).query((r,n)->{if(!r.getBoolean("fits"))throw monitorLimit();return new io.cryptoresearch.marketdata.api.PumpSwapCaptureMonitor.GapCount(r.getString("pool"),r.getString("kind"),r.getString("status"),r.getLong("n"));}).list();
+        if(result.size()>64)throw monitorLimit();return result;
+    }
+    public List<Gap> monitorDetails(UUID id) {
+        return jdbc.sql("""
+            with bounded as (select gap_id,pool,kind,reason,from_slot,to_slot,opened_at,closed_at,boundary_signature,status
+            from marketdata.capture_gaps where session_id=:id and not(kind='TRANSACTION' and status='RECOVERED_TRANSACTIONS') order by gap_id limit 101),
+            sized as (select gap_id,pool,kind,reason,from_slot,to_slot,opened_at,closed_at,boundary_signature,status,
+            sum(octet_length(pool)+octet_length(kind)+octet_length(reason)+coalesce(octet_length(boundary_signature),0)+octet_length(status)) over()<=131072 as fits from bounded)
+            select gap_id,from_slot,to_slot,opened_at,closed_at,fits,
+            case when fits then pool end as pool,case when fits then kind end as kind,case when fits then reason end as reason,
+            case when fits then boundary_signature end as boundary_signature,case when fits then status end as status from sized order by gap_id
+            """).param("id",id).query((r,n)->{if(!r.getBoolean("fits"))throw monitorLimit();return new Gap(r.getLong("gap_id"),r.getString("pool"),r.getString("kind"),r.getString("reason"),(Long)r.getObject("from_slot"),(Long)r.getObject("to_slot"),instant(r,"opened_at"),instant(r,"closed_at"),r.getString("boundary_signature"),r.getString("status"));}).list();
+    }
+    private static IllegalArgumentException monitorLimit() {return new IllegalArgumentException("CAPTURE_MONITOR_RESULT_LIMIT");}
 	public String encode(Object value) { return json.writeValueAsString(value); }
 	private String periodAuthority(Configuration c) {
 		var a=c.authority();

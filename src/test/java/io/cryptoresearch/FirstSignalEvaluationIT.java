@@ -475,7 +475,7 @@ class FirstSignalEvaluationIT {
 	private void assertDatabaseContract() {
 		assertThat(jdbcClient.sql("SHOW server_version").query(String.class).single()).isEqualTo("18.6");
 		assertThat(jdbcClient.sql("SELECT version FROM flyway_schema_history WHERE success ORDER BY installed_rank")
-				.query(String.class).list()).containsExactly("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13");
+				.query(String.class).list()).containsExactly("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14");
 		assertThat(jdbcClient.sql("SELECT schema_name FROM information_schema.schemata WHERE schema_name IN ('marketdata','signal','evaluation','risk') ORDER BY schema_name")
 				.query(String.class).list()).containsExactly("evaluation", "marketdata", "signal");
 		assertThat(jdbcClient.sql("SELECT table_schema || '.' || table_name FROM information_schema.tables WHERE table_schema IN ('marketdata','signal','evaluation') ORDER BY table_schema, table_name")
@@ -488,7 +488,9 @@ class FirstSignalEvaluationIT {
 						"marketdata.dataset_snapshot_members", "marketdata.dataset_snapshots",
 						"marketdata.liquidity_observations", "marketdata.liquidity_revisions",
 						"marketdata.normalized_swaps", "marketdata.price_observations",
-						"marketdata.price_revisions", "marketdata.raw_account_snapshots", "marketdata.raw_chain_events",
+						"marketdata.price_revisions", "marketdata.pumpswap_decode_batch_members", "marketdata.pumpswap_decode_batches",
+						"marketdata.pumpswap_operation_derivations", "marketdata.pumpswap_transaction_derivations",
+						"marketdata.raw_account_snapshots", "marketdata.raw_chain_events",
 						"marketdata.raw_transactions", "marketdata.swap_revisions",
 						"marketdata.universe_members", "marketdata.universe_snapshots",
 						"marketdata.usd_conversion_facts", "marketdata.usd_revisions",
