@@ -1,6 +1,6 @@
 # План реализации
 
-**Обновлено:** 7 октября 2026 года
+**Обновлено:** 11 октября 2026 года
 
 ## Назначение
 
@@ -23,7 +23,8 @@
 ## Текущая позиция
 
 - **Решение владельца 7 октября:** R1-E2/D1 — `PAUSED`; factual `D1 INSUFFICIENT` (`e386884`) не меняется. Calibration `1.1.0`/P1 отложены до явного перезапуска и прежних prerequisites. Protocol/raw/census/receipts и unchecked tasks сохраняются; новые Helius R1 credits, загрузки и ремонты не выделены.
-- **Новый приоритет:** Alchemy PAYG выбран для первой разработки, Helius Free — дополнительный источник; это development choice, а production-primary/transport operational acceptance ещё не доказаны. [Решение об источнике](notes/DATA_SOURCE_DECISION_2026-10-07.md) фиксирует тарифы, ограничения и UNVERIFIED account cap/alerts. [Collector PLAN](../openspec/changes/add-bounded-pumpswap-pool-collector/proposal.md) ограничен PumpSwap pools: live finalized tx/state → PostgreSQL raw. Только планирование; без покупки, provider calls или платного запуска.
+- **Текущий результат:** bounded PumpSwap collector реализован и проверен; [квалифицированный configured6h результат](../openspec/changes/add-bounded-pumpswap-pool-collector/design.md#configured6h-terminal-acceptance-and-explicit-incomplete-coverage-2026-10-10), документальный commit `ff267c1`, — PASS только ограниченного operational soak:124 raw TX/400 states, четыре reconnect, неполное explicit coverage/actual billing UNKNOWN. Не continuous gap-free LIVE, production-primary или normalized admission; старые STOP/receipts неизменны.
+- **Current, разрешено владельцем:** [offline raw-operation decoder + quality](../openspec/changes/add-pumpswap-raw-operation-decoder/proposal.md) сохранённого484bec54 реализован как pure synchronous v4 и получил [независимый implementation APPROVE](../openspec/changes/add-pumpswap-raw-operation-decoder/design.md#review-approved-v4-main-gate-and-qualification-pending-2026-10-11):121 unit+14 isolated PostgreSQL GREEN,0 failures/errors/skips; исправления подтверждают actual endpoints, а не только nominal transfers. Main full gate/scoped commit и независимая post-gate qualification/reproduction ещё PENDING;47/75 и68 операций — Builder diagnostic, не DONE/accepted result. Критерий >=38 из фиксированных75 успешных TX и статусы/причины всех124 TX неизменны; partial не увеличивает coverage, редкие неподдержанные форматы — explicit backlog. Обязательные pinned variants/financial proof сохраняются, без новой загрузки/расходов. Семишаговая очередь ниже не возобновляет R1/calibration/P1 и не разрешает новый collector run/deployment/расширение pools.
 
 - **Подтверждённая подготовка к исследованию:** A1+A2 реализованы, проверены и [архивированы](../openspec/changes/archive/2026-10-01-version-market-facts-and-split-evidence/tasks.md): versioned market facts и отдельные decision/evaluation snapshots доступны через публичные API; V10–V12 сохраняют legacy V1–V9 evidence. [R1 protocol](research/R1_RESEARCH_PROTOCOL.md) для wallet copier и early multi-wallet заморожен как `1.0.0`; [freeze record](research/R1_PROTOCOL_FREEZE.md) закрепляет коммит и SHA-256.
 - **Получен фактический вердикт D1/E2:** [итог 7 октября](notes/R1_E2_D1_COMPLETION_RESULT_2026-10-07.md) — `D1 INSUFFICIENT`, H1/H2 `INCONCLUSIVE/data insufficient` (не проверялись,не «нет преимущества»). Текущая полная offline-проверка report3 завершена native2: semantic integrity,budget,recorded timing PASS для300 токенов/18,436GB raw/1 365 027 уникальных TX. Доказано293982 экономических действий,145735 с определёнными attributable fees; это не полный denominator D1. Независимая актуальная сверка200 действий дала200/200 совпадений и ноль двойного объёма в выборке: апрель193/май7,без доказанных июньских/июльских/августовских strata. Полные depth/entry/horizon/exit/gap/PIT и candidate/trigger denominators не доказаны. Независимое финальное ревью APPROVE относится к честному отрицательному вердикту,не admission. Дальнейших загрузок/ремонтов сейчас нет; calibration/P1 отложены. [D1](../openspec/changes/establish-r1-d1-data-gate/tasks.md) и [E2](../openspec/changes/preregister-r1-e2-pumpswap-cohort/tasks.md) остаются active/unarchived из-за невыполненных критериев,а не выполняющегося эксперимента. Сохранённые финальные scoped checks PASS/native0; текущий маршрут — PAUSED R1 и отдельный PLAN первой интеграции; старое review не разрешает новые data calls.
@@ -51,7 +52,17 @@
 
 ## Исследовательская последовательность R1
 
-Этапы ниже сохраняют свои выходные условия. R1 сейчас PAUSED, а ближайшая очередь — ограниченный collector → gaps/quality → сигналы/evaluation → advisory UI без торговли. Предварительный анализ возможен после 2–4 недель накопления данных; это не срок готовности продукта или подтверждение edge. Большой historical scanner, все DEX, полный F3 и gRPC SDK не входят в первый срез.
+Этапы ниже сохраняют свои выходные условия. R1 сейчас PAUSED; этот файл — canonical operational plan, [research replan30 сентября](notes/ARCHITECTURE_AND_RESEARCH_REPLAN_2026-09-30.md) — историческая записка, не текущая authority. Владелец подтвердил ограниченную очередь:
+
+1. Saved-raw decoder + quality: большинство успешных TX доказанно распознано, все остальные имеют status/reason; редкие форматы в backlog.
+2. Persistence операций с parser version, immutable lineage и идемпотентным re-decode — отдельный следующий contract, не текущий pure decoder.
+3. Bounded recovery + минимальный monitor: self-recovery и видимые incomplete intervals; WS1011 root cause не исследовать, zero-loss goal не ставить.
+4. Bounded long run и deployment только после разрешения владельца, без автоматического расширения caps.
+5. Candles/metrics и первые сигналы на текущих pools с reuse существующих модулей; wallet/risk по фактической необходимости.
+6. Расширение pools только по разрешению владельца.
+7. Evaluation и advisory UI без торговли, с отдельной применимой evidence/admission проверкой.
+
+Допустимая неполнота MVP не отменяет financial/PIT/raw-evidence/admission safety и запрет silent loss/fabricated continuity. Через2–3 дня — checkpoint прогресса/причин задержки, не новая абсолютная остановка. Короткий отчёт владельцу: result / ready / deferred / evidence-risk / next. Предварительный анализ после2–4 недель накопления не обещает готовность продукта/edge. Большой historical scanner, все DEX, полный F3 и gRPC SDK не входят в первый срез.
 
 | Пакет | Статус | Подтверждённый результат или следующий выход |
 |---|---|---|
@@ -106,9 +117,9 @@
 |---|---|---|
 | 3.0 | Done | Настроить постоянную managed PostgreSQL для работы из нескольких мест и подтвердить профиль, секреты, Flyway, PostgreSQL 18.6, TLS и восстановление свежего backup; сетевая политика остаётся ответственностью оператора. |
 | 3.1 | Deferred | F1 research и provisional shortlist архивированы, исходные S1–S5/3.6 остаются не верифицированы. Alchemy выбран для первой разработки, production transport acceptance открыт; исторические A/B INCONCLUSIVE не доказывают LIVE или general archive. |
-| 3.2 | Next | [PLAN ONLY: bounded PumpSwap collector](../openspec/changes/add-bounded-pumpswap-pool-collector/proposal.md): Alchemy live finalized tx/pool-vault-mint state → PostgreSQL raw, явные limits/dispositions/gaps. Реализация и платный запуск не разрешены этим планом; full F3 и live normalized admission остаются будущими. |
-| 3.3 | Planned | Добавить provider-specific normalization, parser versioning и replay сохранённых raw payloads. |
-| 3.4 | Planned | Обнаруживать reconnect gaps, восстанавливать пропущенные диапазоны и явно отмечать unresolved windows. |
+| 3.2 | Done | Bounded raw collector и qualified configured6h soak verified; incomplete coverage/actual billing UNKNOWN. Не full F3, ongoing collection или normalized admission. |
+| 3.3 | Current | [Offline PumpSwap raw-operation decoder](../openspec/changes/add-pumpswap-raw-operation-decoder/design.md#review-approved-v4-main-gate-and-qualification-pending-2026-10-11): v4 implementation/review APPROVED,121 unit+14 PG GREEN/0 skips; Main gate/commit и независимая saved484bec54 qualification PENDING.47/75 — diagnostic, не accepted completion. Полная signal-grade normalization остаётся будущей. |
+| 3.4 | Planned | После отдельного operation persistence/versioned re-decode: bounded recovery и минимальный monitor с видимыми incomplete intervals, без WS1011 cause investigation/zero-loss цели. Long run/deployment только отдельно owner-authorized; decoder не делает backfill/новый запуск. |
 | 3.5 | Planned | Сохранять observed price snapshots, source/quality facts и необходимые token discovery observations. |
 | 3.6 | Planned | Выполнить идемпотентный исторический backfill и доказать отсутствие дубликатов и скрытой потери данных; текущие provider-пробы не реализуют backfill. |
 | 3.7 | Planned | Измерить freshness, parse failures, coverage и gaps на длительном прогоне и закрыть data-quality gate этапа. |

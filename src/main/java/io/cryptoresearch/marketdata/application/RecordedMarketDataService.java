@@ -42,6 +42,13 @@ public class RecordedMarketDataService implements MarketDataApi {
 	@org.springframework.beans.factory.annotation.Autowired
 	private ObjectProvider<PumpSwapPoolCollector> captureCollector;
 
+    @org.springframework.beans.factory.annotation.Autowired
+    private ObjectProvider<DecodePumpSwapOperationsUseCase> operationDecoder;
+
+    @Override public io.cryptoresearch.marketdata.api.PumpSwapOperations.Result decodePumpSwapOperations(io.cryptoresearch.marketdata.api.PumpSwapOperations.RecordedBatch batch) {
+        return operationDecoder.getObject().decode(batch);
+    }
+
 	@Override public io.cryptoresearch.marketdata.api.PumpSwapCapture.Status startCapture(io.cryptoresearch.marketdata.api.PumpSwapCapture.Configuration configuration) {
 		return captureCollector.getObject().start(configuration);
 	}
