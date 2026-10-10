@@ -15,7 +15,7 @@ The qualified configured6h collector test is complete, but retained raw transact
 
 ## Current verification status, 2026-10-11
 
-Implementation review is APPROVED for `pumpswap-operations-v4` / `may18-oct07-endpoint-proof-v4`:121 unit and14 isolated PostgreSQL tests passed with zero failures/errors/skips. [Verified evidence and financial repairs](design.md#review-approved-v4-main-gate-and-qualification-pending-2026-10-11) preserve independent actual endpoint corroboration and exclusive same-invocation principal proof. Tasks1.1–1.3 are verified; Main's new complete gate/commit and independent post-gate saved-window qualification remain pending (tasks2.1–2.2). The47/75 Builder diagnostic is not accepted qualification, DONE, archive or admission.
+Implementation and saved-window MVP qualification are verified for `pumpswap-operations-v4` / `may18-oct07-endpoint-proof-v4`, code commit `0b066b1b87bd69e5045497b87369a9e8cff61148` (not pushed). [Final evidence](design.md#implemented-and-verified-unarchived-2026-10-11) records independent financial/wiring APPROVE, Main complete gate450 tests/0 failures/errors/skips and independent repeated47/75 fully recognized TX/68 operations, satisfying unchanged38/75 criterion. All five tasks are verified. Change remains active/unarchived, not an accepted main-spec capability; fees/rare formats/collector gaps/loss/deployment/admission limits remain explicit. Next product scope is a separate operation-persistence PLAN, not implementation authority.
 
 ## Capabilities
 

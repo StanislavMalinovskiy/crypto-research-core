@@ -4,7 +4,7 @@ Separate independently proven PumpSwap operations from retained finalized raw tr
 
 ## ADDED Requirements
 
-Verification note (non-normative,2026-10-11): stable v4 implementation has [independent review APPROVE and targeted121 unit+14 PostgreSQL GREEN](../../design.md#review-approved-v4-main-gate-and-qualification-pending-2026-10-11),0 failures/errors/skips. Main full gate/commit and independent post-gate saved qualification remain pending; the47/75 Builder diagnostic is not accepted qualification. The requirements below, including independent actual endpoint proof and38/75 recognition, are unchanged.
+Verification note (non-normative,2026-10-11): stable v4 has [independent financial/wiring APPROVE, Main450-test gate and post-gate47/75 qualification/reproduction PASS](../../design.md#implemented-and-verified-unarchived-2026-10-11),0 failures/errors/skips; code commit `0b066b1b87bd69e5045497b87369a9e8cff61148` is complete/not pushed. The active change remains unarchived, not an accepted main-spec capability. The requirements below, including independent actual endpoint proof and38/75 recognition, are unchanged.
 
 ### Requirement: Bounded offline input and complete dispositions
 
