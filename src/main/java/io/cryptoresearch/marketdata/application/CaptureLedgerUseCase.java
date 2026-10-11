@@ -20,9 +20,14 @@ public class CaptureLedgerUseCase {
 	public CaptureLedgerUseCase(JdbcCaptureStore store, Clock clock,org.springframework.transaction.PlatformTransactionManager transactionManager) { this.store=store; this.clock=clock; this.transactionManager=transactionManager; }
 	public Configuration configuration(UUID session) { return store.configuration(session); }
 	public Instant now() { return clock.instant().truncatedTo(ChronoUnit.MICROS); }
+	@Transactional(timeout=10) public void validateEnrolled(Configuration c,String holder) {
+		if(!store.configuration(c.sessionId()).equals(c))throw new IllegalStateException("CAPTURE_CONFIGURATION_CONFLICT");
+		store.fence(c.sessionId(),holder,now(),now().plusSeconds(c.limits().leaseSeconds()));
+	}
 	@Transactional public boolean open(Configuration configuration, String holder) {
 		var problem = CaptureBudget.launchProblem(configuration);
 		if (!problem.isEmpty()) throw new IllegalArgumentException(problem);
+		store.manualStartGuard(configuration.provider());
 		var c = canonical(configuration);
 		if (store.exists(c.sessionId())) {
 			if (!store.configuration(c.sessionId()).equals(c)) throw new IllegalArgumentException("CAPTURE_CONFIGURATION_CONFLICT");
@@ -211,7 +216,7 @@ public class CaptureLedgerUseCase {
 		var c=configuration(session);
 		if(store.consume(session,requests,received,subscription,retained,rpc,c.limits(),now())) return true;
 		// Delivered bytes are already a billed fact even when admission to more work fails.
-		store.observe(session,holder,received,subscription);
+		store.observe(session,holder,received,subscription,now());
 		var status=store.status(session);
 		var reason=status.subscriptionBytes()>c.limits().subscriptionBytes()?"SUBSCRIPTION_BYTE_LIMIT":
 				status.receivedBytes()>c.limits().receivedBytes()?"RECEIVED_BYTE_LIMIT":
@@ -222,7 +227,7 @@ public class CaptureLedgerUseCase {
 	}
 	@Transactional public boolean received(UUID session,String holder,long bytes,boolean subscription) {
 		if(bytes<0) throw new IllegalArgumentException("NEGATIVE_CAPTURE_ACCOUNTING");
-		store.observe(session,holder,bytes,subscription?bytes:0);
+		store.observe(session,holder,bytes,subscription?bytes:0,now());
 		var c=configuration(session); var status=store.status(session);
 		var reason=status.subscriptionBytes()>c.limits().subscriptionBytes()?"SUBSCRIPTION_BYTE_LIMIT":
 				status.receivedBytes()>c.limits().receivedBytes()?"RECEIVED_BYTE_LIMIT":null;

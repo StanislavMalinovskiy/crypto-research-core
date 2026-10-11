@@ -25,19 +25,36 @@ public class PumpSwapPoolCollector {
 	private final CaptureEvidenceUseCase evidence;
 	private final ObjectMapper json;
 	private final AtomicReference<Run> active=new AtomicReference<>();
+	private volatile Run lastRun;
+	record Lifecycle(UUID session,boolean workersExited,boolean terminalCommitted,boolean writerFailed,String reason) { }
+	Lifecycle lifecycle(UUID session) {
+		var run=active.get();if(run==null)run=lastRun;
+		if(run==null || !run.c.sessionId().equals(session))throw new IllegalStateException("CAPTURE_LIFECYCLE_UNAVAILABLE");
+		return new Lifecycle(session,run.coordinatorDone && run.writerDone && !run.worker.isAlive() && !run.databaseWriter.isAlive(),
+			run.terminalCommitted,run.writerFailed,run.interruption.get()==null?"":run.interruption.get());
+	}
 	public PumpSwapPoolCollector(PumpSwapCaptureSettings settings,CaptureLedgerUseCase ledger,CaptureEvidenceUseCase evidence,ObjectMapper json) {
 		this.settings=settings; this.ledger=ledger; this.evidence=evidence; this.json=json;
 	}
 	public synchronized Status start(Configuration c) {
+		if(org.springframework.transaction.support.TransactionSynchronizationManager.isActualTransactionActive())return blocked(c,"CAPTURE_REQUIRES_NO_TRANSACTION");
+		return start(c,null,null);
+	}
+	synchronized Status startEnrolled(ContinuousCaptureLedgerUseCase.Admission admission) {
+		if(org.springframework.transaction.support.TransactionSynchronizationManager.isActualTransactionActive())return blocked(admission.segment().configuration(),"CAPTURE_REQUIRES_NO_TRANSACTION");
+		return start(admission.segment().configuration(),admission.fence().sessionHolder(),admission);
+	}
+	private Status start(Configuration c,String admittedHolder,ContinuousCaptureLedgerUseCase.Admission admission) {
 		var problem=!settings.isEnabled()?"COLLECTOR_DISABLED":CaptureBudget.launchProblem(c);
 		if(problem.isEmpty() && (settings.getRpc()==null || settings.getWebsocket()==null || settings.getSecret()==null || settings.getSecret().isBlank())) problem="MISSING_PROVIDER_CREDENTIAL_OR_ENDPOINT";
 		if(problem.isEmpty() && json.writeValueAsString(c).contains(settings.getSecret())) problem="SECRET_IN_CAPTURE_CONFIGURATION";
 		if(!problem.isEmpty()) return blocked(c,problem);
 		if(active.get()!=null) return blocked(c,"COLLECTOR_ALREADY_RUNNING");
-		var holder=UUID.randomUUID().toString();
+		var holder=admittedHolder==null?UUID.randomUUID().toString():admittedHolder;
 		try {
-			if(!ledger.open(c,holder)) return blocked(c,"CAPTURE_LEASE_HELD");
-			var run=new Run(c,holder); active.set(run);
+			if(admission==null) {if(!ledger.open(c,holder)) return blocked(c,"CAPTURE_LEASE_HELD");}
+			else ledger.validateEnrolled(c,holder);
+			var run=new Run(c,holder); active.set(run);lastRun=run;
 			run.worker=Thread.ofVirtual().name("pumpswap-capture").start(run::loop);
 			return ledger.status(c.sessionId());
 		} catch(RuntimeException failure) { return blocked(c,JdkPumpSwapTransport.safeReason(failure)); }
@@ -87,7 +104,7 @@ public class PumpSwapPoolCollector {
 		private volatile boolean admitting=true,writerClosing,writerFailed;
 		private volatile long drainDeadline=Long.MAX_VALUE;
 		private boolean terminalStarted;
-		private volatile boolean coordinatorDone,writerDone;
+		private volatile boolean coordinatorDone,writerDone,terminalCommitted;
 		private void releaseActive() { if(coordinatorDone && writerDone) active.compareAndSet(this,null); }
 		private Thread databaseWriter;
 		private record Queued(Notification notification,java.time.Instant receivedAt) { }
@@ -213,6 +230,7 @@ public class PumpSwapPoolCollector {
 				synchronized(local) { if(bytes>8192 || bytes>c.limits().retainedBytes()-retained) receipt=null; else retained+=bytes; }
 				flushClosingAccounting();
 				ledger.close(c,holder,reason,drainDeadline,receipt,this::closingTime);
+				terminalCommitted=true;
 			} catch(InterruptedException failure) { Thread.currentThread().interrupt(); interrupted("CAPTURE_WRITER_INTERRUPTED"); }
 			catch(RuntimeException failure) {
 				writerFailed=true;

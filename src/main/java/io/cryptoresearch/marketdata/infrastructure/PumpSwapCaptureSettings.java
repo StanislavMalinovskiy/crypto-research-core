@@ -10,6 +10,12 @@ import org.springframework.stereotype.Component;
 public class PumpSwapCaptureSettings {
 	private boolean enabled;
 	private String configurationFile;
+	private boolean continuousEnabled;
+	private String continuousConfigurationFile;
+	public boolean isContinuousEnabled() { return continuousEnabled; }
+	public void setContinuousEnabled(boolean enabled) { continuousEnabled=enabled; }
+	public String getContinuousConfigurationFile() { return continuousConfigurationFile; }
+	public void setContinuousConfigurationFile(String file) { continuousConfigurationFile=file; }
 	private URI rpc;
 	private URI websocket;
 	private String secret;

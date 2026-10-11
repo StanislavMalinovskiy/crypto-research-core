@@ -23,6 +23,7 @@ public class JdbcCaptureStore {
             List<io.cryptoresearch.marketdata.api.PumpSwapCaptureMonitor.GapCount> gapCounts,List<Gap> details) { }
 	private final JdbcClient jdbc;
 	private final ObjectMapper json;
+	private volatile boolean continuousSchemaPresent;
 	public JdbcCaptureStore(JdbcClient jdbc, ObjectMapper json) { this.jdbc = jdbc; this.json = json; }
     public void monitorTimeout() {jdbc.sql("set local statement_timeout='10s'").update();}
     public Optional<MonitorHeader> monitorHeader(UUID id) {
@@ -81,6 +82,54 @@ public class JdbcCaptureStore {
     }
     private static IllegalArgumentException monitorLimit() {return new IllegalArgumentException("CAPTURE_MONITOR_RESULT_LIMIT");}
 	public String encode(Object value) { return json.writeValueAsString(value); }
+	/** First admission lock, shared by manual start and enrollment; held through owning commit. */
+	public void providerAdmissionLock(String provider) {
+		jdbc.sql("set local statement_timeout='10s'").update();
+		jdbc.sql("set local lock_timeout='10s'").update();
+		jdbc.sql("select pg_advisory_xact_lock(1129464656,hashtext(:provider))").param("provider",provider).query((r,n)->0).single();
+	}
+	public void manualStartGuard(String provider) {
+		if(!jdbc.sql("show transaction_isolation").query(String.class).single().equals("read committed"))
+			throw new IllegalStateException("CAPTURE_ADMISSION_REQUIRES_READ_COMMITTED");
+		if(!jdbc.sql("select to_regclass('marketdata.capture_deployments') is not null").query(Boolean.class).single())return;
+		providerAdmissionLock(provider);
+		// Separate post-lock statement obtains a fresh READ_COMMITTED snapshot after a competing commit.
+		if(jdbc.sql("select exists(select 1 from marketdata.capture_deployments where provider=:provider)").param("provider",provider).query(Boolean.class).single())
+			throw new IllegalStateException("ENROLLED_PROVIDER_REQUIRES_ADMISSION");
+	}
+	public void continuousFence(UUID session,String holder,Instant now) {
+		if(!continuousSchemaPresent())return;
+		var valid=jdbc.sql("""
+			select (d.holder||':'||d.generation::text)=:holder and d.locked_until>:now and d.state='RUNNING'
+			and s.sealed_at is null and s.state='CAPTURING' as valid
+			from marketdata.capture_segments s join marketdata.capture_deployments d using(deployment_key)
+			where s.session_id=:session for update of d,s
+			""").param("session",session).param("holder",holder).param("now",time(now)).query(Boolean.class).optional();
+		if(valid.isPresent() && !valid.get())throw new IllegalStateException("CONTINUOUS_CAPTURE_FENCE_LOST");
+	}
+	private boolean continuousSchemaPresent() {
+		if(continuousSchemaPresent)return true;
+		synchronized(this) {
+			if(!continuousSchemaPresent)continuousSchemaPresent=jdbc.sql("select to_regclass('marketdata.capture_segments') is not null").query(Boolean.class).single();
+			return continuousSchemaPresent;
+		}
+	}
+	/** Materialization and the mutation's guard dependency lock d,s before the session row. */
+	private String continuousCte() {
+		if(!continuousSchemaPresent())return "WITH continuous_guard AS MATERIALIZED (SELECT true AS valid), ";
+		return """
+			WITH continuous_rows AS MATERIALIZED (
+			select (d.holder||':'||d.generation::text)=:holder and d.locked_until>:now and d.state='RUNNING'
+			and s.sealed_at is null and s.state='CAPTURING' as valid
+			from marketdata.capture_segments s join marketdata.capture_deployments d using(deployment_key)
+			where s.session_id=:id for update of d,s
+			), continuous_guard AS MATERIALIZED (select coalesce(bool_and(valid),true) as valid from continuous_rows),
+			""";
+	}
+	private static final String FENCED_RESULT=" SELECT g.valid AS continuous_valid,m.* FROM continuous_guard g LEFT JOIN mutation m ON true";
+	private static void checkContinuous(ResultSet r) throws SQLException {
+		if(!r.getBoolean("continuous_valid"))throw new IllegalStateException("CONTINUOUS_CAPTURE_FENCE_LOST");
+	}
 	private String periodAuthority(Configuration c) {
 		var a=c.authority();
 		return encode(List.of(a.accountPeriod(),a.periodEnd(),a.source(),a.openingHundredths(),a.otherActivityHundredths(),a.exclusiveAllocation(),
@@ -126,20 +175,23 @@ public class JdbcCaptureStore {
 				.param("reservation", reservation).update();
 	}
 	public boolean claim(UUID id, String holder, Instant now, Instant until) {
-		return jdbc.sql("""
+		return jdbc.sql(continuousCte()+"""
+				mutation AS (
 				UPDATE marketdata.capture_sessions SET holder=:holder,locked_until=:until
 				WHERE session_id=:id AND state='RUNNING' AND ends_at>:now
-				AND (holder=:holder OR locked_until<=:now) RETURNING 1
-				""").param("id", id).param("holder", holder).param("now", time(now)).param("until", time(until))
-				.query(Integer.class).optional().isPresent();
+				AND (holder=:holder OR locked_until<=:now) AND (select valid from continuous_guard) RETURNING 1 AS changed)
+				"""+FENCED_RESULT).param("id", id).param("holder", holder).param("now", time(now)).param("until", time(until))
+				.query((r,n)->{checkContinuous(r);return r.getObject("changed")!=null;}).single();
 	}
 	public void fence(UUID id, String holder, Instant now, Instant until) {
-		var valid = jdbc.sql("""
+		var valid = jdbc.sql(continuousCte()+"""
+				mutation AS (
 				UPDATE marketdata.capture_sessions SET locked_until=:until WHERE session_id=:id
-				AND holder=:holder AND locked_until>:now AND state='RUNNING'
-				RETURNING 1
-				""").param("id", id).param("holder", holder).param("now", time(now)).param("until",time(until)).query(Integer.class).optional();
-		if (valid.isEmpty()) throw new IllegalStateException("CAPTURE_LEASE_LOST");
+				AND holder=:holder AND locked_until>:now AND state='RUNNING' AND (select valid from continuous_guard)
+				RETURNING 1 AS changed)
+				"""+FENCED_RESULT).param("id", id).param("holder", holder).param("now", time(now)).param("until",time(until))
+				.query((r,n)->{checkContinuous(r);return r.getObject("changed")!=null;}).single();
+		if (!valid) throw new IllegalStateException("CAPTURE_LEASE_LOST");
 	}
 	public void pending(UUID id, String pool, String signature, long slot, String notification, Instant now) {
 		jdbc.sql("""
@@ -304,24 +356,25 @@ public class JdbcCaptureStore {
 	}
 	public boolean captureAdvance(Configuration c,String holder,Instant now,long requests,long received,long subscription,long retained,long rpc,boolean closing) {
 		var l=c.limits();
-		var result=jdbc.sql("""
-				WITH admission AS (
+		var result=jdbc.sql(continuousCte()+"""
+				admission AS (
 				SELECT session_id,requests<=:maxRequests-:requests AND received_bytes<=:maxReceived-:received
 				AND subscription_bytes<=:maxSubscription-:subscription AND retained_bytes<=:maxRetained-:retained
 				AND rpc_hundredths<=:maxRpc-:rpc AND (:closing OR ends_at>:now)
 				AND NOT EXISTS (SELECT 1 FROM marketdata.capture_periods p WHERE p.account_period=s.account_period
 				AND p.known_overage_hundredths>p.ceiling_hundredths-p.reserved_hundredths) AS fits
-				FROM marketdata.capture_sessions s WHERE session_id=:id AND holder=:holder AND locked_until>:now AND state='RUNNING' FOR UPDATE
-				)
+				FROM marketdata.capture_sessions s WHERE session_id=:id AND holder=:holder AND locked_until>:now AND state='RUNNING'
+				AND (select valid from continuous_guard) FOR UPDATE
+				), mutation AS (
 				UPDATE marketdata.capture_sessions s SET requests=requests+CASE WHEN a.fits THEN :requests ELSE 0 END,
 				received_bytes=received_bytes+:received,subscription_bytes=subscription_bytes+:subscription,
 				retained_bytes=retained_bytes+:retained,rpc_hundredths=rpc_hundredths+CASE WHEN a.fits THEN :rpc ELSE 0 END,locked_until=:until
-				FROM admission a WHERE s.session_id=a.session_id RETURNING s.subscription_bytes,a.fits
-				""").param("id",c.sessionId()).param("holder",holder).param("now",time(now)).param("until",time(now.plusSeconds(l.leaseSeconds()))).param("closing",closing)
+				FROM admission a WHERE s.session_id=a.session_id RETURNING s.subscription_bytes,a.fits)
+				"""+FENCED_RESULT).param("id",c.sessionId()).param("holder",holder).param("now",time(now)).param("until",time(now.plusSeconds(l.leaseSeconds()))).param("closing",closing)
 				.param("requests",requests).param("received",received).param("subscription",subscription).param("retained",retained).param("rpc",rpc)
 				.param("maxRequests",l.requests()).param("maxReceived",l.receivedBytes()).param("maxSubscription",l.subscriptionBytes())
 				.param("maxRetained",l.retainedBytes()).param("maxRpc",l.rpcHundredths())
-				.query((r,n)->new long[]{r.getLong(1),r.getBoolean(2)?1:0}).optional().orElseThrow(()->new IllegalStateException("CAPTURE_LEASE_LOST"));
+				.query((r,n)->{checkContinuous(r);if(r.getObject("subscription_bytes")==null)throw new IllegalStateException("CAPTURE_LEASE_LOST");return new long[]{r.getLong("subscription_bytes"),r.getBoolean("fits")?1:0};}).single();
 		var extra=Math.subtractExact(Math.max(0,result[0]-l.subscriptionBytes()),Math.max(0,result[0]-subscription-l.subscriptionBytes()));
 		if(extra>0) jdbc.sql("UPDATE marketdata.capture_periods SET known_overage_hundredths=known_overage_hundredths+:extra WHERE account_period=:period")
 				.param("extra",io.cryptoresearch.marketdata.application.CaptureBudget.subscriptionHundredths(c,extra)).param("period",c.authority().accountPeriod()).update();
@@ -372,13 +425,14 @@ public class JdbcCaptureStore {
 				CROSS JOIN (VALUES ('TRANSACTION'),('STATE')) k(kind) LEFT JOIN positions p ON p.pool=pool.value->>'address' WHERE s.session_id=:id
 				""").param("id",id).param("reason",reason).param("now",time(now)).update();
 	}
-	public void observe(UUID id,String holder,long bytes,long subscription) {
-		var changed=jdbc.sql("""
+	public void observe(UUID id,String holder,long bytes,long subscription,Instant now) {
+		var changed=jdbc.sql(continuousCte()+"""
+				mutation AS (
 				UPDATE marketdata.capture_sessions SET received_bytes=received_bytes+:bytes,subscription_bytes=subscription_bytes+:subscription
-				WHERE session_id=:id AND holder=:holder RETURNING subscription_bytes
-				""").param("id",id).param("holder",holder).param("bytes",bytes).param("subscription",subscription).query(Long.class).optional();
-		if(changed.isEmpty()) throw new IllegalStateException("CAPTURE_LEASE_LOST");
-		var c=configuration(id); var current=changed.orElseThrow(); var maximum=c.limits().subscriptionBytes();
+				WHERE session_id=:id AND holder=:holder AND (select valid from continuous_guard) RETURNING subscription_bytes)
+				"""+FENCED_RESULT).param("id",id).param("holder",holder).param("now",time(now)).param("bytes",bytes).param("subscription",subscription)
+				.query((r,n)->{checkContinuous(r);if(r.getObject("subscription_bytes")==null)throw new IllegalStateException("CAPTURE_LEASE_LOST");return r.getLong("subscription_bytes");}).single();
+		var c=configuration(id); var current=changed; var maximum=c.limits().subscriptionBytes();
 		var extra=Math.subtractExact(Math.max(0,current-maximum),Math.max(0,current-subscription-maximum));
 		if(extra>0) jdbc.sql("UPDATE marketdata.capture_periods SET known_overage_hundredths=known_overage_hundredths+:extra WHERE account_period=:period")
 				.param("extra",io.cryptoresearch.marketdata.application.CaptureBudget.subscriptionHundredths(c,extra)).param("period",c.authority().accountPeriod()).update();
