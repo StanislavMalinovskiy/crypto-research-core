@@ -207,12 +207,12 @@ Recovery SHALL recheck its original episode/window deadline, writer health and l
 - **AND** it SHALL NOT reacquire expired ownership, rewrite historical evidence, publish healthy completion or automatically restart.
 
 ### Requirement: Compact verified recovery provenance and atomic bounded admitted-tail batches
-New recovery provenance SHALL retain each exact full history response once in existing durable envelopes and reference its exact row through versioned page digest/index/exact-row digest/identity/slot/received-time evidence. References SHALL be verified before dependent pending/retry work, preserving legacy readback, actual finalized transaction fetch/raw conflict semantics and explicit gaps. Recovery and PENDING selection SHALL use bounded payload-free identity projections rather than repeated full-session payload reads. Closing MAY batch already-admitted tail under existing queue/byte/time/fence limits, but SHALL retain atomic immutable equality/conflict/accounting semantics and expose unfinished remainder without fabricated STOPPED or complete coverage.
+New recovery provenance SHALL retain each exact full history response once in existing durable envelopes and reference its exact row through versioned page digest/index/exact-row digest/identity/slot/received-time evidence. References SHALL be verified before dependent pending/retry work, preserving legacy readback, finalized raw conflict semantics and explicit gaps. Legacy policies SHALL retain actual getTransaction acquisition; only the explicitly versioned trusted-reuse policy defined below SHALL permit already retained finalized raw/full-history evidence instead. Recovery and PENDING selection SHALL use bounded payload-free identity projections rather than repeated full-session payload reads. Closing MAY batch already-admitted tail under existing queue/byte/time/fence limits, but SHALL retain atomic immutable equality/conflict/accounting semantics and expose unfinished remainder without fabricated STOPPED or complete coverage.
 
 #### Scenario: History page supplies multiple recovery identities
 - **WHEN** a bounded full history page supplies identities before the exact known boundary
 - **THEN** its exact envelope SHALL be retained before verified compact row references, without copying the full page into each disposition or reserializing row digest input
-- **AND** actual getTransaction/raw identity/time/conflict checks, strict errors, recovery deadline and exact episode-gap closure SHALL remain unchanged.
+- **AND** raw identity/time/conflict checks, strict errors, recovery deadline and exact episode-gap closure SHALL remain unchanged, with individual getTransaction acquisition retained for legacy policies or the explicit bounded fallback below.
 
 #### Scenario: Reference evidence is missing or inconsistent
 - **WHEN** page kind/session/digest, row index/exact digest/identity/slot or received time cannot be verified for a new reference
@@ -228,3 +228,52 @@ New recovery provenance SHALL retain each exact full history response once in ex
 - **WHEN** the repaired source is evaluated through free fake WS/RPC, real PostgreSQL and controlled configured21600s with recurring disconnects and realistic delayed page/tail work
 - **THEN** it SHALL demonstrate continued bounded recovery/capture and natural-end accounting/fenced closing under original limits, with verified provenance and explicit incomplete STATE/null coverage
 - **AND** synthetic success SHALL NOT substitute for independent review, a new Main gate or actual live6h acceptance.
+
+### Requirement: Versioned trusted pre-fetch raw reuse
+Only prospective `capture-rpc-reuse-v6` sessions SHALL permit avoiding an individual finalized fetch by verified existing committed raw evidence. Trust SHALL require a successful capture-admission disposition and exact configured chain/provider/signature/slot, recomputed raw digest, complete supported raw, consistent on-chain success/failure and valid original clocks. Raw identity alone SHALL NOT prove capture finality. Lookup and fenced finish SHALL stay bounded under original writer/operation/lease/resource limits. Incoming notification/reference evidence and per-pool membership SHALL remain durable; reuse SHALL preserve exact existing raw, first source/observation clocks and explicit gaps. Older policies SHALL retain their previous acquisition/readback behavior.
+
+#### Scenario: Same transaction appears again or under another pool
+- **WHEN** a new same-session notification matches verified committed CAPTURED or FAILED_TRANSACTION raw, including a successful disposition under another configured pool
+- **THEN** the collector SHALL retain the notification and complete that pool's fenced raw-linked disposition without another transaction fetch or duplicate raw row
+- **AND** failed raw, original bytes/times, counters and exact successful boundary semantics SHALL remain preserved.
+
+#### Scenario: Identity is present without admissible proof
+- **WHEN** a matching raw key has no successful capture-finality proof or its disposition is pending, unavailable, provisional or unsupported
+- **THEN** its presence SHALL NOT produce completed/recovered coverage and the original bounded finalized-fetch path SHALL remain applicable
+- **AND** raw-before-checkpoint crash retry SHALL preserve immutable storage equality rather than assume finality from the key.
+
+#### Scenario: Supposed reuse proof contradicts evidence
+- **WHEN** successful proof has a wrong slot/provider/raw digest, conflicting content/status, corrupted provenance or invalid clocks
+- **THEN** the collector SHALL fail explicitly without reusing or overwriting raw or closing a gap
+- **AND** a paid refetch SHALL NOT hide the integrity contradiction.
+
+### Requirement: Complete finalized history-row source acquisition
+Prospective trusted-reuse sessions SHALL permit a complete supported legacy/v0/v1 row from an already obtained verified finalized/json/full history response to supply raw transaction evidence without an individual fetch. Source proof SHALL bind immutable source-policy version, exact page/row digests and index, configured session/provider/pool/cursor, identity/slot and actual trusted first receive time. The original row span SHALL remain exact source text, not fabricated getTransaction serialization. Required complete transaction/message/meta inputs SHALL be present with version-applicable structure and no invented empty values. Admission SHALL retain a versioned source receipt separately from raw storage identity. This permission SHALL NOT add proactive LIVE history queries, remove failed raw, alter WS/state subscriptions or weaken finite recovery continuity/deadline rules.
+
+#### Scenario: Complete history row has no existing raw
+- **WHEN** full verified finalized history supplies a supported complete row with consistent identity and meta success/error
+- **THEN** the exact original row SHALL become immutable raw with page-receive time and actual admission/ingestion times, with replayable source receipt and CAPTURED or FAILED_TRANSACTION disposition
+- **AND** no individual getTransaction fetch or economic-decoding success claim SHALL be required for that row.
+
+#### Scenario: History agrees semantically with an existing exact raw
+- **WHEN** full duplicate-key-rejected history JSON and all immutable slot/source facts equal existing trusted raw but source serialization differs
+- **THEN** the new page/row SHALL remain additional provenance without changing or submitting a fabricated byte-equal retry of the original raw
+- **AND** existing exact payload/digest/parser/first times SHALL remain unchanged; differing substantive content SHALL be an explicit conflict.
+
+#### Scenario: Full evidence is unavailable or invalid
+- **WHEN** a verified row lacks required complete fields, has unsupported source shape or cannot establish finalized admission
+- **THEN** the reuse rejection SHALL remain explicit and only the existing bounded finalized transaction-fetch policy MAY independently obtain admissible raw
+- **AND** tampered/missing reference evidence, identity contradiction or immutable-content conflict SHALL fail without fallback, fabricated fields or recovered-gap claims.
+
+### Requirement: Conservative cumulative fractional-CU accounting compatibility
+New trusted-reuse policy SHALL express subscription accounting in integer hundredths of CU by rounding the exact cumulative bytes-times-rate-times100 upward, then adding exact RPC hundredths. Reservation, admission, observed overruns and closing SHALL use this same cumulative rule; increments SHALL be cumulative-rounded-total differences, not independently rounded fragments. Zero bytes SHALL cost zero and arithmetic overflow SHALL reject further admission. Exact unrounded USD comparison SHALL remain controlling. Legacy0.04 calculations, recorded authority, reserved totals and all original receipts SHALL remain unchanged. A new rate SHALL NOT replace an existing period authority, refund reservations, create a reset through renaming, or authorize runtime activation.
+
+#### Scenario: Fractional rate and split deliveries
+- **WHEN** a synthetic prospective authority uses0.0002CU/byte
+- **THEN**1,50,51 and7,778,076 cumulative bytes SHALL respectively account for1,1,2 and155,562 hundredths of CU
+- **AND** splitting the same received total across callbacks SHALL preserve its total charge and exact cap/overrun behavior.
+
+#### Scenario: Existing October authority cannot be silently repriced
+- **WHEN** a prospective session changes a rate in an already reserved account period or would exceed its effective remaining exact money/CU ceiling
+- **THEN** admission SHALL reject before provider work without modifying authority or monotonic old reservations
+- **AND** a valid new same-rate policy session MAY use remaining authority while preserving legacy results and no automatic launch or refund.

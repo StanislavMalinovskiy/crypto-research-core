@@ -257,6 +257,20 @@ public class JdbcCaptureStore {
 				WHERE d.session_id=:id AND d.pool=:pool AND d.signature IN (:signatures) AND d.status IN ('CAPTURED','FAILED_TRANSACTION')
 				""").param("id",id).param("pool",pool).param("signatures",signatures).query(String.class).list());
 	}
+	public record CaptureProof(String pool,long slot,String status,String digest,String provider,String version,String notification,String response,Instant received,Instant admitted) { }
+	public List<CaptureProof> captureProofs(UUID id,String signature) {
+		return jdbc.sql("""
+				SELECT d.*,s.configuration_json::jsonb->>'provider' AS provider,s.configuration_json::jsonb->>'version' AS version
+				FROM marketdata.capture_dispositions d JOIN marketdata.capture_sessions s USING(session_id)
+				WHERE d.session_id=:id AND d.signature=:signature AND d.status IN ('CAPTURED','FAILED_TRANSACTION','CONFLICT')
+				ORDER BY d.pool COLLATE "C" LIMIT 4
+				""").param("id",id).param("signature",signature)
+				.query((r,n)->new CaptureProof(r.getString("pool"),r.getLong("slot"),r.getString("status"),r.getString("raw_digest"),r.getString("provider"),r.getString("version"),r.getString("notification"),r.getString("response"),instant(r,"received_at"),instant(r,"admitted_at"))).list();
+	}
+	public void reuseTarget(UUID id,String pool,String signature,long slot) {
+		var valid=jdbc.sql("SELECT count(*) FROM marketdata.capture_dispositions WHERE session_id=:id AND pool=:pool AND signature=:sig AND slot=:slot AND status<>'CONFLICT'").param("id",id).param("pool",pool).param("sig",signature).param("slot",slot).query(Long.class).single();
+		if(valid!=1) throw new IllegalStateException("CAPTURE_REUSE_IDENTITY_CONFLICT");
+	}
 	public Optional<Envelope> historyPage(UUID id,String digest) {
 		return jdbc.sql("SELECT * FROM marketdata.capture_envelopes WHERE session_id=:id AND kind='HTTP_getTransactionsForAddress' AND digest=:digest")
 			.param("id",id).param("digest",digest).query((r,n)->new Envelope(r.getString("kind"),r.getString("digest"),r.getString("payload"),instant(r,"received_at"))).optional();
@@ -375,9 +389,9 @@ public class JdbcCaptureStore {
 				.param("maxRequests",l.requests()).param("maxReceived",l.receivedBytes()).param("maxSubscription",l.subscriptionBytes())
 				.param("maxRetained",l.retainedBytes()).param("maxRpc",l.rpcHundredths())
 				.query((r,n)->{checkContinuous(r);if(r.getObject("subscription_bytes")==null)throw new IllegalStateException("CAPTURE_LEASE_LOST");return new long[]{r.getLong("subscription_bytes"),r.getBoolean("fits")?1:0};}).single();
-		var extra=Math.subtractExact(Math.max(0,result[0]-l.subscriptionBytes()),Math.max(0,result[0]-subscription-l.subscriptionBytes()));
+		var extra=io.cryptoresearch.marketdata.application.CaptureBudget.subscriptionOverageIncrement(c,result[0],subscription);
 		if(extra>0) jdbc.sql("UPDATE marketdata.capture_periods SET known_overage_hundredths=known_overage_hundredths+:extra WHERE account_period=:period")
-				.param("extra",io.cryptoresearch.marketdata.application.CaptureBudget.subscriptionHundredths(c,extra)).param("period",c.authority().accountPeriod()).update();
+				.param("extra",extra).param("period",c.authority().accountPeriod()).update();
 		return result[1]==1;
 	}
 	public void stop(UUID id, String reason) {
@@ -432,10 +446,9 @@ public class JdbcCaptureStore {
 				WHERE session_id=:id AND holder=:holder AND (select valid from continuous_guard) RETURNING subscription_bytes)
 				"""+FENCED_RESULT).param("id",id).param("holder",holder).param("now",time(now)).param("bytes",bytes).param("subscription",subscription)
 				.query((r,n)->{checkContinuous(r);if(r.getObject("subscription_bytes")==null)throw new IllegalStateException("CAPTURE_LEASE_LOST");return r.getLong("subscription_bytes");}).single();
-		var c=configuration(id); var current=changed; var maximum=c.limits().subscriptionBytes();
-		var extra=Math.subtractExact(Math.max(0,current-maximum),Math.max(0,current-subscription-maximum));
+		var c=configuration(id); var extra=io.cryptoresearch.marketdata.application.CaptureBudget.subscriptionOverageIncrement(c,changed,subscription);
 		if(extra>0) jdbc.sql("UPDATE marketdata.capture_periods SET known_overage_hundredths=known_overage_hundredths+:extra WHERE account_period=:period")
-				.param("extra",io.cryptoresearch.marketdata.application.CaptureBudget.subscriptionHundredths(c,extra)).param("period",c.authority().accountPeriod()).update();
+				.param("extra",extra).param("period",c.authority().accountPeriod()).update();
 	}
 	public boolean accountExhausted(UUID id) {
 		return jdbc.sql("""

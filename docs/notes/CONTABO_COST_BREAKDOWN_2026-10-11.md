@@ -61,6 +61,10 @@ Raw storage immutable по содержимому: full history row и getTransa
 
 ## Минимальный следующий scope — предложение, не реализация
 
+### Последующий факт кабинета от владельца
+
+11 октября 2026 владелец сообщил: **82,6K / 28,6M CU**, Remaining **28,5M**, Peak **80,3 / 10K CU/s**, Apps **1/30**, Webhooks **0/100**. Это `OWNER_REPORTED`: точное время снимка и полнота его billing attribution не установлены. Прежние **22,2K CU** были сообщены 10 октября, а не непосредственно перед Contabo-пробой. Разница округлённых показаний составляет примерно **60,4K CU**, близко к documentary scenario **60 393,5508 CU**, но не доказывает тариф, billable bytes или расход именно одной сессии: между показаниями могла быть другая активность. Историческая authority и reservations не изменены; новые provider calls или запуск этим сообщением не разрешены.
+
 Main рекомендует ограниченный repair существующего пути: сохранить WSS, состояния и полный failed raw, без смены провайдера. Потенциальный эффект доказывается qualification; fit в $15 заранее не обещается.
 
 1. Trusted pre-fetch dedup: существующие raw digest/slot/provider/disposition проверяются до network call; новые notifications/page receipts сохраняются, unsupported/pending/conflict не объявляются completed.
@@ -70,6 +74,10 @@ Main рекомендует ограниченный repair существующ
 **Какое предположение реализации или контракта может быть неверным?** Что history содержит вовремя ровно нужные finalized TX и byte-compatible raw, а значит564 fetch можно безопасно исключить. Показаны только текущие семантические совпадения/поля/receipt timing; index latency, future layouts, boundary/order, immutable conflicts и fallback остаются предметом qualification. Claude независимо обсудил pricing/failed-raw/rounding assumptions; его согласие не заменяет review будущего executable изменения.
 
 Сценарий$29,38 использует только6 уже полученных страниц. Потенциальная экономия proactive batching не оценена; это не доказательство ни fit в $15, ни невозможности уложиться после иной организации загрузки.
+
+### Последующее offline-исправление
+
+11 октября `capture-rpc-reuse-v6` реализован в [существующем change](../../openspec/changes/add-bounded-pumpswap-pool-collector/design.md#offline-rpc-reuse-and-fractional-budget-repair-plan-2026-10-11): trusted same-session dedup, qualified уже полученные history rows и cumulative fractional accounting. Fresh независимый Reviewer дал APPROVE после исправления противоречивого JSON-RPC proof; targeted GREEN — 77 tests/0 failures/errors/skips. Полный gate Main ещё ожидается. Это не measured savings/$15-fit: proactive LIVE batching не реализован, ставка октября и старые reservations неизменны, нового запуска нет.
 
 ## Evidence и проверки
 

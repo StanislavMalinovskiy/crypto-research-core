@@ -161,6 +161,15 @@ public class CaptureLedgerUseCase {
 	public List<Disposition> dispositions(UUID session) { return store.dispositions(session); }
 	public List<Disposition> pending(Configuration c) { return store.pending(c.sessionId(),Math.min(100,c.limits().queueItems()),c.limits().queueBytes()); }
 	public java.util.Set<String> successfulPage(Configuration c,String pool,List<String> signatures) { return store.successfulPage(c.sessionId(),pool,signatures); }
+	@Transactional(readOnly=true,timeout=10) public List<JdbcCaptureStore.CaptureProof> reuseProofs(Configuration c,String signature) { return store.captureProofs(c.sessionId(),signature); }
+	@Transactional(timeout=10) public void reuseSource(Configuration c,String holder,String pool,String signature,String status,String digest,String receipt,boolean duplicate,Instant received,List<JdbcCaptureStore.CaptureProof> verified) {
+		fence(c.sessionId(),holder);
+		var source=CaptureTransactionSource.parse(receipt); store.reuseTarget(c.sessionId(),pool,signature,source.path("slot").longValue());
+		var current=store.captureProofs(c.sessionId(),signature);
+		if(!current.containsAll(verified) || current.stream().anyMatch(p->"CONFLICT".equals(p.status()) || p.slot()!=source.path("slot").longValue() || !c.provider().equals(p.provider()) || status!=null && (!status.equals(p.status()) || !digest.equals(p.digest())))) throw new IllegalStateException("CAPTURE_REUSE_PROOF_CONFLICT");
+		store.envelope(c.sessionId(),"CAPTURE_TRANSACTION_SOURCE",PayloadFingerprint.sha256(receipt),receipt,received);
+		if(status!=null) store.finish(c.sessionId(),pool,signature,status,digest,receipt,now(),duplicate);
+	}
 	public record HistoryPage(UUID session,String pool,String cursor,Envelope envelope,List<String> rows,String context) { }
 	private HistoryPage verifiedPage(Configuration c,String context) {
 		return verifiedPage(c,context,null);
@@ -172,7 +181,8 @@ public class CaptureLedgerUseCase {
 		var page=cached==null?store.historyPage(c.sessionId(),n.path("pageDigest").asText()).orElseThrow(()->new IllegalStateException("RECOVERY_PROVENANCE_MISSING")):cached.envelope();
 		if(cached!=null && (!cached.session().equals(c.sessionId()) || !page.digest().equals(n.path("pageDigest").asText()))) throw new IllegalStateException("RECOVERY_PROVENANCE_INVALID");
 		if(!PayloadFingerprint.sha256(page.payload()).equals(page.digest()) || !page.receivedAt().toString().equals(n.path("receivedAt").asText())) throw new IllegalStateException("RECOVERY_PROVENANCE_INVALID");
-		var rows=cached==null?io.cryptoresearch.marketdata.infrastructure.JdkPumpSwapTransport.exactElements(page.payload(),"/result/data"):cached.rows(); if(rows.size()>100) throw new IllegalStateException("RECOVERY_PROVENANCE_INVALID");
+		if(CaptureBudget.reuse(c) && (!c.version().equals(n.path("sourcePolicy").asText()) || !"finalized".equals(n.path("commitment").asText()) || !"json".equals(n.path("encoding").asText()) || !"full".equals(n.path("transactionDetails").asText()) || !n.path("maxSupportedTransactionVersion").isIntegralNumber() || n.path("maxSupportedTransactionVersion").longValue()!=1)) throw new IllegalStateException("RECOVERY_PROVENANCE_INVALID");
+		var rows=cached==null || CaptureBudget.reuse(c)?io.cryptoresearch.marketdata.infrastructure.JdkPumpSwapTransport.exactElements(page.payload(),"/result/data"):cached.rows(); if(rows.size()>100) throw new IllegalStateException("RECOVERY_PROVENANCE_INVALID");
 		return new HistoryPage(c.sessionId(),n.path("pool").asText(),cursor,page,rows,context);
 	}
 	@Transactional(timeout=10) public HistoryPage historyPage(Configuration c,String holder,String context) {

@@ -1,5 +1,9 @@
 ## Why
 
+**Verified offline status, 2026-10-11:** `capture-rpc-reuse-v6` is implemented/offline-qualified after native independent Reviewer final APPROVE; [77 targeted tests and reviewed RED evidence](design.md#offline-v6-repair-implemented-reviewed-main-gate-pending-2026-10-11) verify trusted raw/full-history reuse and cumulative fractional accounting. Main's new complete gate/commit remain pending, task8.4 unchecked. This is not measured live savings, $15 fit, tariff-authority activation or launch permission; old policies/raw/receipts/reservations and unchecked3.3/4.4 remain unchanged.
+
+**Current prospective scope, 2026-10-11:** after the completed six-hour local test and the PARTIAL 29-minute Contabo trial, continue only the offline RPC-reuse/arithmetic repair in [the current plan](design.md#offline-rpc-reuse-and-fractional-budget-repair-plan-2026-10-11). Reuse this exact capture capability, not a duplicate research package. Existing history pages may supply complete raw transactions; trusted committed raw may prevent redundant fetches. Preserve WSS/state subscriptions, all failed raw, immutable original evidence and cumulative authority. No provider calls, deployment, relaunch, permanent collection, pool expansion or pricing-authority activation are authorized by this repair. Historical paragraphs below retain their dated scope; operational tasks3.3/4.4 remain unchecked.
+
 The owner paused R1-E2/D1 on 2026-10-07 after the factual D1 INSUFFICIENT result (`e386884`). The next product increment needs a small durable live transaction-and-state collector before quality rules, signals, evaluation and advisory UI can use real evidence.
 
 ## What Changes

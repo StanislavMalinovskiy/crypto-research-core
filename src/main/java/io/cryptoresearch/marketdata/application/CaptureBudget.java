@@ -14,8 +14,16 @@ public final class CaptureBudget {
 				configuration.limits().rpcHundredths());
 	}
 	public static long subscriptionHundredths(Configuration configuration, long bytes) {
-		return configuration.authority().subscriptionCuPerByte().multiply(BigDecimal.valueOf(bytes))
-				.movePointRight(2).longValueExact();
+		var exact=configuration.authority().subscriptionCuPerByte().multiply(BigDecimal.valueOf(bytes)).movePointRight(2);
+		return (reuse(configuration)?exact.setScale(0,RoundingMode.CEILING):exact).longValueExact();
+	}
+	public static boolean reuse(Configuration configuration) { return "capture-rpc-reuse-v6".equals(configuration.version()); }
+	public static long subscriptionOverageIncrement(Configuration c,long current,long increment) {
+		var previous=Math.subtractExact(current,increment); var maximum=c.limits().subscriptionBytes();
+		if(!reuse(c)) return subscriptionHundredths(c,Math.subtractExact(Math.max(0,current-maximum),Math.max(0,previous-maximum)));
+		var reserved=subscriptionHundredths(c,maximum);
+		return Math.subtractExact(Math.max(0,Math.subtractExact(subscriptionHundredths(c,current),reserved)),
+				Math.max(0,Math.subtractExact(subscriptionHundredths(c,previous),reserved)));
 	}
 	public static BigDecimal cost(long hundredths, BigDecimal rate) {
 		return BigDecimal.valueOf(hundredths).multiply(rate).movePointLeft(8);
