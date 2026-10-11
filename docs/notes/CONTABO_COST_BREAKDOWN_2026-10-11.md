@@ -77,7 +77,7 @@ Main рекомендует ограниченный repair существующ
 
 ### Последующее offline-исправление
 
-11 октября `capture-rpc-reuse-v6` реализован в [существующем change](../../openspec/changes/add-bounded-pumpswap-pool-collector/design.md#offline-rpc-reuse-and-fractional-budget-repair-plan-2026-10-11): trusted same-session dedup, qualified уже полученные history rows и cumulative fractional accounting. Fresh независимый Reviewer дал APPROVE после исправления противоречивого JSON-RPC proof; targeted GREEN — 77 tests/0 failures/errors/skips. Полный gate Main ещё ожидается. Это не measured savings/$15-fit: proactive LIVE batching не реализован, ставка октября и старые reservations неизменны, нового запуска нет.
+11 октября `capture-rpc-reuse-v6` реализован в [существующем change](../../openspec/changes/add-bounded-pumpswap-pool-collector/design.md#offline-rpc-reuse-and-fractional-budget-repair-plan-2026-10-11): trusted same-session dedup, qualified уже полученные history rows и cumulative fractional accounting. Fresh независимый Reviewer дал APPROVE после исправления противоречивого JSON-RPC proof; targeted GREEN — 77 tests/0 failures/errors/skips. Main complete gate PASS: 587 tests (303 unit + 284 PostgreSQL), 0 failures/errors/skips, 18:36; integrity/Docker/strict-all/doctor/working + scoped-cached diff exit0; commit `e9edacb2b96656c40abbe905e7bbb0daebc51a81`, без push. Повторилась известная 30s forced test-JVM shutdown: graceful завершение всех тестовых контекстов не доказано, причина нестабильности продукта из этого не следует. Это не measured savings/$15-fit: proactive LIVE batching не реализован, ставка октября и старые reservations неизменны, нового запуска нет.
 
 ## Evidence и проверки
 
