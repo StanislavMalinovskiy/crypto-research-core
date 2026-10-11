@@ -51,6 +51,11 @@ public class RecordedMarketDataService implements MarketDataApi {
     private ObjectProvider<ReadCaptureMonitorUseCase> captureMonitor;
     @org.springframework.beans.factory.annotation.Autowired
     private ObjectProvider<ReadPumpSwapPoolMetricsUseCase> poolMetrics;
+    @org.springframework.beans.factory.annotation.Autowired
+    private ObjectProvider<ReadPumpSwapOperatorReportUseCase> operatorReport;
+    @Override public io.cryptoresearch.marketdata.api.PumpSwapOperatorReport.Result pumpSwapOperatorReport(io.cryptoresearch.marketdata.api.PumpSwapOperatorReport.Request request) {
+        return operatorReport.getObject().read(request);
+    }
     @Override public java.util.Optional<io.cryptoresearch.marketdata.api.PumpSwapPoolMetrics.Result> pumpSwapPoolMetrics(io.cryptoresearch.marketdata.api.PumpSwapPoolMetrics.Request request) {
         return poolMetrics.getObject().read(request);
     }

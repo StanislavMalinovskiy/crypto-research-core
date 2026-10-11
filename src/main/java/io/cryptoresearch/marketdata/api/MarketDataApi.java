@@ -20,6 +20,7 @@ public interface MarketDataApi {
     PumpSwapOperationPersistence.StoredBatch persistPumpSwapOperations(PumpSwapOperations.RecordedBatch batch);
     java.util.Optional<PumpSwapOperationPersistence.StoredBatch> persistedPumpSwapOperations(String batchKey);
     java.util.Optional<PumpSwapPoolMetrics.Result> pumpSwapPoolMetrics(PumpSwapPoolMetrics.Request request);
+    PumpSwapOperatorReport.Result pumpSwapOperatorReport(PumpSwapOperatorReport.Request request);
 
 	PumpSwapCapture.Status startCapture(PumpSwapCapture.Configuration configuration);
 	PumpSwapCapture.Status stopCapture(java.util.UUID session);
