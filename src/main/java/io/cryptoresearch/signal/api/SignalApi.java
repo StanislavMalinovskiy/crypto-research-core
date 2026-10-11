@@ -14,6 +14,8 @@ import io.cryptoresearch.risk.api.RiskApi.RiskFacts;
 /** Synchronous signal detection and immutable signal-snapshot boundary. */
 public interface SignalApi {
 
+    PumpSwapNativePriceSignal.Result diagnosePumpSwapNativePriceRise(PumpSwapNativePriceSignal.Request request);
+
 	DetectionResult detect(DetectionRequest request);
 
 	VersionedDetectionResult detectVersioned(VersionedDetectionRequest request);
