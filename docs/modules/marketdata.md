@@ -14,11 +14,11 @@
 
 ## Additive multi-hop pool legs: Done bounded local, unarchived
 
-## Versioned pool-net candles: reviewed, Main gate pending
+## Versioned pool-net candles: Done bounded local, unarchived
 
 Additive synchronous `MarketDataApi.pumpSwapVersionedPoolCandles` consumes one fixed-v5 interpretation in bounded128-source chunks within4096TX/64MBwhole-input limits, without stored-batch fabrication or SQL/provider calls. Ordinary own-path vault ledger proof and v5legs share exact `POOL_NET_SOL_PER_BASE`; unknown flow stays unpriced, relevant unresolved successful target evidence taints the event bucket. Canonical operation position IDs remain parser-independent; selected-source/pins/raw/proof/report fingerprints separately identify content. Explicit actual derivation D/K is retrospective, not backdated persistence. Old APIs/sources/V14/receipts remain unchanged.
 
-[Reviewed offline evidence](../../openspec/changes/add-pumpswap-versioned-pool-candle-diagnostic/design.md#reviewed-offline-result-2026-10-12):204unit+10PG targeted PASS/0failures/errors/skips, fresh independent APPROVE,14immutable pins preserved.1166TX/188operations=171target+17foreign; target167GTA/2RTM/2FDtu, all171priced,7bars. All12pairs computed completely but INSUFFICIENT:38GTA unresolved target facts, sparse adjacent buckets elsewhere.39rare reasons unchanged. Main full gate/independent repeat/commit PENDING;5/6tasks verified, active/unarchived/not admitted, no runtime activation. Следующее разрешённое действие: Main full gate/repeat/scoped commit; subsequent runtime authority is separately planned.
+[Verified offline evidence](../../openspec/changes/add-pumpswap-versioned-pool-candle-diagnostic/design.md#reviewed-offline-result-2026-10-12):204unit+10PG targeted PASS/0failures/errors/skips, fresh independent APPROVE,14immutable pins preserved.1166TX/188operations=171target+17foreign; target167GTA/2RTM/2FDtu, all171priced,7bars. All12pairs computed completely but INSUFFICIENT:38GTA unresolved target facts, sparse adjacent buckets elsewhere.39rare reasons unchanged. Main full gate PASS680(385unit+295integration)/0failures/errors/skips,18:29, independent complete semantic repeat/source checks PASS; scoped commit `047a3021afd17efccc4794b377284291e30928c3`, no push,6/6tasks verified. Known30s test-JVM graceful-context-cleanup remains UNVERIFIED/nonblocking per supplemental Reviewer, not new product-cause proof. Active/unarchived/not accepted/admitted/activated. Следующее разрешённое действие: final-status docs checks/commit, then separately authorized runtime phase.
 
 ## Additive multi-hop pool legs: dated verified decoder checkpoint
 

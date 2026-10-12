@@ -20,11 +20,11 @@ V11 adds `signal.v2_signal_candidates` and `signal.v2_accepted_signals` without 
 
 ## Native-SOL price-rise diagnostic: Done bounded — implemented and verified
 
-## Versioned pool-net diagnostic: reviewed, Main gate pending
+## Versioned pool-net diagnostic: Done bounded local, unarchived
 
 Additive synchronous `SignalApi.diagnosePumpSwapVersionedNativePriceRise` calls only `marketdata::api` for one complete selected-v5 saved population and two adjacent300s bars. `native-sol-pool-net-price-rise-v1` retains inclusive exact105/100 comparison, but one shared pool-net SOL/base basis replaces neither old user-price identity nor existing accepted USD-liquidity signals. Unpriced/missing time/index/knowledge or unresolved target facts return INSUFFICIENT; no candidate/risk/evaluation writes. Actual D/lateK labels this retrospective diagnostic, not ENTRY or executable return.
 
-[Reviewed result](../../openspec/changes/add-pumpswap-versioned-pool-candle-diagnostic/design.md#reviewed-offline-result-2026-10-12): fresh independent APPROVE;204unit+10isolatedPG PASS/0failures/errors/skips, old fingerprints/default APIs unchanged. Full1166-source window/7priced bars/all12pairs processed;0TRIGGER/0NO_TRIGGER/12INSUFFICIENT, from GTA unresolved target evidence or sparse adjacent bars, not proof of no edge. Main full gate/independent repeat/scoped commit PENDING; active/unarchived/not admitted. Следующее разрешённое действие: Main gate/repeat/commit; runtime/evaluation stages remain separate.
+[Verified result](../../openspec/changes/add-pumpswap-versioned-pool-candle-diagnostic/design.md#reviewed-offline-result-2026-10-12): fresh independent APPROVE;204unit+10isolatedPG PASS/0failures/errors/skips, old fingerprints/default APIs unchanged. Full1166-source window/7priced bars/all12pairs processed;0TRIGGER/0NO_TRIGGER/12INSUFFICIENT, from GTA unresolved target evidence or sparse adjacent bars, not proof of no edge. Main full gate PASS680(385unit+295integration)/0failures/errors/skips,18:29, complete semantic repeat/source checks PASS; scoped commit `047a3021afd17efccc4794b377284291e30928c3`, no push,6/6tasks verified. Known test-JVM graceful-context cleanup remains UNVERIFIED/nonblocking per independent Reviewer. Active/unarchived/not accepted/admitted/activated. Следующее разрешённое действие: final-status docs checks/commit; runtime/evaluation stages remain separate.
 
 ## Native-SOL price-rise diagnostic: dated verified original route
 
