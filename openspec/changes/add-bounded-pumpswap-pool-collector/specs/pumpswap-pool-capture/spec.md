@@ -230,7 +230,7 @@ New recovery provenance SHALL retain each exact full history response once in ex
 - **AND** synthetic success SHALL NOT substitute for independent review, a new Main gate or actual live6h acceptance.
 
 ### Requirement: Versioned trusted pre-fetch raw reuse
-Only prospective `capture-rpc-reuse-v6` sessions SHALL permit avoiding an individual finalized fetch by verified existing committed raw evidence. Trust SHALL require a successful capture-admission disposition and exact configured chain/provider/signature/slot, recomputed raw digest, complete supported raw, consistent on-chain success/failure and valid original clocks. Raw identity alone SHALL NOT prove capture finality. Lookup and fenced finish SHALL stay bounded under original writer/operation/lease/resource limits. Incoming notification/reference evidence and per-pool membership SHALL remain durable; reuse SHALL preserve exact existing raw, first source/observation clocks and explicit gaps. Older policies SHALL retain their previous acquisition/readback behavior.
+Only prospective `capture-rpc-reuse-v6` and explicitly opt-in `capture-durable-inbox-v7` sessions SHALL permit avoiding an individual finalized fetch by verified existing committed raw evidence. Trust SHALL require a successful capture-admission disposition and exact configured chain/provider/signature/slot, recomputed raw digest, complete supported raw, consistent on-chain success/failure and valid original clocks. Raw identity alone SHALL NOT prove capture finality. Lookup and fenced finish SHALL stay bounded under original writer/operation/lease/resource limits. Incoming notification/reference evidence and per-pool membership SHALL remain durable; reuse SHALL preserve exact existing raw, first source/observation clocks and explicit gaps. Older policies SHALL retain their previous acquisition/readback behavior; v7 SHALL preserve v6 trusted history/fractional-CU semantics without rewriting any historical version or adding proactive history calls.
 
 #### Scenario: Same transaction appears again or under another pool
 - **WHEN** a new same-session notification matches verified committed CAPTURED or FAILED_TRANSACTION raw, including a successful disposition under another configured pool
@@ -277,3 +277,53 @@ New trusted-reuse policy SHALL express subscription accounting in integer hundre
 - **WHEN** a prospective session changes a rate in an already reserved account period or would exceed its effective remaining exact money/CU ceiling
 - **THEN** admission SHALL reject before provider work without modifying authority or monotonic old reservations
 - **AND** a valid new same-rate policy session MAY use remaining authority while preserving legacy results and no automatic launch or refund.
+
+### Requirement: Versioned atomic durable notification inbox
+Only explicit `capture-durable-inbox-v7` SHALL move valid notification ownership to existing durable TX PENDING/account-state facts through bounded fenced microbatches. Fixed-version constants SHALL be at most128notification frames, at most5ms collection wait after first frame and exact payload plus transient UTF8/escaped/encoded workspace at most min(4,000,000bytes, configured queueBytes). Existing message/response/mailbox/retained/received/request/RPC/CU/time/deployment/segment/session guards SHALL remain controlling. Old configuration record layouts/JSON/fingerprints and legacy behavior SHALL remain unchanged. Callbacks SHALL remain DB-free, original frame order/clocks and ACK/control/barrier priority/deadlines SHALL remain preserved, and no new worker SHALL be introduced.
+
+#### Scenario: Durable batch commits while transaction resolution is slow
+- **WHEN** valid v7 notification commands are admitted while individual finalized fetches are delayed
+- **THEN** one short <=10s marketdata transaction under the existing valid deployment/segment/session fence SHALL account exact deltas once and atomically retain exact envelopes plus PENDING/state/member facts
+- **AND** only after commit SHALL mailbox reservations/futures be released and completed; no committed notification payload/closure SHALL remain in a second memory queue or callback reference awaiting fetch
+- **AND** individual raw storage/checkpoint, failed raw and exact first times SHALL retain their existing separate raw-first semantics.
+
+#### Scenario: Typed notification is invalid but its safe envelope is admissible
+- **WHEN** existing secret/UTF8/JSON checks permit an exact envelope but subscription/slot/value/signature validation rejects its typed notification
+- **THEN** the original bounded raw-envelope/diagnostic retention path SHALL remain effective before terminal interpretation, without creating a successful typed PENDING/state fact
+- **AND** the new typed microbatch seam SHALL NOT silently discard that envelope; secret-bearing or otherwise prohibited evidence SHALL remain prohibited.
+
+#### Scenario: Batch exceeds bounds or fails partway
+- **WHEN** a singleton or aggregate exceeds exact workspace bounds, or a batch encounters midwrite conflict/resource/fence/deadline failure
+- **THEN** oversized admission SHALL stop explicitly without truncation, and the owning batch transaction SHALL roll back all partial counter/envelope/PENDING/state effects
+- **AND** original cause/reservations and bounded admitted unfinished tail SHALL remain explicit under original closing limits, with no false commit, dropped admitted tail or paid drain.
+
+### Requirement: Finite durable backlog independent of history availability
+v7 SHALL resolve existing durable PENDING through bounded payload-free projections and pages of at most100identities ordered by slot/pool/signature, with selected payload hydration bounded by configured bytes. The fixed-version admission threshold SHALL be5000PENDING dispositions per session and1800seconds from oldest original receivedAt, checked before further admission and between resolver operations without renewing age. Threshold exhaustion SHALL stop new admission explicitly, not discard existing admitted facts. Existing individual finalized fetches SHALL remain a liveness path independent of history availability/indexing; this change SHALL NOT add proactive history polling, reinterpret recoverySeconds300 or extend any original end/authority.
+
+#### Scenario: Finite observed-shape burst and absent history
+- **WHEN** a synthetic v7 session admits940distinct TX notifications over8.515498seconds with peak132notifications/second plus account/control pressure while history is unavailable or indexed late and its existing per-TX resolver is finitely blocked below the original timeout
+- **THEN** every admitted notification SHALL become exact durable envelope/PENDING before fetch completion without committed-notification memory overflow; cumulative admissions beyond configured mailbox items SHALL demonstrate durable release rather than reflection-only counters
+- **AND** after resolver release it SHALL make bounded existing per-TX progress or stop at an explicit original resource/age/end limit, without requiring940resolved in8.5seconds or claiming sustained throughput, complete coverage or monthly fit.
+
+#### Scenario: Backlog threshold with an already-admitted tail
+- **WHEN** count5000 or age1800seconds is reached with bounded mailbox work already admitted
+- **THEN** no new notification SHALL be admitted, while that admitted tail SHALL be atomically retained or explicitly unfinished under the original fence/drain limits
+- **AND** any durable count overshoot SHALL be separately reported and bounded by the configured already-admitted mailbox tail, never suppressed by discarding rows or resetting age/holds.
+
+#### Scenario: First pending payload cannot fit hydration
+- **WHEN** the next ordered PENDING row is too large for bounded hydration
+- **THEN** resolution SHALL fail explicitly with that identity/backlog still measurable
+- **AND** an empty byte-filtered page SHALL NOT hide or skip the row or claim resolution complete.
+
+### Requirement: Precise bounded prospective overflow receipt
+New v7 `capture-terminal-v2` receipt SHALL preserve the original first-latched terminal reason and add exact mailbox consumer/site FRAGMENT, DURABLE_WRITE, NOTIFICATION_QUEUE or IN_FLIGHT_TRANSFER, ITEM/BYTE/PHYSICAL_OFFER condition, observed counts/bytes/limits or explicit UNKNOWN where unavailable. Diagnostics SHALL remain secret-free and at most8192UTF8bytes within existing retained headroom, optional when unavailable, and SHALL NOT alter monitor API/markers/health or old receipt bytes. Same-period manual child admission SHALL require the explicit readiness replacement receipt and unchanged original all-vector/count/end authority; it SHALL NOT reopen or rewrite the old terminal collector session.
+
+#### Scenario: A known overflow branch causes a terminal stop
+- **WHEN** a new v7 capacity branch rejects admission
+- **THEN** the receipt SHALL identify that actual site and measured item/byte/physical-offer condition while keeping main QUEUE_OVERFLOW; unavailable branch details SHALL remain UNKNOWN
+- **AND** a later diagnostic failure or stopped-admission condition SHALL NOT replace the first cause or be asserted as measured capacity overflow.
+
+#### Scenario: Receipt persistence has no remaining headroom
+- **WHEN** optional diagnostics cannot fit or persist within original retained/fence/drain bounds
+- **THEN** original terminal persistence/accounting/explicit unknown tail SHALL take priority without renewed ownership, new provider work or delayed cleanup
+- **AND** old October terminal/raw/PENDING/gaps/holds SHALL remain unchanged, with no automatic replacement or retry from this receipt.

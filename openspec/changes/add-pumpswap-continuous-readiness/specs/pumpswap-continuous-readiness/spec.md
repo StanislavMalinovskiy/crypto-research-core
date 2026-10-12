@@ -20,7 +20,7 @@ Automatic orchestration SHALL require an explicit enabled setting and a complete
 
 ### Requirement: Durable conservative cumulative admission
 
-Before any segment provider operation, one owned atomic transition SHALL reserve that segment's entire finite request, received/subscription/retained-byte, RPC/CU/cost and configured-duration allowances against the same durable deployment allocation and existing account-period ledger. Cumulative deployment allowances SHALL be independently enforced across restart and segments. Conservative reservations SHALL remain distinct from measured committed use, unknown unflushed use and UNKNOWN actual billing; they SHALL NOT be refunded after crash, abort or shorter completion. Within an enrolled allocation, manual/new-name/new-session starts SHALL use the same admission guard and SHALL NOT bypass exhausted authority. A changed deployment name, configuration, authority label or reported period reset SHALL NOT create a new allocation or reopen its terminal stop.
+Before any segment provider operation, one owned atomic transition SHALL reserve that segment's entire finite request, received/subscription/retained-byte, RPC/CU/cost and configured-duration allowances against the same durable deployment allocation and existing account-period ledger. Cumulative deployment allowances SHALL be independently enforced across restart and segments. Conservative reservations SHALL remain distinct from measured committed use, unknown unflushed use and UNKNOWN actual billing; they SHALL NOT be refunded after crash, abort or shorter completion. Within an enrolled allocation, manual/new-name/new-session starts SHALL use the same admission guard and SHALL NOT bypass exhausted authority. A changed deployment name, configuration, authority label or reported period reset alone SHALL NOT create a new allocation or reopen its terminal stop; only the explicit immutable monthly or manual same-period receipts below SHALL permit their bounded distinct child, never reopen the old allocation.
 
 #### Scenario: Crash before local accounting flush
 - **WHEN** a segment admits provider work and then crashes before its local counters are committed
@@ -51,7 +51,7 @@ Before any segment provider operation, one owned atomic transition SHALL reserve
 
 ### Requirement: Fenced finite segment handoff and explicit gaps
 
-One deployment SHALL own at most one capture segment at a time through a committed expiring PostgreSQL lease. No successor SHALL start until the preceding coordinator and writer have actually exited and its admitted tail/terminal facts are sealed against later writes. Only a verified expected natural segment end strictly before the deployment's global end, within its remaining count/resources, and after successful bounded derivation SHALL permit an already-authorized successor. Owner stop, security/protocol/unknown/provider terminal failure, writer/fence/overflow/recovery failure, resource exhaustion and incomplete closing SHALL remain terminal. This is a narrow prospective exception for the new enrolled wrapper, not reopening a terminal collector session or retroactive legacy permission. Restart and every nonoverlapping segment boundary SHALL retain explicit TX and STATE gaps, preserving unknown boundaries and unproved continuity. Existing finite within-segment recovery SHALL NOT turn current state into recovered historical state.
+One deployment SHALL own at most one capture segment at a time through a committed expiring PostgreSQL lease. No automatic successor SHALL start until the preceding coordinator and writer have actually exited and its admitted tail/terminal facts are sealed against later writes. Only a verified expected natural segment end strictly before the deployment's global end, within its remaining count/resources, and after successful bounded derivation SHALL permit an already-authorized automatic successor within that deployment. Owner stop, security/protocol/unknown/provider terminal failure, writer/fence/overflow/recovery failure, resource exhaustion and incomplete closing SHALL remain terminal for that allocation; a distinct explicit manual same-period child SHALL require the separate receipt below and actual owned-process exit, not reinterpret failure as natural completion. This is a narrow prospective exception for the new enrolled wrapper, not reopening a terminal collector session or retroactive legacy permission. Restart and every nonoverlapping segment boundary SHALL retain explicit TX and STATE gaps, preserving unknown boundaries and unproved continuity. Existing finite within-segment recovery SHALL NOT turn current state into recovered historical state.
 
 #### Scenario: Expected natural segment boundary
 - **WHEN** a segment reaches its original configured end and its valid writer closes/seals successfully while the deployment remains eligible
@@ -167,9 +167,9 @@ An explicitly configured `continuous-period-continuation-v1` request under an ap
 - **AND** its first segment SHALL retain explicit TX/STATE period-boundary gaps without declaring historical state or continuity recovered.
 
 #### Scenario: No renamed or early successor bypass
-- **WHEN** an unreceipted renamed deployment/period, same-period child, still-active predecessor, unended period, stale parent, altered pool scope or conflicting second successor attempts enrollment
+- **WHEN** an unreceipted renamed deployment/period or same-period child, still-active predecessor, unended period for a monthly continuation, stale parent, altered pool scope or conflicting second successor attempts enrollment
 - **THEN** it SHALL reject atomically before provider work without creating/resetting authority or changing the predecessor
-- **AND** at most one provider deployment SHALL be RUNNING and at most one deployment SHALL occupy each provider/account period; manual starts SHALL still use the enrolled-provider guard.
+- **AND** at most one provider deployment SHALL be RUNNING; multiple historical STOPPED deployments in the same provider/account period SHALL require the explicit immutable same-period replacement receipt below, never an unreceipted alias, and manual starts SHALL still use the enrolled-provider guard.
 
 #### Scenario: Equal receipt and stale predecessor remain distinct
 - **WHEN** the exact continuation request is repeated or the former predecessor attempts further admission/writes after continuation
@@ -186,3 +186,39 @@ An explicitly configured `continuous-period-continuation-v1` request under an ap
 - **WHEN** continuation is absent/default-disabled or populated V16 data is migrated forward
 - **THEN** disabled startup SHALL not read a continuation file/receipt or create provider work, and ordinary legacy V13/V15/V16 paths with no continuation SHALL retain their documented behavior/readback
 - **AND** V17 SHALL preserve every old row/configuration/fingerprint/clock while adding the owning receipt and period-scoped/exclusive-running enrollment constraints; pre-V17 enabled mixed-binary admission SHALL remain forbidden/uncertified, not falsely described as physically rejected by all old SQL.
+
+### Requirement: Explicit immutable manual same-period replacement
+Only an explicit operator-invoked `continuous-same-period-replacement-v1` request under the retained owner/delegate grant SHALL enroll a new child after qualified v7 durable-inbox implementation. It SHALL bind exact STOPPED predecessor key/configuration digest/nonempty terminal reason, original same-period allocation root key/digest, successor Configuration, carried all-seven Resources/consumed-root-count proof and decision identity. Old deployment/session/configuration/reason/raw/PENDING/gaps/receipts/holds SHALL remain immutable; no automatic error/startup/calendar retry, reopening, refund/reset/repricing or original-window extension SHALL result. Same provider/sorted three pools/proofs/account period/end/effective authority/rates/original global ceilings/end SHALL be preserved; only v6->v7 or equal-v7 policy transition SHALL qualify. Fixed-v4 derivation SHALL remain unchanged.
+
+#### Scenario: Eligible stopped same-period predecessor admits a distinct child
+- **WHEN** a valid explicit request identifies a stopped predecessor with expired lease, no other active provider workload/session, still-open original period/global end and enough original root all-vector/count headroom for a whole first segment
+- **THEN** one <=10s owning READ_COMMITTED transaction SHALL acquire provider advisory lock first, deterministic predecessor/root/period/session row locks and one postlock DB time, then atomically create exactly one immutable receipt/new allocation before provider work
+- **AND** root means the original allocation of that same period, including one explicitly created by a monthly receipt; monthly money semantics SHALL remain unchanged and actual old process/writer exit SHALL remain separately required operational evidence
+- **AND** the child SHALL retain original remaining count/global end, clipped segment time and finite per-segment allowances at most the unchanged remaining root caps (which MAY be lower without refunding old holds), with first-session TX/STATE boundary gaps linked only to known predecessor successful checkpoint, without closing old gaps or fabricating unknown continuity.
+
+#### Scenario: Every conservative carried dimension is preserved once
+- **WHEN** replacement opening and its first ordinary segment reservation are computed
+- **THEN** requests/received/WSS/retained bytes/RPC hundredths/reserved CU hundredths/configured seconds SHALL each carry at least predecessor/root-held totals and required unique-session conservative totals; known positive overruns SHALL remain held
+- **AND** CU SHALL retain same-period reserved+known-overage proof and retained bytes SHALL cover unique sessions across all provider periods, without summing ancestor deployment carry arrays or counting sessions/segments twice
+- **AND** enrollment SHALL not add period allowance; first normal segment reservation SHALL consume unchanged remaining deployment/period authority exactly once, and unknown/overflow/reduced carry/exhausted vector or original count/end SHALL reject atomically.
+
+#### Scenario: Replacement and monthly continuation compete for a parent
+- **WHEN** either lineage kind attempts a child, including concurrent distinct replacements, replacement-versus-monthly continuation in either ordering or a stale ancestor
+- **THEN** both admission paths SHALL check BOTH receipt tables under the same provider lock and admit at most one child of that parent across both kinds
+- **AND** exact replay SHALL return its original receipt/allocation before current eligibility checks with no new hold/session/provider work; changed content SHALL conflict and same-period receipt transitions/traversal SHALL be independently bounded by original root maxSegments as well as once-counted segment consumption, including children stopped before first segment reservation.
+
+#### Scenario: Forward V18 and ordinary alias guards
+- **WHEN** populated V17 data migrates to V18 and owning enrollment starts
+- **THEN** V18 SHALL remove ONLY provider-period deployment uniqueness, retain exclusive RUNNING-provider uniqueness and add the successor-PK/unique-predecessor/root/provider-period-FK replacement receipt with immutable request/digests/decision/original ceilings/end/count/carry proof
+- **AND** old rows/configurations/raw/counters/receipts/constraints/readback SHALL remain exact; ordinary/manual/new-name/new-period/same-period unreceipted bypass SHALL still reject before provider work, including a replacement descended from a monthly receipt requiring exact receipt-aware authority lookup
+- **AND** disabled rollback/pre-V18 or mixed-binary enabled admission SHALL remain forbidden/uncertified, not claimed physically blocked for arbitrary old or privileged SQL.
+
+#### Scenario: Optional manual file does not authorize startup by itself
+- **WHEN** same-period-replacement-file is absent/default-disabled, conflicts with amendment/continuation/manual mode, contains literal/decoded secrets, exceeds1,000,000UTF8bytes or differs from loaded successor configuration
+- **THEN** default-disabled startup SHALL read/resolve nothing and invalid enabled input SHALL reject before enrollment/provider work with existing launcher compatibility preserved
+- **AND** qualified file enrollment SHALL commit before coordinator start only after required review/Main gate/operational preflight; PLAN/gate/receipt replay SHALL NOT automatically enable or restart the stopped unit.
+
+#### Scenario: Two manual children consume the original allocation over time
+- **WHEN** two successive eligible same-period replacements are explicitly admitted with new identities
+- **THEN** unique-session carry and consumed segment count SHALL remain once-counted and original global resources/duration/count/end SHALL not regenerate through names
+- **AND** old940PENDING/terminal/holds SHALL remain untouched and absent invoice/dashboard/month-fit evidence SHALL stay UNKNOWN, not become a successful24h or future-period result.

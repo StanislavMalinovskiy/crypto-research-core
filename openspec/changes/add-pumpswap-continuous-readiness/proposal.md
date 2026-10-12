@@ -1,5 +1,7 @@
 ## Why
 
+**Current prospective scope, 2026-10-13:** one joint [v7 durable-inbox PLAN](../add-bounded-pumpswap-pool-collector/design.md#durable-inbox-and-manual-replacement-plan-2026-10-13), followed sequentially by [explicit manual same-period replacement](design.md#manual-same-period-replacement-plan-2026-10-13). The delegate's accepted decision permits a new immutable child receipt, not reopening the original terminal deployment/session, refunding holds or automatic restart. V18 narrowly replaces provider-period enrollment uniqueness with receipt-required linear admission across both same-period and monthly edges. Local task4.5 remains verified;4.4 stays unchecked. Current runtime remains stopped/disabled and its fixed-v4 derivation is unchanged; PLAN does not activate a v7 template or operator file.
+
 The qualified bounded collector, fixed-v4 decoder and immutable operation store now exist, but application restart and repeated finite segments do not yet form one conservatively budgeted, resumable capture-to-derivation workload. Readiness must be proved locally before any separately authorized activation.
 
 ## What Changes
