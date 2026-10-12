@@ -111,3 +111,36 @@ Existing exact session monitor behavior SHALL remain unchanged, including indepe
 - **WHEN** existing session monitor, raw evidence, V14 revisions and legacy fingerprints are read after forward migration and readiness transitions
 - **THEN** their recorded content and accepted semantics SHALL remain unchanged, apart from separately permitted new capture facts in new enrolled sessions
 - **AND** old terminal receipts, gaps and unknown coverage/billing SHALL not be rewritten as healthy continuous operation.
+
+### Requirement: Explicit prospective same-period authority amendment
+
+An explicitly owner-authorized prospective amendment SHALL bind the exact retained period authority and new authority in an immutable versioned receipt before new provider admission. For the authorized October transition it SHALL preserve the original account period/end, opening and other-activity identity, USD/CU rate, original authority JSON, session/deployment configurations and every prior reservation/known-overage counter; only the effective ceiling MAY increase to at most $50 and the new WSS coefficient SHALL be 0.0002 CU/byte. Amendment admission SHALL be atomic under the existing provider and period locks, reject active workloads/expired periods/conflicting predecessors, and SHALL NOT refund, rename, reset or reprice historical evidence. Legacy configuration serialization/readback SHALL remain unchanged.
+
+#### Scenario: Authorized October transition
+- **WHEN** the exact authorized amendment is applied to the inactive matching retained October period
+- **THEN** its receipt and effective ceiling SHALL commit together while original authority, counters and historical evidence remain unchanged
+- **AND** new reservations SHALL match the exact amended authority; a fresh former-authority or renamed-period reservation SHALL NOT bypass it.
+
+#### Scenario: Equal repeat and conflict
+- **WHEN** the same immutable amendment is repeated or a different predecessor/content is supplied
+- **THEN** equal repeat SHALL produce no additional reservation/receipt and conflicting input SHALL fail atomically before provider work
+- **AND** concurrent reservation/amendment, arithmetic overflow, active workload or expired period SHALL NOT cause partial authority or lost counters.
+
+#### Scenario: Forward V16 preserves historical evidence
+- **WHEN** populated V9/V13/V14/V15 evidence is migrated forward to V16 or complete-schema application tests start
+- **THEN** successful migration counts/lists/table inventory SHALL reflect the one additive amendment table while every historical raw/authority/config/fingerprint/clock remains unchanged by migration
+- **AND** original no-write, row-equality, foreign-key/index/collation and exact financial assertions SHALL remain active; updating schema setup SHALL NOT fabricate new expected economic evidence.
+
+### Requirement: Authorized finite activation and observable budget stop
+
+Activation under the newer explicit owner decision SHALL still require finite configured segments/global end/count/request/byte/CU/retention/derivation limits derived from the remaining same-period authority and observed workload. No calendar reset, new segment identity, restart or terminal stop SHALL grant new budget. The default-off boundary, immutable old evidence, failed raw, fixed-version derivation, explicit gaps and UNKNOWN billing SHALL remain. Actual terminal budget/resource/time reasons SHALL produce a secret-free durable operator alert and truthful terminal observation after bounded cleanup. Local marker/journal notification SHALL NOT be represented as externally delivered notification without delivery evidence.
+
+#### Scenario: Budget stop while application remains healthy
+- **WHEN** capture stops at a cumulative authority/resource/time limit but the Spring process remains alive
+- **THEN** its durable reason and bounded resource summary SHALL be observable through the operator alert/terminal path independently of readiness UP
+- **AND** no automatic retry, successor, refund or new month allocation SHALL occur; failure to read final state SHALL remain explicit UNKNOWN.
+
+#### Scenario: Twenty-four-hour reconciliation or early terminal result
+- **WHEN** authorized activation reaches24h or stops earlier
+- **THEN** the retained report SHALL compare timestamped dashboard observations and local committed counters for the same account period, distinguish estimates/reservations/other activity/invoice and record actual elapsed duration
+- **AND** incomplete time, absent dashboard charge, rounded totals, unresolved gaps and unknown loss SHALL NOT be reported as zero usage, full coverage or verified monthly fit.
