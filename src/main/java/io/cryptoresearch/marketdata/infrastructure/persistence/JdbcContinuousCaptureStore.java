@@ -192,6 +192,21 @@ public class JdbcContinuousCaptureStore {
 		jdbc.sql("update marketdata.capture_deployments set state='STOPPED',reason=:reason where deployment_key=:key")
 			.param("key",f.deployment()).param("reason",reason).update();
 	}
+	/** Small payload-free projection; STOPPED/reason is the existing durable local stop marker. */
+	public io.cryptoresearch.marketdata.application.ContinuousCaptureLedgerUseCase.TerminalObservation terminalObservation(String key) {
+		return jdbc.sql("""
+			select d.state,d.reason,d.reserved,p.reserved_hundredths,p.known_overage_hundredths,
+			coalesce(s.ordinal,0) as ordinal,coalesce(c.state,'NONE') as session_state,coalesce(c.reason,'') as session_reason,
+			octet_length(d.state)+octet_length(d.reason)+coalesce(octet_length(c.state),0)+coalesce(octet_length(c.reason),0)<=131072 as fits
+			from marketdata.capture_deployments d join marketdata.capture_periods p using(account_period)
+			left join lateral(select ordinal,session_id from marketdata.capture_segments where deployment_key=d.deployment_key order by ordinal desc limit 1) s on true
+			left join marketdata.capture_sessions c on c.session_id=s.session_id where d.deployment_key=:key
+			""").param("key",key).query((r,n)->{
+				if(!r.getBoolean("fits"))throw new IllegalStateException("CAPTURE_TERMINAL_OBSERVATION_LIMIT");
+				return new io.cryptoresearch.marketdata.application.ContinuousCaptureLedgerUseCase.TerminalObservation(r.getString("state"),r.getString("reason"),r.getInt("ordinal"),
+					r.getString("session_state"),r.getString("session_reason"),resources(r,"reserved"),r.getLong("reserved_hundredths"),r.getLong("known_overage_hundredths"));
+			}).single();
+	}
 	public Optional<Segment> latest(String key) {
 		return jdbc.sql("select "+SEGMENT_COLUMNS+" from marketdata.capture_segments where deployment_key=:key order by ordinal desc limit 1 for update")
 			.param("key",key).query((r,n)->mapSegment(r)).optional();

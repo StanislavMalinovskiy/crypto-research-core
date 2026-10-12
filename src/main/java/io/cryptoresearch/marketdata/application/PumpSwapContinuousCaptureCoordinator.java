@@ -62,9 +62,18 @@ public class PumpSwapContinuousCaptureCoordinator {
 			fail(Thread.currentThread().isInterrupted()?"OWNER_STOP":io.cryptoresearch.marketdata.infrastructure.JdkPumpSwapTransport.safeReason(failure));
 		} finally {
 			var a=current;
-			if(a!=null)org.slf4j.LoggerFactory.getLogger(getClass()).info("PumpSwap deployment progress identity={} terminal={} segment={} billing=UNKNOWN coverage=UNVERIFIED",
-				PayloadFingerprint.sha256(a.configuration().deploymentKey()),a.terminal(),a.segment()==null?0:a.segment().ordinal());
+			if(a!=null)observeTerminal(a);
 		}
+	}
+	private void observeTerminal(ContinuousCaptureLedgerUseCase.Admission a) {
+		var interrupted=Thread.interrupted();
+		try {
+			var o=ledger.terminalObservation(a);
+			org.slf4j.LoggerFactory.getLogger(getClass()).warn("PumpSwap deployment LOCAL_OPERATOR identity={} state={} terminal={} segment={} sessionState={} sessionReason={} reserved={} periodReservedHundredths={} knownOverageHundredths={} billing=UNKNOWN coverage=UNVERIFIED externalDelivery=UNVERIFIED",
+				PayloadFingerprint.sha256(a.configuration().deploymentKey()),o.state(),o.reason(),o.ordinal(),o.sessionState(),o.sessionReason(),o.reserved(),o.periodReservedHundredths(),o.knownOverageHundredths());
+		} catch(RuntimeException unavailable) {
+			org.slf4j.LoggerFactory.getLogger(getClass()).warn("PumpSwap deployment LOCAL_OPERATOR identity={} terminal=UNKNOWN category=OBSERVATION_UNAVAILABLE billing=UNKNOWN coverage=UNVERIFIED externalDelivery=UNVERIFIED",PayloadFingerprint.sha256(a.configuration().deploymentKey()));
+		} finally {if(interrupted)Thread.currentThread().interrupt();}
 	}
 	private void waitBounded(Configuration c,Instant deadline) throws InterruptedException {
 		var remaining=Duration.between(ledger.now(),deadline).toMillis();

@@ -15,6 +15,12 @@ import io.cryptoresearch.marketdata.infrastructure.persistence.JdbcCaptureStore;
 @Service
 public class ContinuousCaptureLedgerUseCase {
 	public record Admission(Configuration configuration,Fence fence,Segment segment,boolean resumed,String terminal) { }
+	public record TerminalObservation(String state,String reason,int ordinal,String sessionState,String sessionReason,
+			Resources reserved,long periodReservedHundredths,long knownOverageHundredths) { }
+	@Transactional(propagation=Propagation.REQUIRES_NEW,readOnly=true,isolation=Isolation.REPEATABLE_READ,timeout=10)
+	public TerminalObservation terminalObservation(Admission admission) {
+		store.timeout();return store.terminalObservation(admission.configuration().deploymentKey());
+	}
 	private final JdbcContinuousCaptureStore store;
 	private final JdbcCaptureStore capture;
 	private final CaptureLedgerUseCase legacy;

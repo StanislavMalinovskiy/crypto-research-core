@@ -39,9 +39,9 @@ class VersionedMarketMigrationIT {
 		LegacyMarketEvidenceFixture.populate(marketData, signal, evaluation);
 		LegacyMarketEvidenceFixture.assertDurableEvidence(jdbc);
 		var migrated = Flyway.configure().dataSource(dataSource).locations("classpath:db/migration").load().migrate();
-		assertThat(migrated.migrationsExecuted).isEqualTo(6);
+		assertThat(migrated.migrationsExecuted).isEqualTo(7);
 		assertThat(jdbc.sql("SELECT version FROM flyway_schema_history WHERE success ORDER BY installed_rank DESC LIMIT 1")
-				.query(String.class).single()).isEqualTo("15");
+				.query(String.class).single()).isEqualTo("16");
 		LegacyMarketEvidenceFixture.assertDurableEvidence(jdbc);
 		LegacyMarketEvidenceFixture.populate(marketData, signal, evaluation);
 		LegacyMarketEvidenceFixture.assertDurableEvidence(jdbc);

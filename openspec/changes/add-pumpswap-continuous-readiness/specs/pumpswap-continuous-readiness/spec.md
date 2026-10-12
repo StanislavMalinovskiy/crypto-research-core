@@ -119,7 +119,12 @@ An explicitly owner-authorized prospective amendment SHALL bind the exact retain
 #### Scenario: Authorized October transition
 - **WHEN** the exact authorized amendment is applied to the inactive matching retained October period
 - **THEN** its receipt and effective ceiling SHALL commit together while original authority, counters and historical evidence remain unchanged
-- **AND** new reservations SHALL match the exact amended authority; a fresh former-authority or renamed-period reservation SHALL NOT bypass it.
+- **AND** through the reviewed V16-aware admission/store path new reservations SHALL match the exact amended authority; that path SHALL reject a fresh former-authority or renamed-period reservation.
+
+#### Scenario: Qualified binary activation and disabled rollback
+- **WHEN** an amended period is activated or its application binary is rolled back
+- **THEN** enabled capture SHALL use only the reviewed V16-aware binary after old owned capture processes/workers have actually stopped; rollback to a pre-V16 binary SHALL leave capture disabled
+- **AND** pre-V16 or mixed-version enabled admission SHALL remain unsupported and forbidden; preserving original authority JSON and increasing the effective ceiling SHALL NOT be represented as a database-enforced rejection of legacy or arbitrary privileged SQL.
 
 #### Scenario: Equal repeat and conflict
 - **WHEN** the same immutable amendment is repeated or a different predecessor/content is supplied

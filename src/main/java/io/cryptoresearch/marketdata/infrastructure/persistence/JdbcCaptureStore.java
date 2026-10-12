@@ -24,6 +24,7 @@ public class JdbcCaptureStore {
 	private final JdbcClient jdbc;
 	private final ObjectMapper json;
 	private volatile boolean continuousSchemaPresent;
+	private volatile boolean amendmentSchemaPresent;
 	public JdbcCaptureStore(JdbcClient jdbc, ObjectMapper json) { this.jdbc = jdbc; this.json = json; }
     public void monitorTimeout() {jdbc.sql("set local statement_timeout='10s'").update();}
     public Optional<MonitorHeader> monitorHeader(UUID id) {
@@ -131,7 +132,9 @@ public class JdbcCaptureStore {
 		if(!r.getBoolean("continuous_valid"))throw new IllegalStateException("CONTINUOUS_CAPTURE_FENCE_LOST");
 	}
 	private String periodAuthority(Configuration c) {
-		var a=c.authority();
+		return periodAuthority(c.authority());
+	}
+	private String periodAuthority(Authority a) {
 		return encode(List.of(a.accountPeriod(),a.periodEnd(),a.source(),a.openingHundredths(),a.otherActivityHundredths(),a.exclusiveAllocation(),
 				a.ceilingHundredths(),a.ceilingUsd().stripTrailingZeros().toPlainString(),a.usdPerMillionCu().stripTrailingZeros().toPlainString(),
 				a.subscriptionCuPerByte().stripTrailingZeros().toPlainString()));
@@ -144,6 +147,8 @@ public class JdbcCaptureStore {
 		return jdbc.sql("SELECT count(*) FROM marketdata.capture_sessions WHERE session_id=:id").param("id", id).query(Long.class).single() != 0;
 	}
 	public void period(Configuration c, long ceiling, long opening) {
+		if(amendmentSchemaPresent() && jdbc.sql("select exists(select 1 from marketdata.capture_authority_amendments where provider=:provider and account_period<>:period)")
+			.param("provider",c.provider()).param("period",c.authority().accountPeriod()).query(Boolean.class).single())throw new IllegalStateException("CAPTURE_AUTHORITY_PERIOD_ALIAS_REJECTED");
 		jdbc.sql("""
 				INSERT INTO marketdata.capture_periods(account_period,authority_json,ceiling_hundredths,reserved_hundredths,period_end)
 				VALUES (:period,:authority,:ceiling,:opening,:end)
@@ -152,13 +157,57 @@ public class JdbcCaptureStore {
 				.param("ceiling", ceiling).param("opening", opening).param("end", time(c.authority().periodEnd())).update();
 	}
 	public boolean reservePeriod(Configuration c, long reservation) {
+		String authorityCondition="authority_json=:authority";
+		if(amendmentSchemaPresent())authorityCondition="""
+			((not exists(select 1 from marketdata.capture_authority_amendments a where a.account_period=marketdata.capture_periods.account_period) and authority_json=:authority)
+			or exists(select 1 from marketdata.capture_authority_amendments a where a.account_period=marketdata.capture_periods.account_period
+			and a.amended_authority_json=:authority and a.applied_at<=:starts and a.period_end>:starts))
+			""";
 		return jdbc.sql("""
 				UPDATE marketdata.capture_periods SET reserved_hundredths=reserved_hundredths+:amount
-				WHERE account_period=:period AND authority_json=:authority
+				WHERE account_period=:period AND
+				"""+authorityCondition+" "+"""
 				AND reserved_hundredths <= ceiling_hundredths-:amount-known_overage_hundredths
 				RETURNING 1
 				""").param("period", c.authority().accountPeriod()).param("authority", periodAuthority(c))
-				.param("amount", reservation).query(Integer.class).optional().isPresent();
+				.param("amount", reservation).param("starts",time(c.startsAt())).query(Integer.class).optional().isPresent();
+	}
+	private boolean amendmentSchemaPresent() {
+		if(amendmentSchemaPresent)return true;
+		amendmentSchemaPresent=jdbc.sql("select to_regclass('marketdata.capture_authority_amendments') is not null").query(Boolean.class).single();
+		return amendmentSchemaPresent;
+	}
+	public io.cryptoresearch.marketdata.api.PumpSwapCaptureAuthorityAmendment.Receipt amendAuthority(
+			io.cryptoresearch.marketdata.api.PumpSwapCaptureAuthorityAmendment a,long predecessorCeiling,long ceiling,String digest,Instant now) {
+		var period=a.predecessor().accountPeriod();var request=encode(a);
+		if(request.getBytes(java.nio.charset.StandardCharsets.UTF_8).length>1000000)throw new IllegalArgumentException("CAPTURE_CONFIGURATION_BYTE_LIMIT");
+		var row=jdbc.sql("select authority_json,ceiling_hundredths,reserved_hundredths,known_overage_hundredths,period_end from marketdata.capture_periods where account_period=:period for update")
+			.param("period",period).query((r,n)->new Object[]{r.getString("authority_json"),r.getLong("ceiling_hundredths"),r.getLong("reserved_hundredths"),r.getLong("known_overage_hundredths"),instant(r,"period_end")}).optional()
+			.orElseThrow(()->new IllegalStateException("CAPTURE_AUTHORITY_PREDECESSOR_CONFLICT"));
+		var old=jdbc.sql("select request_json,amendment_digest,applied_at,effective_ceiling_hundredths from marketdata.capture_authority_amendments where account_period=:period")
+			.param("period",period).query((r,n)->new Object[]{r.getString("request_json"),r.getString("amendment_digest"),instant(r,"applied_at"),r.getLong("effective_ceiling_hundredths")}).optional();
+		if(old.isPresent()) {
+			var previous=old.get();if(!previous[0].equals(request))throw new IllegalStateException("CAPTURE_AUTHORITY_AMENDMENT_CONFLICT");
+			return new io.cryptoresearch.marketdata.api.PumpSwapCaptureAuthorityAmendment.Receipt((String)previous[1],(Instant)previous[2],(Long)previous[3]);
+		}
+		if(!row[0].equals(periodAuthority(a.predecessor())) || !row[4].equals(a.predecessor().periodEnd())
+				|| (Long)row[1]!=predecessorCeiling)throw new IllegalStateException("CAPTURE_AUTHORITY_PREDECESSOR_CONFLICT");
+		if(!now.isBefore((Instant)row[4]))throw new IllegalStateException("CAPTURE_AUTHORITY_PERIOD_EXPIRED");
+		var active=jdbc.sql("""
+			select exists(select 1 from marketdata.capture_sessions where state='RUNNING' and configuration_json::jsonb->>'provider'=:provider)
+			or exists(select 1 from marketdata.capture_deployments where state='RUNNING' and provider=:provider)
+			""").param("provider",a.provider()).query(Boolean.class).single();
+		if(active)throw new IllegalStateException("CAPTURE_AUTHORITY_ACTIVE_WORKLOAD");
+		if(ceiling<(Long)row[1] || Math.addExact((Long)row[2],(Long)row[3])>ceiling)throw new IllegalStateException("CAPTURE_AUTHORITY_ALLOWANCE_REJECTED");
+		jdbc.sql("""
+			insert into marketdata.capture_authority_amendments(account_period,version,provider,predecessor_authority_json,predecessor_ceiling_hundredths,
+			amended_authority_json,effective_ceiling_hundredths,period_end,owner_decision,request_json,amendment_digest,applied_at)
+			values(:period,:version,:provider,:before,:oldceiling,:after,:ceiling,:end,:decision,:request,:digest,:at)
+			""").param("period",period).param("version",a.version()).param("provider",a.provider()).param("before",row[0]).param("oldceiling",row[1])
+			.param("after",periodAuthority(a.successor())).param("ceiling",ceiling).param("end",time(a.predecessor().periodEnd())).param("decision",a.ownerDecision())
+			.param("request",request).param("digest",digest).param("at",time(now)).update();
+		jdbc.sql("update marketdata.capture_periods set ceiling_hundredths=:ceiling where account_period=:period").param("ceiling",ceiling).param("period",period).update();
+		return new io.cryptoresearch.marketdata.api.PumpSwapCaptureAuthorityAmendment.Receipt(digest,now,ceiling);
 	}
 	public long reserved(String period) {
 		return jdbc.sql("SELECT reserved_hundredths+known_overage_hundredths FROM marketdata.capture_periods WHERE account_period=:period")

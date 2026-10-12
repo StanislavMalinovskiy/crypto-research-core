@@ -17,7 +17,13 @@ public class PumpSwapCaptureLauncher implements ApplicationRunner {
 	private final PumpSwapPoolCollector collector;
 	private final ObjectMapper json;
 	private org.springframework.beans.factory.ObjectProvider<PumpSwapContinuousCaptureCoordinator> continuous;
+	private org.springframework.beans.factory.ObjectProvider<AmendCapturePeriodAuthorityUseCase> amendment;
 	@org.springframework.beans.factory.annotation.Autowired
+	public PumpSwapCaptureLauncher(PumpSwapCaptureSettings settings,PumpSwapPoolCollector collector,ObjectMapper json,
+			org.springframework.beans.factory.ObjectProvider<PumpSwapContinuousCaptureCoordinator> continuous,
+			org.springframework.beans.factory.ObjectProvider<AmendCapturePeriodAuthorityUseCase> amendment) {
+		this(settings,collector,json,continuous);this.amendment=amendment;
+	}
 	public PumpSwapCaptureLauncher(PumpSwapCaptureSettings settings,PumpSwapPoolCollector collector,ObjectMapper json,
 			org.springframework.beans.factory.ObjectProvider<PumpSwapContinuousCaptureCoordinator> continuous) {
 		this(settings,collector,json);this.continuous=continuous;
@@ -37,6 +43,7 @@ public class PumpSwapCaptureLauncher implements ApplicationRunner {
 				if(Files.size(path)>1000000)throw new IllegalStateException("CAPTURE_CONFIGURATION_BYTE_LIMIT");
 				var configuration=json.readValue(Files.readString(path),io.cryptoresearch.marketdata.api.PumpSwapContinuousCapture.Configuration.class);
 				if(continuous==null)throw new IllegalStateException("CONTINUOUS_CAPTURE_UNAVAILABLE");
+				applyAmendment();
 				continuous.getObject().start(configuration);reason="CONTINUOUS_CAPTURE_STARTED";
 				LoggerFactory.getLogger(PumpSwapCaptureLauncher.class).info("PumpSwap capture startup {}",reason);return;
 			}
@@ -44,8 +51,26 @@ public class PumpSwapCaptureLauncher implements ApplicationRunner {
 			var path=Path.of(settings.getConfigurationFile());
 			if(Files.size(path)>1000000) throw new IllegalStateException("CAPTURE_CONFIGURATION_BYTE_LIMIT");
 			var configuration=json.readValue(Files.readString(path),Configuration.class);
+			applyAmendment();
 			var status=collector.start(configuration); reason=status.state()+":"+status.reason();
 		} catch(Exception invalid) { reason="BLOCKED_FOR_LAUNCH:"+io.cryptoresearch.marketdata.infrastructure.JdkPumpSwapTransport.safeReason(invalid); }
 		LoggerFactory.getLogger(PumpSwapCaptureLauncher.class).info("PumpSwap capture startup {}",reason);
+	}
+	private void applyAmendment() throws java.io.IOException {
+		var file=settings.getAuthorityAmendmentFile();if(file==null || file.isBlank())return;
+		if(amendment==null)throw new IllegalStateException("CAPTURE_AUTHORITY_AMENDMENT_UNAVAILABLE");
+		var path=Path.of(file);if(Files.size(path)>1000000)throw new IllegalStateException("CAPTURE_CONFIGURATION_BYTE_LIMIT");
+		var text=Files.readString(path);
+		if(settings.getSecret()!=null && !settings.getSecret().isBlank() && text.contains(settings.getSecret()))throw new IllegalStateException("SECRET_IN_CAPTURE_CONFIGURATION");
+		var request=json.readValue(text,io.cryptoresearch.marketdata.api.PumpSwapCaptureAuthorityAmendment.class);
+		if(settings.getSecret()!=null && !settings.getSecret().isBlank()
+			&& decodedSecret(json.readTree(json.writeValueAsString(request)),settings.getSecret()))throw new IllegalStateException("SECRET_IN_CAPTURE_CONFIGURATION");
+		amendment.getObject().amend(request);
+	}
+	/** Check only the bounded typed values that would be persisted, after JSON unescaping. */
+	private static boolean decodedSecret(tools.jackson.databind.JsonNode node,String secret) {
+		if(node.isTextual() && node.asText().contains(secret))return true;
+		for(var value:node)if(decodedSecret(value,secret))return true;
+		return false;
 	}
 }
