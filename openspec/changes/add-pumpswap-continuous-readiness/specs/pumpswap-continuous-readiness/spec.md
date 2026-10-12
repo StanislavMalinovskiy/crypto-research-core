@@ -144,7 +144,7 @@ An explicitly owner-authorized prospective amendment SHALL bind the exact retain
 
 ### Requirement: Authorized finite activation and observable budget stop
 
-Activation under the newer explicit owner decision SHALL still require finite configured segments/global end/count/request/byte/CU/retention/derivation limits derived from the remaining same-period authority and observed workload. No calendar reset, new segment identity, restart or terminal stop SHALL grant new budget. The default-off boundary, immutable old evidence, failed raw, fixed-version derivation, explicit gaps and UNKNOWN billing SHALL remain. Actual terminal budget/resource/time reasons SHALL produce a secret-free durable operator alert and truthful terminal observation after bounded cleanup. Local marker/journal notification SHALL NOT be represented as externally delivered notification without delivery evidence.
+Activation under the newer explicit owner decision SHALL still require finite configured segments/global end/count/request/byte/CU/retention/derivation limits derived from the remaining account-period authority and observed workload. No calendar reset, new segment identity, restart or terminal stop SHALL grant new budget; a distinct period SHALL require the explicit versioned continuation below under an applicable owner grant. The default-off boundary, immutable old evidence, failed raw, fixed-version derivation, explicit gaps and UNKNOWN billing SHALL remain. Actual terminal budget/resource/time reasons SHALL produce a secret-free durable operator alert and truthful terminal observation after bounded cleanup. Local marker/journal notification SHALL NOT be represented as externally delivered notification without delivery evidence.
 
 #### Scenario: Budget stop while application remains healthy
 - **WHEN** capture stops at a cumulative authority/resource/time limit but the Spring process remains alive
@@ -155,3 +155,34 @@ Activation under the newer explicit owner decision SHALL still require finite co
 - **WHEN** authorized activation reaches24h or stops earlier
 - **THEN** the retained report SHALL compare timestamped dashboard observations and local committed counters for the same account period, distinguish estimates/reservations/other activity/invoice and record actual elapsed duration
 - **AND** incomplete time, absent dashboard charge, rounded totals, unresolved gaps and unknown loss SHALL NOT be reported as zero usage, full coverage or verified monthly fit.
+
+### Requirement: Explicit immutable new-period continuation
+
+An explicitly configured `continuous-period-continuation-v1` request under an applicable owner monthly grant SHALL bind the exact predecessor deployment/configuration digest, exact successor configuration, next-period start/end and explicit timestamped source-labelled opening/other-activity baseline. Its owned atomic admission SHALL require the predecessor to be durably STOPPED, its old account period actually ended according to PostgreSQL time after locks, no live predecessor lease or active provider workload, and a genuinely distinct next period starting at the retained preceding period end. It SHALL create one immutable receipt, separate period and new deployment without changing any predecessor configuration, state/reason, raw, receipts, reservation or overage. Unknown baseline, dates, units or prior retention SHALL fail closed; zero SHALL be allowed only as an explicitly supplied known value. Current fixed decoder/provider/pool scope SHALL remain unchanged.
+
+#### Scenario: Explicit successor after ended terminal period
+- **WHEN** the qualified new binary receives a valid request after the exact predecessor period end under the standing monthly owner grant
+- **THEN** provider admission lock and deterministic owned row locks SHALL serialize one linear receipt/period/enrollment before provider work; the new exact monthly CU authority SHALL be at most$50 with the approved rate and finite work limits
+- **AND** old period CU/reservations/overage SHALL remain in that old period, while the successor SHALL use only its explicitly evidenced new-month opening/other activity and new monthly resource allocation
+- **AND** its first segment SHALL retain explicit TX/STATE period-boundary gaps without declaring historical state or continuity recovered.
+
+#### Scenario: No renamed or early successor bypass
+- **WHEN** an unreceipted renamed deployment/period, same-period child, still-active predecessor, unended period, stale parent, altered pool scope or conflicting second successor attempts enrollment
+- **THEN** it SHALL reject atomically before provider work without creating/resetting authority or changing the predecessor
+- **AND** at most one provider deployment SHALL be RUNNING and at most one deployment SHALL occupy each provider/account period; manual starts SHALL still use the enrolled-provider guard.
+
+#### Scenario: Equal receipt and stale predecessor remain distinct
+- **WHEN** the exact continuation request is repeated or the former predecessor attempts further admission/writes after continuation
+- **THEN** equal repeat SHALL return the original receipt/allocation without a second opening, hold, configuration or segment; the unchanged ordinary fence/window contract SHALL govern any permitted resume of that same unfinished successor
+- **AND** the predecessor SHALL remain terminal and stale predecessor admission/write SHALL fail without altering new or old evidence; equal replay SHALL not create automatic provider work.
+
+#### Scenario: Global retained storage survives monthly money separation
+- **WHEN** a new period is explicitly admitted
+- **THEN** each old unique session's conservative retained allowance SHALL count once, with any positive known retained overrun also preserved; the successor's retained opening SHALL cover that whole provider-history total without adding the same carried amount twice
+- **AND** the successor global retained ceiling SHALL equal the preceding ceiling rather than increase/reset with a new month or name; unavailable headroom for even its first finite segment SHALL reject before provider work
+- **AND** unchanged old monthly CU and old history SHALL not be represented as a transfer or refund, and remaining physical DB/WAL capacity SHALL remain separately unverified until measured.
+
+#### Scenario: Disabled startup and populated forward V17 compatibility
+- **WHEN** continuation is absent/default-disabled or populated V16 data is migrated forward
+- **THEN** disabled startup SHALL not read a continuation file/receipt or create provider work, and ordinary legacy V13/V15/V16 paths with no continuation SHALL retain their documented behavior/readback
+- **AND** V17 SHALL preserve every old row/configuration/fingerprint/clock while adding the owning receipt and period-scoped/exclusive-running enrollment constraints; pre-V17 enabled mixed-binary admission SHALL remain forbidden/uncertified, not falsely described as physically rejected by all old SQL.
