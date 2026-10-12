@@ -36,6 +36,11 @@ public class LiquiditySpikeSignalService implements SignalApi {
 	private final VersionedLiquiditySpikeSignalService versioned;
     @Autowired
     private org.springframework.beans.factory.ObjectProvider<NativeSolPriceRiseDiagnostic> nativePriceDiagnostic;
+    @Autowired
+    private org.springframework.beans.factory.ObjectProvider<VersionedNativeSolPriceRiseDiagnostic> versionedNativePriceDiagnostic;
+    @Override public io.cryptoresearch.signal.api.PumpSwapVersionedNativePriceSignal.Result diagnosePumpSwapVersionedNativePriceRise(io.cryptoresearch.signal.api.PumpSwapVersionedNativePriceSignal.Request request) {
+        return versionedNativePriceDiagnostic.getObject().diagnose(request);
+    }
 
     @Override public io.cryptoresearch.signal.api.PumpSwapNativePriceSignal.Result diagnosePumpSwapNativePriceRise(io.cryptoresearch.signal.api.PumpSwapNativePriceSignal.Request request) {
         return nativePriceDiagnostic.getObject().diagnose(request);

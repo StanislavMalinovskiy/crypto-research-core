@@ -13,6 +13,7 @@ import io.cryptoresearch.risk.api.RiskApi.RiskFacts;
 
 /** Synchronous signal detection and immutable signal-snapshot boundary. */
 public interface SignalApi {
+    PumpSwapVersionedNativePriceSignal.Result diagnosePumpSwapVersionedNativePriceRise(PumpSwapVersionedNativePriceSignal.Request request);
 
     PumpSwapNativePriceSignal.Result diagnosePumpSwapNativePriceRise(PumpSwapNativePriceSignal.Request request);
 
