@@ -193,10 +193,18 @@ public class JdbcCaptureStore {
 		if(!row[0].equals(periodAuthority(a.predecessor())) || !row[4].equals(a.predecessor().periodEnd())
 				|| (Long)row[1]!=predecessorCeiling)throw new IllegalStateException("CAPTURE_AUTHORITY_PREDECESSOR_CONFLICT");
 		if(!now.isBefore((Instant)row[4]))throw new IllegalStateException("CAPTURE_AUTHORITY_PERIOD_EXPIRED");
-		var active=jdbc.sql("""
-			select exists(select 1 from marketdata.capture_sessions where state='RUNNING' and configuration_json::jsonb->>'provider'=:provider)
-			or exists(select 1 from marketdata.capture_deployments where state='RUNNING' and provider=:provider)
-			""").param("provider",a.provider()).query(Boolean.class).single();
+		var sessions=jdbc.sql("""
+			select session_id,ends_at,locked_until from marketdata.capture_sessions
+			where state='RUNNING' and configuration_json::jsonb->>'provider'=:provider
+			order by session_id for update
+			""").param("provider",a.provider()).query((r,n)->new Object[]{r.getObject("session_id",UUID.class),instant(r,"ends_at"),instant(r,"locked_until")}).list();
+		var databaseNow=jdbc.sql("select clock_timestamp() as sampled_at").query((r,n)->instant(r,"sampled_at")).single();
+		var active=jdbc.sql("select exists(select 1 from marketdata.capture_deployments where state='RUNNING' and provider=:provider)")
+			.param("provider",a.provider()).query(Boolean.class).single();
+		for(var session:sessions) {
+			if(((Instant)session[1]).isAfter(databaseNow) || ((Instant)session[2]).isAfter(databaseNow)
+					|| jdbc.sql("select exists(select 1 from marketdata.capture_segments where session_id=:id)").param("id",session[0]).query(Boolean.class).single())active=true;
+		}
 		if(active)throw new IllegalStateException("CAPTURE_AUTHORITY_ACTIVE_WORKLOAD");
 		if(ceiling<(Long)row[1] || Math.addExact((Long)row[2],(Long)row[3])>ceiling)throw new IllegalStateException("CAPTURE_AUTHORITY_ALLOWANCE_REJECTED");
 		jdbc.sql("""

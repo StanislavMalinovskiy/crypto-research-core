@@ -66,7 +66,7 @@ class CaptureAuthorityAmendmentIT {
     }
     @Test void newAmendmentRejectsActiveSessionExpiredPeriodAndWrongPredecessorAtomically() {
         var old=seed("active-new");
-        store.insertSession(old,"sha256:"+"a".repeat(64),"synthetic-owner",clock.instant().plusSeconds(60),clock.instant().plusSeconds(600),100);
+        var dbNow=dbNow();store.insertSession(old,"sha256:"+"a".repeat(64),"synthetic-owner",dbNow.plusSeconds(60),dbNow.plusSeconds(600),100);
         assertThatThrownBy(()->amendments.amend(CaptureAuthorityAmendmentTest.amendment("active-new"))).hasMessage("CAPTURE_AUTHORITY_ACTIVE_WORKLOAD");
         assertThat(receipts()).isZero();assertThat(store.reserved("active-new")).isEqualTo(133);
         jdbc.sql("update marketdata.capture_sessions set state='STOPPED',reason='OWNER_STOP'").update();
@@ -153,6 +153,73 @@ class CaptureAuthorityAmendmentIT {
         Boolean historicalRejected=tx.execute(s->originalStore.reservePeriod(old,10));assertThat(historicalRejected).isFalse();
         Boolean futureAllowed=tx.execute(s->originalStore.reservePeriod(amended(old),10));assertThat(futureAllowed).isTrue();assertThat(originalStore.reserved("legacy-v13")).isEqualTo(140);
     }
+    @Test void expiredUnleasedUnlinkedLegacyRowsDoNotBlockOrLoseHistoricalEvidence() {
+        var old=seed("expired-legacy");var db=dbNow();
+        store.insertSession(old,"sha256:"+"d".repeat(64),"old-holder",db.minusSeconds(600),db.minusSeconds(300),100);
+        var before=rows(jdbc,List.of("capture_sessions","capture_dispositions","capture_envelopes","capture_gaps"));
+        assertThatCode(()->amendments.amend(CaptureAuthorityAmendmentTest.amendment("expired-legacy")))
+            .as("expired unleased unlinked manual session is inactive without rewriting history").doesNotThrowAnyException();
+        assertThat(rows(jdbc,List.of("capture_sessions","capture_dispositions","capture_envelopes","capture_gaps"))).isEqualTo(before);
+        assertThat(store.reserved("expired-legacy")).isEqualTo(133);
+        assertThat(store.claim(old.sessionId(),"replacement",dbNow(),dbNow().plusSeconds(60))).isFalse();
+        assertThatThrownBy(()->store.fence(old.sessionId(),"old-holder",dbNow(),dbNow().plusSeconds(60))).hasMessage("CAPTURE_LEASE_LOST");
+        assertThat(rows(jdbc,List.of("capture_sessions","capture_dispositions","capture_envelopes","capture_gaps"))).isEqualTo(before);
+        Boolean future=new org.springframework.transaction.support.TransactionTemplate(transactions).execute(s->store.reservePeriod(amended(old),10));
+        assertThat(future).isTrue();assertThat(store.reserved("expired-legacy")).isEqualTo(143);
+    }
+    @Test void databaseTimeNotApplicationTimeClassifiesFutureEndAndLiveLease() {
+        for(boolean futureEnd:List.of(true,false)) {
+            jdbc.sql("truncate marketdata.capture_periods cascade").update();var period="db-clock-"+futureEnd;var db=dbNow();
+            var template=CaptureAuthorityAmendmentTest.old(period);var a=template.authority();
+            var authority=new Authority(a.accountPeriod(),db.plusSeconds(172800),a.source(),a.openingHundredths(),a.otherActivityHundredths(),a.ceilingHundredths(),a.ceilingUsd(),a.usdPerMillionCu(),a.subscriptionCuPerByte(),a.ownerAuthorization(),a.retentionAllowed(),a.exclusiveAllocation());
+            var old=new Configuration(template.sessionId(),template.version(),template.provider(),template.startsAt(),template.pools(),template.limits(),authority);
+            new org.springframework.transaction.support.TransactionTemplate(transactions).executeWithoutResult(s->store.period(old,CaptureBudget.ceiling(old),120));
+            jdbc.sql("update marketdata.capture_periods set known_overage_hundredths=13 where account_period=:p").param("p",period).update();
+            var request=new PumpSwapCaptureAuthorityAmendment("capture-authority-amendment-v1","alchemy",authority,CaptureAuthorityAmendmentTest.successor(authority),"owner-db-clock");
+            store.insertSession(old,"sha256:"+"e".repeat(64),"holder",futureEnd?db.minusSeconds(60):db.plusSeconds(600),futureEnd?db.plusSeconds(600):db.minusSeconds(60),100);
+            clock.set(db.plusSeconds(3600));
+            assertThat(request.predecessor().periodEnd()).as("finite DB-relative period stays open at the deliberately offset application clock").isAfter(clock.instant());
+            var before=rows(jdbc,List.of("capture_sessions","capture_periods"));
+            assertThatThrownBy(()->amendments.amend(request)).hasMessage("CAPTURE_AUTHORITY_ACTIVE_WORKLOAD");
+            assertThat(rows(jdbc,List.of("capture_sessions","capture_periods"))).isEqualTo(before);assertThat(receipts()).isZero();
+        }
+    }
+    @Test void expiredLinkedContinuousSessionStillBlocksAfterDeploymentStopped() {
+        var old=seed("linked-expired");var original=PumpSwapContinuousCaptureIT.deployment("linked-old",1,1);
+        var opening=new io.cryptoresearch.marketdata.api.PumpSwapContinuousCapture.Resources(0,0,0,0,0,133,0);
+        var d=new io.cryptoresearch.marketdata.api.PumpSwapContinuousCapture.Configuration(original.deploymentKey(),original.version(),old,original.allowances().plus(opening),opening,original.globalEnd(),original.maxSegments(),original.segmentSeconds(),original.maxPages(),original.decodeSeconds(),original.receiptBytes(),original.pollMillis());
+        var admitted=continuous.admit(d,"linked-holder");continuous.terminal(admitted,"OWNER_STOP");
+        var db=dbNow();jdbc.sql("update marketdata.capture_sessions set state='RUNNING',ends_at=:end,locked_until=:lease")
+            .param("end",java.sql.Timestamp.from(db.minusSeconds(60))).param("lease",java.sql.Timestamp.from(db.minusSeconds(60))).update();
+        var before=rows(jdbc,List.of("capture_sessions","capture_segments","capture_deployments","capture_periods"));
+        assertThatThrownBy(()->amendments.amend(CaptureAuthorityAmendmentTest.amendment("linked-expired"))).hasMessage("CAPTURE_AUTHORITY_ACTIVE_WORKLOAD");
+        assertThat(rows(jdbc,List.of("capture_sessions","capture_segments","capture_deployments","capture_periods"))).isEqualTo(before);assertThat(receipts()).isZero();
+    }
+    @Test void renewalCommittedWhileAmendmentWaitsForSessionLockIsObserved() throws Exception {
+        var old=seed("renewal-race");var db=dbNow();
+        store.insertSession(old,"sha256:"+"f".repeat(64),"renewing-holder",db.plusSeconds(60),db.minusSeconds(60),100);
+        var locked=new java.util.concurrent.CountDownLatch(1);var renew=new java.util.concurrent.CountDownLatch(1);
+        var writer=java.util.concurrent.CompletableFuture.runAsync(()->new org.springframework.transaction.support.TransactionTemplate(transactions).executeWithoutResult(s->{
+            jdbc.sql("select session_id from marketdata.capture_sessions where session_id=:id for update").param("id",old.sessionId()).query(UUID.class).single();locked.countDown();await(renew);
+            var actual=dbNow();store.fence(old.sessionId(),"renewing-holder",actual,actual.plusSeconds(120));
+        }));
+        await(locked);var attempt=java.util.concurrent.CompletableFuture.supplyAsync(()->{
+            try{amendments.amend(CaptureAuthorityAmendmentTest.amendment("renewal-race"));return "COMMITTED";}catch(IllegalStateException e){return e.getMessage();}
+        });
+        try {
+            var deadline=System.nanoTime()+java.util.concurrent.TimeUnit.SECONDS.toNanos(5);boolean waiting=false;
+            while(System.nanoTime()<deadline&&!waiting) {
+                waiting=jdbc.sql("select exists(select 1 from pg_stat_activity where wait_event_type='Lock' and query like '%order by session_id for update%')").query(Boolean.class).single();
+                if(!waiting)Thread.sleep(10);
+            }
+            assertThat(waiting).as("amendment actually waits for the session row lock").isTrue();
+        } finally {renew.countDown();}
+        writer.get(10,java.util.concurrent.TimeUnit.SECONDS);
+        var afterRenewal=rows(jdbc,List.of("capture_sessions","capture_periods"));
+        assertThat(attempt.get(10,java.util.concurrent.TimeUnit.SECONDS)).isEqualTo("CAPTURE_AUTHORITY_ACTIVE_WORKLOAD");
+        assertThat(rows(jdbc,List.of("capture_sessions","capture_periods"))).isEqualTo(afterRenewal);assertThat(receipts()).isZero();assertThat(store.reserved("renewal-race")).isEqualTo(133);
+    }
+    private java.time.Instant dbNow(){return jdbc.sql("select clock_timestamp() as now").query((r,n)->r.getTimestamp("now").toInstant()).single();}
     private long receipts(){return jdbc.sql("select count(*) from marketdata.capture_authority_amendments").query(Long.class).single();}
     private static void await(java.util.concurrent.CountDownLatch go){try{if(!go.await(10,java.util.concurrent.TimeUnit.SECONDS))throw new AssertionError("bounded start");}catch(InterruptedException e){Thread.currentThread().interrupt();throw new AssertionError(e);}}
     private static Map<String,List<String>> rows(org.springframework.jdbc.core.simple.JdbcClient sql,List<String> names){var result=new TreeMap<String,List<String>>();for(var name:names)result.put(name,sql.sql("select row_to_json(t)::text from marketdata."+name+" t order by row_to_json(t)::text collate \"C\"").query(String.class).list());return result;}

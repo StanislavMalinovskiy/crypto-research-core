@@ -131,6 +131,12 @@ An explicitly owner-authorized prospective amendment SHALL bind the exact retain
 - **THEN** equal repeat SHALL produce no additional reservation/receipt and conflicting input SHALL fail atomically before provider work
 - **AND** concurrent reservation/amendment, arithmetic overflow, active workload or expired period SHALL NOT cause partial authority or lost counters.
 
+#### Scenario: Expired unleased legacy session does not fabricate closure
+- **WHEN** first amendment admission examines retained RUNNING sessions under the existing provider advisory lock, period row lock and deterministic session row locks
+- **THEN** it SHALL use one PostgreSQL clock reading after those locks, inside the same transaction, to classify the rows; only an unlinked legacy manual row with both original `ends_at` and `locked_until` less than or equal to that reading MAY cease blocking the amendment
+- **AND** a future original end, unexpired lease, any continuous-segment linkage or provider RUNNING deployment SHALL still reject first amendment admission atomically
+- **AND** ignored legacy rows, RUNNING state, configurations, raw, receipts and reservations/overage SHALL remain unchanged; their closing SHALL remain UNKNOWN, not successful retirement, recovery or reopened work.
+
 #### Scenario: Forward V16 preserves historical evidence
 - **WHEN** populated V9/V13/V14/V15 evidence is migrated forward to V16 or complete-schema application tests start
 - **THEN** successful migration counts/lists/table inventory SHALL reflect the one additive amendment table while every historical raw/authority/config/fingerprint/clock remains unchanged by migration
