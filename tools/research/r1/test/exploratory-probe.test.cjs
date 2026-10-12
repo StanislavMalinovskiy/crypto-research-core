@@ -21,7 +21,7 @@ function memory() {
 }
 function deps(store = memory(), alter) {
   let time = 0; const calls = [];
-  return { store, calls, now: () => time, sleep: async ms => { time += ms; }, source: { commit: 'a'.repeat(40), dirty: true },
+  return { store, calls, now: () => time, sleep: async ms => { time += ms; }, runtime: p.CONFIG.runtime, source: { commit: 'a'.repeat(40), dirty: true },
     transport: async (spec, options) => {
       calls.push({ spec, time }); const unix = spec.anchor ? Date.parse(spec.anchor) / 1000 : header.timestamp;
       const h = { ...header, number: spec.slot || 100, timestamp: unix };

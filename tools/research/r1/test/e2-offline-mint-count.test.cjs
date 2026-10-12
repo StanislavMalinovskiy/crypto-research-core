@@ -104,7 +104,8 @@ test('Whole offline clock rollback deadline and output overflow stop without par
 function stress() {
   const started = Date.now(), f = fixture(40000), declared = f.roots.reduce((sum, root) => sum + root.pins.reduce((n, p) => n + p[0], 0), 0);
   assert.ok(declared <= 200000000); for (const root of f.roots) for (const [n] of root.pins) assert.ok(n <= 64000000);
-  const r = x.runCli(['--enable-offline'], f); assert.equal(r.code, null); assert.equal(r.inputRows, 200000); assert.equal(r.uniqueLocators, 200000);
+  const r = withinAuthorizedEpoch(now => x.runCli(['--enable-offline'], { ...f, now }));
+  assert.equal(r.code, null); assert.equal(r.inputRows, 200000); assert.equal(r.uniqueLocators, 200000);
   assert.equal(r.distinctObservedPools, 200000); assert.equal(r.provisionalStudiedMints, 200000); assert.equal(r.accounting.files, 15);
   const outputBytes = Buffer.byteLength(x.serialize(r)), elapsedMs = Date.now() - started, nativePeakRssBytes = process.resourceUsage().maxRSS * 1024;
   assert.ok(r.accounting.peakHeapBytes < 1024 * 1024 * 1024); assert.ok(elapsedMs <= 300000); assert.ok(outputBytes <= 1000000);
@@ -112,10 +113,28 @@ function stress() {
     files: 15, inputBytes: r.accounting.bytes, maxCreationFileBytes: Math.max(...f.roots.map(root => root.pins[2][0])), heapLimitMB: 1024,
     peakHeapBytes: r.accounting.peakHeapBytes, peakRssBytes: r.accounting.peakRssBytes, nativePeakRssBytes, elapsedMs, inspectElapsedMs: r.accounting.elapsedMs, outputBytes, nativeExit: 0 };
 }
+function withinAuthorizedEpoch(action) {
+  const actualNow = Date.now, actualStarted = actualNow(), authorizedStart = Date.parse('2026-10-10T12:00:00.000Z');
+  const controlledNow = () => authorizedStart + (actualNow() - actualStarted);
+  Date.now = controlledNow;
+  try { return action(controlledNow); }
+  finally { Date.now = actualNow; }
+}
 test('Full valid200000 unique-state rows fit15inputs200MB1024MBheap within5min and aggregate output', { timeout: 300000 }, () => {
   const { spawnSync } = require('node:child_process'); const child = spawnSync(process.execPath, ['--max-old-space-size=1024', '-e',
     "const r=require('./tools/research/r1/test/e2-offline-mint-count.test.cjs').stress();console.log(JSON.stringify(r));process.exit(0);"], { cwd: require('node:path').resolve(__dirname, '../../../..'), encoding: 'utf8', timeout: 300000, maxBuffer: 1000000 });
   assert.equal(child.status, 0, child.stderr); const metrics = JSON.parse(child.stdout.trim()); assert.equal(metrics.rows, 200000); assert.ok(metrics.inputBytes <= 200000000);
   process.stdout.write('STRESS_METRICS ' + JSON.stringify(metrics) + '\n');
+});
+test('Offline CLI rejects expired authorization before reading any input', () => {
+  const { spawnSync } = require('node:child_process');
+  const modulePath = JSON.stringify(require.resolve('../e2-offline-mint-count.cjs'));
+  const script = `const x=require(${modulePath});let reads=0;Date.now=()=>Date.parse('2026-10-11T00:00:00.000Z');` +
+    `const r=x.runCli(['--enable-offline'],{reader(){reads++;throw Error('UNEXPECTED_READ')}});` +
+    `console.log(JSON.stringify({code:r.code,status:r.status,reads}));`;
+  const child = spawnSync(process.execPath, ['--max-old-space-size=1024', '-e', script], {
+    cwd: require('node:path').resolve(__dirname, '../../../..'), encoding: 'utf8', timeout: 10000, maxBuffer: 1000000 });
+  assert.equal(child.status, 0, child.stderr);
+  assert.deepEqual(JSON.parse(child.stdout.trim()), { code: 'EXPIRY', status: 'STOPPED', reads: 0 });
 });
 module.exports = { fixture, stress };

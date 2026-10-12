@@ -13,6 +13,9 @@ public class PumpSwapCaptureSettings {
 	private boolean continuousEnabled;
 	private String continuousConfigurationFile;
 	private String authorityAmendmentFile;
+	private String periodContinuationFile;
+	public String getPeriodContinuationFile() {return periodContinuationFile;}
+	public void setPeriodContinuationFile(String file) {periodContinuationFile=file;}
 	public String getAuthorityAmendmentFile() {return authorityAmendmentFile;}
 	public void setAuthorityAmendmentFile(String file) {authorityAmendmentFile=file;}
 	public boolean isContinuousEnabled() { return continuousEnabled; }

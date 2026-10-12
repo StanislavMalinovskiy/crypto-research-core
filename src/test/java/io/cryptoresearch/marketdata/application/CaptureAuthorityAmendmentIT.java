@@ -131,7 +131,7 @@ class CaptureAuthorityAmendmentIT {
         sql.sql("update marketdata.capture_sessions set state='STOPPED',reason='OLD_FAILURE'").update();sql.sql("update marketdata.capture_periods set known_overage_hundredths=13").update();
         var historical=sql.sql("select tablename from pg_tables where schemaname='marketdata' order by tablename collate \"C\"").query(String.class).list();
         var before=rows(sql,historical);
-        assertThat(org.flywaydb.core.Flyway.configure().dataSource(isolated).locations("classpath:db/migration").load().migrate().migrationsExecuted).isEqualTo(1);
+        assertThat(org.flywaydb.core.Flyway.configure().dataSource(isolated).locations("classpath:db/migration").load().migrate().migrationsExecuted).isEqualTo(2);
         assertThat(rows(sql,historical)).isEqualTo(before);
         var request=CaptureAuthorityAmendmentTest.amendment("populated");
         tx.executeWithoutResult(s->new AmendCapturePeriodAuthorityUseCase(oldStore,clock).amend(request));

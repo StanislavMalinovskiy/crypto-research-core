@@ -26,7 +26,7 @@ class PumpSwapRawOperationDecoderIT {
         var first=api.decodePumpSwapOperations(batch);assertThat(first.operations()).hasSize(1);
         assertThat(api.decodePumpSwapOperations(batch)).isEqualTo(first);assertThat(tableCounts()).isEqualTo(before);
         assertThat(jdbc.sql("select version() ").query(String.class).single()).contains("PostgreSQL 18.6");
-        assertThat(jdbc.sql("select count(*) from flyway_schema_history where success").query(Integer.class).single()).isEqualTo(16);
+        assertThat(jdbc.sql("select count(*) from flyway_schema_history where success").query(Integer.class).single()).isEqualTo(17);
     }
     private java.util.Map<String,Long> tableCounts(){
         var result=new java.util.TreeMap<String,Long>();

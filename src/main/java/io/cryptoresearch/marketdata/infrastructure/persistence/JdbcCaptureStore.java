@@ -25,6 +25,7 @@ public class JdbcCaptureStore {
 	private final ObjectMapper json;
 	private volatile boolean continuousSchemaPresent;
 	private volatile boolean amendmentSchemaPresent;
+	private volatile boolean continuationSchemaPresent;
 	public JdbcCaptureStore(JdbcClient jdbc, ObjectMapper json) { this.jdbc = jdbc; this.json = json; }
     public void monitorTimeout() {jdbc.sql("set local statement_timeout='10s'").update();}
     public Optional<MonitorHeader> monitorHeader(UUID id) {
@@ -148,13 +149,39 @@ public class JdbcCaptureStore {
 	}
 	public void period(Configuration c, long ceiling, long opening) {
 		if(amendmentSchemaPresent() && jdbc.sql("select exists(select 1 from marketdata.capture_authority_amendments where provider=:provider and account_period<>:period)")
-			.param("provider",c.provider()).param("period",c.authority().accountPeriod()).query(Boolean.class).single())throw new IllegalStateException("CAPTURE_AUTHORITY_PERIOD_ALIAS_REJECTED");
+			.param("provider",c.provider()).param("period",c.authority().accountPeriod()).query(Boolean.class).single()
+			&& !continuationAuthority(c))throw new IllegalStateException("CAPTURE_AUTHORITY_PERIOD_ALIAS_REJECTED");
+		bootstrapContinuationPeriod(c,ceiling,opening);
+	}
+	/** Called only after explicit owning continuation eligibility; no generic alias-bypass parameter. */
+	public void bootstrapContinuationPeriod(Configuration c,long ceiling,long opening) {
 		jdbc.sql("""
 				INSERT INTO marketdata.capture_periods(account_period,authority_json,ceiling_hundredths,reserved_hundredths,period_end)
 				VALUES (:period,:authority,:ceiling,:opening,:end)
 				ON CONFLICT DO NOTHING
 				""").param("period", c.authority().accountPeriod()).param("authority", periodAuthority(c))
 				.param("ceiling", ceiling).param("opening", opening).param("end", time(c.authority().periodEnd())).update();
+	}
+	private boolean continuationAuthority(Configuration c) {
+		if(!continuationSchemaPresent)continuationSchemaPresent=jdbc.sql("select to_regclass('marketdata.capture_period_continuations') is not null").query(Boolean.class).single();
+		if(!continuationSchemaPresent)return false;
+		var encoded=jdbc.sql("select request_json from marketdata.capture_period_continuations where provider=:provider and account_period=:period")
+			.param("provider",c.provider()).param("period",c.authority().accountPeriod()).query(String.class).optional();
+		if(encoded.isEmpty())return false;
+		var r=json.readValue(encoded.get(),io.cryptoresearch.marketdata.api.PumpSwapCapturePeriodContinuation.class);
+		return r.successor().template().equals(c);
+	}
+	/** Provider and period locks are held by the owning use case; classify after all session locks. */
+	public Instant inactiveProviderDatabaseTime(String provider) {
+		var sessions=jdbc.sql("""
+			select session_id,ends_at,locked_until from marketdata.capture_sessions
+			where state='RUNNING' and configuration_json::jsonb->>'provider'=:provider order by session_id for update
+			""").param("provider",provider).query((r,n)->new Object[]{r.getObject("session_id",UUID.class),instant(r,"ends_at"),instant(r,"locked_until")}).list();
+		var databaseNow=jdbc.sql("select clock_timestamp() as sampled_at").query((r,n)->instant(r,"sampled_at")).single();
+		for(var session:sessions)if(((Instant)session[1]).isAfter(databaseNow)||((Instant)session[2]).isAfter(databaseNow)
+			||jdbc.sql("select exists(select 1 from marketdata.capture_segments where session_id=:id)").param("id",session[0]).query(Boolean.class).single())
+			throw new IllegalStateException("CONTINUATION_ACTIVE_WORKLOAD");
+		return databaseNow;
 	}
 	public boolean reservePeriod(Configuration c, long reservation) {
 		String authorityCondition="authority_json=:authority";

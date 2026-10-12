@@ -51,9 +51,10 @@ public class ContinuousCaptureLedgerUseCase {
 		var problem=CaptureBudget.launchProblem(c.template());if(!problem.isEmpty())throw new IllegalArgumentException(problem);
 		var text=store.encode(c);if(text.getBytes(java.nio.charset.StandardCharsets.UTF_8).length>1000000)throw new IllegalArgumentException("CAPTURE_CONFIGURATION_BYTE_LIMIT");
 		capture.providerAdmissionLock(c.template().provider());var at=now();var until=at.plusSeconds(c.template().limits().leaseSeconds());
+		store.requireReceiptedEnrollment(c);
 		capture.period(c.template(),CaptureBudget.ceiling(c.template()),Math.addExact(c.template().authority().openingHundredths(),c.template().authority().otherActivityHundredths()));
 		store.insert(c,new CanonicalFingerprint().field("version","continuous-configuration-v1").field("configuration",text).finish(),holder,until);
-		var d=store.lockProvider(c.template().provider());
+		var d=store.lockDeployment(c.template().provider(),c.deploymentKey());
 		if(!d.configuration().equals(c))throw new IllegalStateException("CONTINUOUS_CONFIGURATION_CONFLICT");
 		store.lockPeriod(c.template().authority().accountPeriod());
 		if(!d.state().equals("RUNNING"))return new Admission(c,d.fence(),null,false,d.reason());
@@ -83,6 +84,7 @@ public class ContinuousCaptureLedgerUseCase {
 		capture.insertSession(configuration,legacy.fingerprint(configuration),f.sessionHolder(),until,CaptureLedgerUseCase.end(configuration),allowance.reservedHundredths());
 		store.insertSegment(c,ordinal,configuration,legacy.fingerprint(configuration),allowance);
 		if(previous.isPresent())store.boundary(previous.get(),configuration,at);
+		else store.periodBoundary(c,configuration,at);
 		return new Admission(c,f,store.segment(c.deploymentKey(),ordinal),false,"");
 	}
 	private Admission stop(Configuration c,Fence f,Segment s,String reason) {store.terminal(f,reason);return new Admission(c,f,s,false,reason);}

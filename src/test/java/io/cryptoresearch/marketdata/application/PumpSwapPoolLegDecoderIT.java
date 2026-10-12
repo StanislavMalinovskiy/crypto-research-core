@@ -30,7 +30,7 @@ class PumpSwapPoolLegDecoderIT {
         assertThat(api.decodePumpSwapPoolLegs(request)).isEqualTo(result);
         assertThat(api.decodePumpSwapOperations(batch)).isEqualTo(old);assertThat(counts()).isEqualTo(before);
         assertThat(jdbc.sql("select version()").query(String.class).single()).contains("PostgreSQL 18.6");
-        assertThat(jdbc.sql("select count(*) from flyway_schema_history where success").query(Integer.class).single()).isEqualTo(16);
+        assertThat(jdbc.sql("select count(*) from flyway_schema_history where success").query(Integer.class).single()).isEqualTo(17);
     }
     private Map<String,Long> counts() {
         var result=new TreeMap<String,Long>();

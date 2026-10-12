@@ -54,15 +54,15 @@ class PumpSwapContinuousCaptureMigrationIT {
 			""").param("digest","sha256:"+"1".repeat(64)).update();
 		var historical=tables();var before=rows(historical);
 		var migrated=Flyway.configure().dataSource(dataSource).locations("classpath:db/migration").load().migrate();
-		assertThat(migrated.migrationsExecuted).isEqualTo(2);assertThat(rows(historical)).isEqualTo(before);
+		assertThat(migrated.migrationsExecuted).isEqualTo(3);assertThat(rows(historical)).isEqualTo(before);
 		assertThat(api.persistedPumpSwapOperations(batch.batchKey()).orElseThrow()).isEqualTo(batch);
-		assertThat(tables()).containsExactlyInAnyOrderElementsOf(java.util.stream.Stream.concat(historical.stream(),java.util.stream.Stream.of("capture_authority_amendments","capture_deployments","capture_segments")).toList());
+		assertThat(tables()).containsExactlyInAnyOrderElementsOf(java.util.stream.Stream.concat(historical.stream(),java.util.stream.Stream.of("capture_authority_amendments","capture_deployments","capture_period_continuations","capture_segments")).toList());
 		assertThat(jdbc.sql("select count(*) from marketdata.capture_deployments").query(Long.class).single()).isZero();
 		assertThat(jdbc.sql("select count(*) from marketdata.capture_segments").query(Long.class).single()).isZero();
 		assertThat(jdbc.sql("select count(*) from pg_constraint where conrelid in ('marketdata.capture_deployments'::regclass,'marketdata.capture_segments'::regclass) and contype='f'").query(Integer.class).single()).isEqualTo(4);
 		assertThat(jdbc.sql("select count(*) from pg_constraint where conrelid in ('marketdata.capture_deployments'::regclass,'marketdata.capture_segments'::regclass) and contype='f' and (confdeltype<>'a' or confupdtype<>'a')").query(Integer.class).single()).isZero();
 		assertThat(jdbc.sql("select count(*) from information_schema.columns where table_schema='marketdata' and table_name in ('capture_deployments','capture_segments') and column_name in ('deployment_key','provider','account_period','owner_authorization','holder','cursor_signature','last_batch') and collation_name is distinct from 'C'").query(Integer.class).single()).isZero();
-		assertThat(jdbc.sql("select version from flyway_schema_history where success order by installed_rank desc limit 1").query(String.class).single()).isEqualTo("16");
+		assertThat(jdbc.sql("select version from flyway_schema_history where success order by installed_rank desc limit 1").query(String.class).single()).isEqualTo("17");
 		assertThat(rows(historical)).isEqualTo(before);
 	}
 	List<String> tables() {return jdbc.sql("select tablename from pg_tables where schemaname='marketdata' order by tablename collate \"C\"").query(String.class).list();}

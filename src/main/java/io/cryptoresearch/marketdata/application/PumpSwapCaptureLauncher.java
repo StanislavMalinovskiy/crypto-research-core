@@ -18,7 +18,14 @@ public class PumpSwapCaptureLauncher implements ApplicationRunner {
 	private final ObjectMapper json;
 	private org.springframework.beans.factory.ObjectProvider<PumpSwapContinuousCaptureCoordinator> continuous;
 	private org.springframework.beans.factory.ObjectProvider<AmendCapturePeriodAuthorityUseCase> amendment;
+	private org.springframework.beans.factory.ObjectProvider<EnrollCapturePeriodContinuationUseCase> continuation;
 	@org.springframework.beans.factory.annotation.Autowired
+	public PumpSwapCaptureLauncher(PumpSwapCaptureSettings settings,PumpSwapPoolCollector collector,ObjectMapper json,
+			org.springframework.beans.factory.ObjectProvider<PumpSwapContinuousCaptureCoordinator> continuous,
+			org.springframework.beans.factory.ObjectProvider<AmendCapturePeriodAuthorityUseCase> amendment,
+			org.springframework.beans.factory.ObjectProvider<EnrollCapturePeriodContinuationUseCase> continuation) {
+		this(settings,collector,json,continuous,amendment);this.continuation=continuation;
+	}
 	public PumpSwapCaptureLauncher(PumpSwapCaptureSettings settings,PumpSwapPoolCollector collector,ObjectMapper json,
 			org.springframework.beans.factory.ObjectProvider<PumpSwapContinuousCaptureCoordinator> continuous,
 			org.springframework.beans.factory.ObjectProvider<AmendCapturePeriodAuthorityUseCase> amendment) {
@@ -35,6 +42,9 @@ public class PumpSwapCaptureLauncher implements ApplicationRunner {
 		if(!settings.isEnabled()) return;
 		String reason;
 		try {
+			if(settings.getPeriodContinuationFile()!=null && !settings.getPeriodContinuationFile().isBlank()
+				&& (!settings.isContinuousEnabled() || (settings.getAuthorityAmendmentFile()!=null&&!settings.getAuthorityAmendmentFile().isBlank())))
+				throw new IllegalStateException("AMBIGUOUS_CAPTURE_LAUNCH_MODE");
 			if(settings.isContinuousEnabled() && settings.getConfigurationFile()!=null && !settings.getConfigurationFile().isBlank())
 				throw new IllegalStateException("AMBIGUOUS_CAPTURE_LAUNCH_MODE");
 			if(settings.isContinuousEnabled()) {
@@ -44,6 +54,7 @@ public class PumpSwapCaptureLauncher implements ApplicationRunner {
 				var configuration=json.readValue(Files.readString(path),io.cryptoresearch.marketdata.api.PumpSwapContinuousCapture.Configuration.class);
 				if(continuous==null)throw new IllegalStateException("CONTINUOUS_CAPTURE_UNAVAILABLE");
 				applyAmendment();
+				applyContinuation(configuration);
 				continuous.getObject().start(configuration);reason="CONTINUOUS_CAPTURE_STARTED";
 				LoggerFactory.getLogger(PumpSwapCaptureLauncher.class).info("PumpSwap capture startup {}",reason);return;
 			}
@@ -55,6 +66,17 @@ public class PumpSwapCaptureLauncher implements ApplicationRunner {
 			var status=collector.start(configuration); reason=status.state()+":"+status.reason();
 		} catch(Exception invalid) { reason="BLOCKED_FOR_LAUNCH:"+io.cryptoresearch.marketdata.infrastructure.JdkPumpSwapTransport.safeReason(invalid); }
 		LoggerFactory.getLogger(PumpSwapCaptureLauncher.class).info("PumpSwap capture startup {}",reason);
+	}
+	private void applyContinuation(io.cryptoresearch.marketdata.api.PumpSwapContinuousCapture.Configuration configuration) throws java.io.IOException {
+		var file=settings.getPeriodContinuationFile();if(file==null||file.isBlank())return;
+		if(continuation==null)throw new IllegalStateException("PERIOD_CONTINUATION_UNAVAILABLE");
+		var path=Path.of(file);if(Files.size(path)>1000000)throw new IllegalStateException("CAPTURE_CONFIGURATION_BYTE_LIMIT");
+		var text=Files.readString(path);var secret=settings.getSecret();
+		if(secret!=null&&!secret.isBlank()&&text.contains(secret))throw new IllegalStateException("SECRET_IN_CAPTURE_CONFIGURATION");
+		var r=json.readValue(text,io.cryptoresearch.marketdata.api.PumpSwapCapturePeriodContinuation.class);
+		if(secret!=null&&!secret.isBlank()&&decodedSecret(json.readTree(json.writeValueAsString(r)),secret))throw new IllegalStateException("SECRET_IN_CAPTURE_CONFIGURATION");
+		if(!configuration.equals(r.successor()))throw new IllegalStateException("CONTINUATION_CONFIGURATION_CONFLICT");
+		continuation.getObject().enroll(r);
 	}
 	private void applyAmendment() throws java.io.IOException {
 		var file=settings.getAuthorityAmendmentFile();if(file==null || file.isBlank())return;

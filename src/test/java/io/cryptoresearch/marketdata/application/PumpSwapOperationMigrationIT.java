@@ -48,8 +48,8 @@ class PumpSwapOperationMigrationIT {
         assertThat(jdbc.sql("select payload from marketdata.raw_transactions").query(String.class).single()).isEqualTo(" {\"literal\":\"raw bytes unchanged\"} ");
         assertThat(jdbc.sql("select fingerprint from marketdata.dataset_snapshots").query(String.class).single()).isEqualTo("sha256:2a37888abef600233502fd570d39b2617b7776ab728a64746cfb52dfd3d3822d");
         var migrated=Flyway.configure().dataSource(dataSource).locations("classpath:db/migration").load().migrate();
-        assertThat(migrated.migrationsExecuted).isEqualTo(3);assertThat(legacy()).isEqualTo(before);
-        assertThat(jdbc.sql("select version from flyway_schema_history where success order by installed_rank desc limit 1").query(String.class).single()).isEqualTo("16");
+        assertThat(migrated.migrationsExecuted).isEqualTo(4);assertThat(legacy()).isEqualTo(before);
+        assertThat(jdbc.sql("select version from flyway_schema_history where success order by installed_rank desc limit 1").query(String.class).single()).isEqualTo("17");
         assertThat(jdbc.sql("select version()").query(String.class).single()).contains("PostgreSQL 18.6");
         assertThat(jdbc.sql("select count(*) from pg_tables where schemaname='marketdata' and tablename like 'pumpswap_%'").query(Integer.class).single()).isEqualTo(4);
         assertThat(jdbc.sql("select count(*) from information_schema.columns where table_schema='marketdata' and table_name like 'pumpswap_%' and column_name in('revision_key','canonical_key','transaction_revision_key','batch_key','chain_id','transaction_value','provider','raw_digest','content_digest') and collation_name is distinct from 'C'").query(Integer.class).single()).isZero();
