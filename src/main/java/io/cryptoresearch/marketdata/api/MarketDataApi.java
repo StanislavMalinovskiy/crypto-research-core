@@ -15,6 +15,7 @@ import io.cryptoresearch.kernel.api.WalletAddress;
 
 /** Synchronous public boundary for recorded replay and point-in-time market data. */
 public interface MarketDataApi {
+    PumpSwapPoolLegs.Result decodePumpSwapPoolLegs(PumpSwapPoolLegs.Request request);
 
     PumpSwapOperations.Result decodePumpSwapOperations(PumpSwapOperations.RecordedBatch batch);
     PumpSwapOperationPersistence.StoredBatch persistPumpSwapOperations(PumpSwapOperations.RecordedBatch batch);
