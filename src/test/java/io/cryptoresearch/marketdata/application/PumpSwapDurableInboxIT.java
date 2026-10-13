@@ -125,15 +125,34 @@ class PumpSwapDurableInboxIT {
     }
     @TestConfiguration static class Clocks { @Bean @Primary MutableUtcClock inboxClock() { return new MutableUtcClock(START); } }
 
+    private void awaitHealthyPong(Object run,Object transport,long deadline) throws Exception {
+        var fixed=clock.instant();
+        while(true) {
+            var pending=field(transport,"expectedPong");
+            var next=(Instant)field(transport,"nextPing");
+            if(pending==null && next!=null && fixed.isBefore(next) && field(transport,"expectedPong")==null) return;
+            assertThat(System.nanoTime()).as("actual loopback pong completes at frozen time before the next clock step").isLessThan(deadline);
+            assertThat(((java.util.concurrent.atomic.AtomicReference<?>)field(run,"interruption")).get()).as("healthy-clock fixture must not trigger a transport interruption").isNull();
+            Thread.sleep(5);
+        }
+    }
     private void advanceHealthyWithActualLease(UUID session,Instant target) throws Exception {
         var deadline=System.nanoTime()+TimeUnit.SECONDS.toNanos(30);
+        var run=((java.util.concurrent.atomic.AtomicReference<?>)field(collector,"active")).get();
+        var transport=field(run,"transport");
+        awaitHealthyPong(run,transport,deadline);
         while(clock.instant().isBefore(target)) {
             assertThat(System.nanoTime()).as("controlled clock advances only inside the actual renewable session lease").isLessThan(deadline);
             var until=jdbc.sql("select locked_until from marketdata.capture_sessions where session_id=:id").param("id",session).query(java.time.OffsetDateTime.class).single().toInstant();
             boolean advanced=false;
             synchronized(clock) {
-                var now=clock.instant(); var step=Math.min(15000,java.time.Duration.between(now,until).toMillis()-2000);
+                var now=clock.instant(); var step=Math.min(9000,java.time.Duration.between(now,until).toMillis()-2000);
                 if(step>=1000) { var next=now.plusMillis(step); if(next.isAfter(target))next=target; if(next.isBefore(until)) {clock.set(next);advanced=true;} }
+            }
+            if(advanced) {
+                // Lease renewal alone is not a healthy heartbeat: never advance virtual time
+                // through the real ten-second pong deadline while loopback I/O is still pending.
+                awaitHealthyPong(run,transport,deadline);
             }
             Thread.sleep(advanced?20:50);
         }
