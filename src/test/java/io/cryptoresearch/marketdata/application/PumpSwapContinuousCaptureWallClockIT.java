@@ -95,7 +95,7 @@ class PumpSwapContinuousCaptureWallClockIT {
 		}
 	}
 	Process child(Path config,String rpc,String websocket,Path log) throws Exception {
-		var java=Path.of(System.getProperty("java.home"),"bin","java.exe");
+		var java=Path.of(System.getProperty("java.home"),"bin",System.getProperty("os.name").startsWith("Windows")?"java.exe":"java");
 		return new ProcessBuilder(java.toString(),"-cp",System.getProperty("surefire.test.class.path",System.getProperty("java.class.path")),Child.class.getName(),config.toString(),postgres.getJdbcUrl(),postgres.getUsername(),postgres.getPassword(),rpc,websocket)
 			.redirectErrorStream(true).redirectOutput(log.toFile()).start();
 	}

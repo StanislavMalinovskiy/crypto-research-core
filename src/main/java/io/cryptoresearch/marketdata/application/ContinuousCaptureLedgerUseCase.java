@@ -46,7 +46,7 @@ public class ContinuousCaptureLedgerUseCase {
 				l.queueItems(),l.queueBytes(),l.timeoutSeconds(),l.retries(),l.reconnects(),l.recoveryPages(),l.recoverySeconds(),l.requestsPerSecond(),l.leaseSeconds()),
 			new PumpSwapCapture.Authority(a.accountPeriod(),a.periodEnd(),a.source(),a.openingHundredths(),a.otherActivityHundredths(),a.ceilingHundredths(),a.ceilingUsd(),a.usdPerMillionCu(),a.subscriptionCuPerByte(),authorization,a.retentionAllowed(),a.exclusiveAllocation()));
 	}
-	@Transactional(propagation=Propagation.REQUIRES_NEW,timeout=10)
+	@Transactional(propagation=Propagation.REQUIRES_NEW,isolation=Isolation.READ_COMMITTED,timeout=10)
 	public Admission admit(Configuration c,String holder) {
 		var problem=CaptureBudget.launchProblem(c.template());if(!problem.isEmpty())throw new IllegalArgumentException(problem);
 		var text=store.encode(c);if(text.getBytes(java.nio.charset.StandardCharsets.UTF_8).length>1000000)throw new IllegalArgumentException("CAPTURE_CONFIGURATION_BYTE_LIMIT");

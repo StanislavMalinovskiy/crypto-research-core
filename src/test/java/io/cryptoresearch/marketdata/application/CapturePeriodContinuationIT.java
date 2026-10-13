@@ -168,7 +168,7 @@ class CapturePeriodContinuationIT {
         tx.executeWithoutResult(s->{c.period(old.template(),CaptureBudget.ceiling(old.template()),120);d.insert(old,"sha256:"+"d".repeat(64),"historical",db.minusSeconds(60));c.insertSession(old.template(),"sha256:"+"e".repeat(64),"old",db.minusSeconds(60),db.minusSeconds(60),100);});
         var names=sql.sql("select tablename from pg_tables where schemaname='marketdata' order by tablename").query(String.class).list();
         var before=new TreeMap<String,List<String>>();for(var name:names)before.put(name,sql.sql("select row_to_json(t)::text from marketdata."+name+" t order by row_to_json(t)::text collate \"C\"").query(String.class).list());
-        assertThat(org.flywaydb.core.Flyway.configure().dataSource(ds).locations("classpath:db/migration").load().migrate().migrationsExecuted).isEqualTo(1);
+        assertThat(org.flywaydb.core.Flyway.configure().dataSource(ds).locations("classpath:db/migration").load().migrate().migrationsExecuted).isEqualTo(2);
         for(var name:names)assertThat(sql.sql("select row_to_json(t)::text from marketdata."+name+" t order by row_to_json(t)::text collate \"C\"").query(String.class).list()).isEqualTo(before.get(name));
         assertThat(d.continuationSchemaPresent()).isTrue();
         assertThat(sql.sql("select count(*) from pg_constraint where conrelid='marketdata.capture_period_continuations'::regclass and contype='f'").query(Integer.class).single()).isEqualTo(3);

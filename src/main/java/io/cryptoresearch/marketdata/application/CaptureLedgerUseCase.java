@@ -159,7 +159,45 @@ public class CaptureLedgerUseCase {
 	public java.util.Optional<String> boundary(UUID session,String pool) { return store.boundary(session,pool); }
 	public List<Gap> gaps(UUID session) { return store.gaps(session); }
 	public List<Disposition> dispositions(UUID session) { return store.dispositions(session); }
-	public List<Disposition> pending(Configuration c) { return store.pending(c.sessionId(),Math.min(100,c.limits().queueItems()),c.limits().queueBytes()); }
+	public List<Disposition> pending(Configuration c) { return CaptureBudget.inbox(c)?store.pendingInbox(c.sessionId(),Math.min(100,c.limits().queueItems()),c.limits().queueBytes()):store.pending(c.sessionId(),Math.min(100,c.limits().queueItems()),c.limits().queueBytes()); }
+	public record InboxBacklog(long count,Instant oldest) {
+		public String problem(Instant at) { return count>=5000?"CAPTURE_PENDING_COUNT_LIMIT":oldest!=null && !at.isBefore(oldest.plusSeconds(1800))?"CAPTURE_PENDING_AGE_LIMIT":""; }
+	}
+	@Transactional(readOnly=true,timeout=10) public InboxBacklog inboxBacklog(Configuration c) { return store.inboxBacklog(c.sessionId()); }
+	public record InboxBatch(String rows,long workspaceBytes,int frames) { }
+	/** The encoded workspace and exact incoming representations share the fixed v7 bound. */
+	public InboxBatch inboxBatch(Configuration c,List<io.cryptoresearch.marketdata.infrastructure.JdkPumpSwapTransport.Notification> notifications) {
+		if(!CaptureBudget.inbox(c) || notifications.isEmpty() || notifications.size()>128) throw new IllegalArgumentException("CAPTURE_INBOX_FRAME_LIMIT");
+		var rows=new java.util.ArrayList<java.util.Map<String,Object>>(); long payloadBytes=0,encodedBytes=2; var ordinal=0;
+		for(var n:notifications) {
+			if(n.slot()<0 || n.receivedAt()==null || c.pools().stream().noneMatch(p->p.address().equals(n.pool()))) throw new IllegalArgumentException("UNKNOWN_POOL_OR_SLOT");
+			if(n.account()==null) CaptureBudget.signature(n.signature());
+			else if(c.pools().stream().flatMap(p->p.accounts().stream()).noneMatch(n.account()::equals)) throw new IllegalArgumentException("UNKNOWN_ACCOUNT_OR_SLOT");
+			var row=new java.util.LinkedHashMap<String,Object>(); row.put("ord",ordinal++); row.put("pool",n.pool()); row.put("account",n.account()); row.put("sig",n.signature()); row.put("slot",n.slot());
+			row.put("data",n.payload()); row.put("envelope",n.envelope()); row.put("envelopeDigest",PayloadFingerprint.sha256(n.envelope())); row.put("received",n.receivedAt().truncatedTo(ChronoUnit.MICROS).toString());
+			if(n.account()!=null) { var data=tools.jackson.databind.json.JsonMapper.builder().build().readTree(n.payload()).path("data"); row.put("digest",PayloadFingerprint.sha256(n.payload())); row.put("encoding",data.isArray() && data.size()==2?data.get(1).asText():data.path("program").asText("UNKNOWN")); }
+			payloadBytes=Math.addExact(payloadBytes,n.envelope().getBytes(java.nio.charset.StandardCharsets.UTF_8).length+(long)n.payload().getBytes(java.nio.charset.StandardCharsets.UTF_8).length);
+			long rowBytes=2; var fields=0;
+			for(var entry:row.entrySet()) { if(fields++>0) rowBytes++; var value=entry.getValue(); rowBytes=Math.addExact(rowBytes,jsonStringBytes(entry.getKey())+1+(value==null?4:value instanceof String string?jsonStringBytes(string):value.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8).length)); }
+			encodedBytes=Math.addExact(encodedBytes,rowBytes+(rows.isEmpty()?0:1));
+			if(Math.addExact(payloadBytes,Math.multiplyExact(3L,encodedBytes))>Math.min(4000000,c.limits().queueBytes())) throw new IllegalStateException("CAPTURE_INBOX_WORKSPACE_LIMIT"); rows.add(row);
+		}
+		var encoded=tools.jackson.databind.json.JsonMapper.builder().build().writeValueAsString(rows);
+		// Count the previous collection candidate, current encoded String and transient UTF8 representation.
+		var workspace=Math.addExact(payloadBytes,Math.multiplyExact(3L,encoded.getBytes(java.nio.charset.StandardCharsets.UTF_8).length));
+		if(workspace>Math.min(4000000,c.limits().queueBytes())) throw new IllegalStateException("CAPTURE_INBOX_WORKSPACE_LIMIT");
+		return new InboxBatch(encoded,workspace,notifications.size());
+	}
+	private static long jsonStringBytes(String text) {
+		long bytes=2; for(var i=0;i<text.length();) { var point=text.codePointAt(i); i+=Character.charCount(point); bytes+=point=='"' || point=='\\' || point=='\b' || point=='\f' || point=='\n' || point=='\r' || point=='\t'?2:point<32?6:point<128?1:point<2048?2:point<65536?3:4; } return bytes;
+	}
+	@Transactional(timeout=10) public InboxBacklog admitInbox(Configuration c,String holder,InboxBatch batch,long requests,long received,long subscription,long retained,long rpc,boolean closing,Runnable guard) {
+		guard.run(); if(requests<0 || received<0 || subscription<0 || retained<0 || rpc<0) throw new IllegalArgumentException("NEGATIVE_CAPTURE_ACCOUNTING");
+		if(!store.captureAdvance(c,holder,now(),requests,received,subscription,retained,rpc,closing)) throw new IllegalStateException("CAPTURE_RESOURCE_LIMIT");
+		guard.run(); store.inbox(c.sessionId(),c,batch.rows(),now(),guard); guard.run();
+		if(!closing && !now().isBefore(end(c))) throw new IllegalStateException("CAPTURE_TIME_LIMIT");
+		store.fence(c.sessionId(),holder,now(),now().plusSeconds(c.limits().leaseSeconds())); guard.run(); return store.inboxBacklog(c.sessionId());
+	}
 	public java.util.Set<String> successfulPage(Configuration c,String pool,List<String> signatures) { return store.successfulPage(c.sessionId(),pool,signatures); }
 	@Transactional(readOnly=true,timeout=10) public List<JdbcCaptureStore.CaptureProof> reuseProofs(Configuration c,String signature) { return store.captureProofs(c.sessionId(),signature); }
 	@Transactional(timeout=10) public void reuseSource(Configuration c,String holder,String pool,String signature,String status,String digest,String receipt,boolean duplicate,Instant received,List<JdbcCaptureStore.CaptureProof> verified) {

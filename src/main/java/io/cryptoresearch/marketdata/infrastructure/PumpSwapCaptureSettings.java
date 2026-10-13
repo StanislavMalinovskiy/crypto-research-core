@@ -14,6 +14,9 @@ public class PumpSwapCaptureSettings {
 	private String continuousConfigurationFile;
 	private String authorityAmendmentFile;
 	private String periodContinuationFile;
+	private String samePeriodReplacementFile;
+	public String getSamePeriodReplacementFile() {return samePeriodReplacementFile;}
+	public void setSamePeriodReplacementFile(String file) {samePeriodReplacementFile=file;}
 	public String getPeriodContinuationFile() {return periodContinuationFile;}
 	public void setPeriodContinuationFile(String file) {periodContinuationFile=file;}
 	public String getAuthorityAmendmentFile() {return authorityAmendmentFile;}

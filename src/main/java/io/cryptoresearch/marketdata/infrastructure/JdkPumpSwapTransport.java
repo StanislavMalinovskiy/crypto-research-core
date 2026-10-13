@@ -33,6 +33,10 @@ public final class JdkPumpSwapTransport implements AutoCloseable {
 		default CompletableFuture<Void> websocketEvidence(String envelope,java.time.Instant receivedAt) {
 			evidence("WEBSOCKET",envelope,receivedAt); return CompletableFuture.completedFuture(null);
 		}
+		default boolean durableNotifications() { return false; }
+		default CompletableFuture<Void> websocketEvidence(Notification notification,CompletableFuture<Void> durableAck) {
+			return websocketEvidence(notification.envelope(),notification.receivedAt());
+		}
 	}
 	public record Response(String result, String envelope,java.time.Instant receivedAt) { }
 	public static final class UnsupportedTransactionVersion extends IllegalStateException {
@@ -243,14 +247,29 @@ public final class JdkPumpSwapTransport implements AutoCloseable {
 								if(last) {
 									var envelope=message.toString(); message.setLength(0); messageBytes=0; checkSecret(envelope);
 									var n=json.readTree(envelope);
-									var durable=accounting.websocketEvidence(envelope,messageReceivedAt);
+									Notification notification=null; Subscription typedSubscription=null;
+									RuntimeException invalid=null;
+									if(!n.has("id") && accounting.durableNotifications()) try {
+										var params=n.path("params"); typedSubscription=subscriptions.get(params.path("subscription").longValue());
+										if(typedSubscription==null) throw new IllegalStateException("UNKNOWN_SUBSCRIPTION");
+										var channel=typedSubscription.channel(); var slot=params.path("result").path("context").path("slot");
+										if(!slot.isIntegralNumber() || !slot.canConvertToLong() || slot.longValue()<0) throw new IllegalStateException("INVALID_NOTIFICATION_SLOT");
+										if(!params.path("result").has("value")) throw new IllegalStateException("INVALID_NOTIFICATION_VALUE");
+										var signature=channel.account()==null?params.path("result").path("value").path("signature").asText():null;
+										if(channel.account()==null) try { io.cryptoresearch.marketdata.application.CaptureBudget.signature(signature); } catch(IllegalArgumentException malformed) { throw new IllegalStateException("INVALID_NOTIFICATION_SIGNATURE"); }
+										notification=new Notification(channel.pool(),channel.account(),signature,slot.longValue(),ExactCaptureJson.value(envelope,"/params/result/value"),envelope,messageReceivedAt);
+									} catch(RuntimeException rejected) { invalid=rejected; }
+									var durable=notification==null?accounting.websocketEvidence(envelope,messageReceivedAt):accounting.websocketEvidence(notification,typedSubscription.durableAck());
 									durable.whenComplete((value,error)->{ if(error!=null) { var reason=safeReason(error instanceof CompletionException?error.getCause():error); failureSignal.completeExceptionally(new IllegalStateException(reason)); ws.abort(); interrupted.accept(reason); } });
+									if(invalid!=null) throw invalid;
 									if(n.has("id")) {
 										var request=pending.remove(n.path("id").longValue());
 										if(request==null || !n.path("result").isIntegralNumber() || n.path("result").longValue()<0 || subscriptions.putIfAbsent(n.path("result").longValue(),new Subscription(request.channel(),request.durableAck()))!=null)
 											throw new IllegalStateException("SUBSCRIPTION_REJECTED");
 										request.arrived().set(true);
 										durable.thenRun(()->{ if(!closed && !failureSignal.isDone()) request.durableAck().complete(null); });
+									} else if(accounting.durableNotifications()) {
+										admitted.add(durable); durable.whenComplete((v,e)->admitted.remove(durable));
 									} else {
 										var params=n.path("params"); var subscription=subscriptions.get(params.path("subscription").longValue());
 										if(subscription==null) throw new IllegalStateException("UNKNOWN_SUBSCRIPTION");

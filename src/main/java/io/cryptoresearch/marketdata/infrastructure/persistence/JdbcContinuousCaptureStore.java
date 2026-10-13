@@ -30,6 +30,7 @@ public class JdbcContinuousCaptureStore {
 	private final ObjectMapper json;
 	private final JdbcCaptureStore capture;
 	private volatile boolean continuationSchemaPresent;
+	private volatile boolean replacementSchemaPresent;
 	public JdbcContinuousCaptureStore(JdbcClient jdbc,ObjectMapper json,JdbcCaptureStore capture) {this.jdbc=jdbc;this.json=json;this.capture=capture;}
 	public String encode(Object o) {return json.writeValueAsString(o);}
 	public void timeout() {jdbc.sql("set local statement_timeout='10s'").update();jdbc.sql("set local lock_timeout='10s'").update();}
@@ -56,6 +57,133 @@ public class JdbcContinuousCaptureStore {
 	public boolean continuationSchemaPresent() {
 		if(!continuationSchemaPresent)continuationSchemaPresent=jdbc.sql("select to_regclass('marketdata.capture_period_continuations') is not null").query(Boolean.class).single();
 		return continuationSchemaPresent;
+	}
+	public boolean replacementSchemaPresent() {
+		if(!replacementSchemaPresent)replacementSchemaPresent=jdbc.sql("select to_regclass('marketdata.capture_same_period_replacements') is not null").query(Boolean.class).single();
+		return replacementSchemaPresent;
+	}
+	private static Resources maximum(Resources a,Resources b) {
+		return new Resources(Math.max(a.requests(),b.requests()),Math.max(a.receivedBytes(),b.receivedBytes()),Math.max(a.subscriptionBytes(),b.subscriptionBytes()),
+			Math.max(a.retainedBytes(),b.retainedBytes()),Math.max(a.rpcHundredths(),b.rpcHundredths()),Math.max(a.reservedHundredths(),b.reservedHundredths()),Math.max(a.seconds(),b.seconds()));
+	}
+	/** Provider lock is already held. Lock all owning session rows without materializing payloads/IDs in Java. */
+	private Instant replacementDatabaseTime(String provider) {
+		jdbc.sql("with locked as materialized(select session_id from marketdata.capture_sessions where configuration_json::jsonb->>'provider'=:provider order by session_id for update) select count(*) from locked")
+			.param("provider",provider).query(Long.class).single();
+		var at=jdbc.sql("select clock_timestamp() as sampled_at").query((r,n)->instant(r,"sampled_at")).single();
+		if(jdbc.sql("""
+			select exists(select 1 from marketdata.capture_sessions s where s.configuration_json::jsonb->>'provider'=:provider and
+			(s.locked_until>:at or (s.state='RUNNING' and (s.ends_at>:at or exists(select 1 from marketdata.capture_segments x where x.session_id=s.session_id)))))
+			or exists(select 1 from marketdata.capture_deployments where provider=:provider and state='RUNNING')
+			""").param("provider",provider).param("at",time(at)).query(Boolean.class).single())throw new IllegalStateException("REPLACEMENT_ACTIVE_WORKLOAD");
+		return at;
+	}
+	private Resources replacementKnownCarry(String provider,String period) {
+		return jdbc.sql("""
+			with facts as materialized (
+			 select account_period,configuration_json::jsonb->'limits' as limits,requests,received_bytes,subscription_bytes,retained_bytes,rpc_hundredths
+			 from marketdata.capture_sessions where configuration_json::jsonb->>'provider'=:provider), checked as (
+			 select *,not exists(select 1 from unnest(array['requests','receivedBytes','subscriptionBytes','retainedBytes','rpcHundredths','windowSeconds']) dimension
+			 where limits->>dimension is null or (limits->>dimension)::numeric<0 or (limits->>dimension)::numeric<>trunc((limits->>dimension)::numeric)) as known from facts)
+			select coalesce(bool_and(known),true) as known,
+			coalesce(sum(greatest((limits->>'requests')::numeric,requests)) filter(where account_period=:period),0) as requests,
+			coalesce(sum(greatest((limits->>'receivedBytes')::numeric,received_bytes)) filter(where account_period=:period),0) as received,
+			coalesce(sum(greatest((limits->>'subscriptionBytes')::numeric,subscription_bytes)) filter(where account_period=:period),0) as subscription,
+			coalesce(sum(greatest((limits->>'retainedBytes')::numeric,retained_bytes)),0) as retained,
+			coalesce(sum(greatest((limits->>'rpcHundredths')::numeric,rpc_hundredths)) filter(where account_period=:period),0) as rpc,
+			coalesce(sum((limits->>'windowSeconds')::numeric) filter(where account_period=:period),0) as seconds,
+			(select reserved_hundredths::numeric+known_overage_hundredths from marketdata.capture_periods where account_period=:period) as cu
+			from checked
+			""").param("provider",provider).param("period",period).query((r,n)->{
+			if(!r.getBoolean("known") || r.getBigDecimal("cu")==null)throw new IllegalStateException("UNKNOWN_REPLACEMENT_CARRY");
+			return new Resources(r.getBigDecimal("requests").longValueExact(),r.getBigDecimal("received").longValueExact(),r.getBigDecimal("subscription").longValueExact(),
+				r.getBigDecimal("retained").longValueExact(),r.getBigDecimal("rpc").longValueExact(),r.getBigDecimal("cu").longValueExact(),r.getBigDecimal("seconds").longValueExact());
+		}).single();
+	}
+	private boolean lineageChild(String key) {
+		var replacement=replacementSchemaPresent()?" or exists(select 1 from marketdata.capture_same_period_replacements where predecessor_deployment_key=:key)":"";
+		return jdbc.sql("select exists(select 1 from marketdata.capture_period_continuations where predecessor_deployment_key=:key)"+replacement).param("key",key).query(Boolean.class).single();
+	}
+	private void replacementLineage(Deployment root,Deployment parent) {
+		var key=parent.configuration().deploymentKey();var seen=new HashSet<String>();
+		for(var depth=0;!key.equals(root.configuration().deploymentKey());depth++) {
+			if(depth>=root.configuration().maxSegments() || !seen.add(key))throw new IllegalStateException("REPLACEMENT_LINEAGE_LIMIT");
+			var edge=jdbc.sql("select predecessor_deployment_key,allocation_root_key,root_digest,original_global_end,original_allowances,original_max_segments from marketdata.capture_same_period_replacements where successor_deployment_key=:key")
+				.param("key",key).query((r,n)->new Object[]{r.getString("predecessor_deployment_key"),r.getString("allocation_root_key"),r.getString("root_digest"),instant(r,"original_global_end"),resources(r,"original_allowances"),r.getInt("original_max_segments")})
+				.optional().orElseThrow(()->new IllegalStateException("REPLACEMENT_ROOT_CONFLICT"));
+			if(!edge[1].equals(root.configuration().deploymentKey()) || !edge[2].equals(root.digest()) || !edge[3].equals(root.configuration().globalEnd())
+				|| !edge[4].equals(root.configuration().allowances()) || !edge[5].equals(root.configuration().maxSegments()))throw new IllegalStateException("REPLACEMENT_ROOT_CONFLICT");
+			key=(String)edge[0];
+			if(depth+1>=root.configuration().maxSegments())throw new IllegalStateException("REPLACEMENT_LINEAGE_LIMIT");
+		}
+		if(jdbc.sql("select exists(select 1 from marketdata.capture_same_period_replacements where successor_deployment_key=:key)")
+			.param("key",root.configuration().deploymentKey()).query(Boolean.class).single())throw new IllegalStateException("REPLACEMENT_ROOT_CONFLICT");
+	}
+	private static boolean replacementTemplate(Configuration root,Configuration parent,Configuration next) {
+		var a=root.template();var p=parent.template();var b=next.template();var x=p.limits();var y=b.limits();
+		var permitted=new io.cryptoresearch.marketdata.api.PumpSwapCapture.Limits(y.windowSeconds(),y.requests(),y.receivedBytes(),y.retainedBytes(),y.subscriptionBytes(),y.rpcHundredths(),
+			x.messageBytes(),x.responseBytes(),x.queueItems(),x.queueBytes(),x.timeoutSeconds(),x.retries(),x.reconnects(),x.recoveryPages(),x.recoverySeconds(),x.requestsPerSecond(),x.leaseSeconds());
+		return (p.version().equals("capture-rpc-reuse-v6") || p.version().equals("capture-durable-inbox-v7")) && b.version().equals("capture-durable-inbox-v7")
+			&& (a.version().equals("capture-rpc-reuse-v6") || a.version().equals("capture-durable-inbox-v7"))
+			&& b.provider().equals(a.provider()) && p.provider().equals(a.provider()) && b.pools().equals(a.pools()) && p.pools().equals(a.pools())
+			&& b.authority().equals(a.authority()) && p.authority().equals(a.authority()) && !b.startsAt().isBefore(p.startsAt())
+			&& next.allowances().equals(root.allowances()) && parent.allowances().equals(root.allowances()) && next.globalEnd().equals(root.globalEnd()) && parent.globalEnd().equals(root.globalEnd())
+			&& next.version().equals(root.version()) && next.maxPages()==parent.maxPages() && next.decodeSeconds()==parent.decodeSeconds() && next.receiptBytes()==parent.receiptBytes() && next.pollMillis()==parent.pollMillis()
+			&& y.equals(permitted) && y.windowSeconds()<=x.windowSeconds() && y.requests()<=x.requests() && y.receivedBytes()<=x.receivedBytes() && y.subscriptionBytes()<=x.subscriptionBytes()
+			&& y.retainedBytes()<=x.retainedBytes() && y.rpcHundredths()<=x.rpcHundredths() && next.segmentSeconds()<=parent.segmentSeconds();
+	}
+	public io.cryptoresearch.marketdata.api.PumpSwapCaptureSamePeriodReplacement.Receipt enrollReplacement(
+			io.cryptoresearch.marketdata.api.PumpSwapCaptureSamePeriodReplacement r,String digest,String successorDigest,Resources first,long monetaryCeiling) {
+		if(!replacementSchemaPresent())throw new IllegalStateException("REPLACEMENT_SCHEMA_UNAVAILABLE");
+		var next=r.successor();var provider=next.template().provider();var text=encode(r);var rows=new TreeMap<String,Deployment>();
+		for(var key:new TreeSet<>(List.of(r.allocationRootKey(),r.predecessorDeploymentKey())))rows.put(key,lockDeployment(provider,key));
+		var root=rows.get(r.allocationRootKey());var parent=rows.get(r.predecessorDeploymentKey());
+		if(!root.digest().equals(r.allocationRootConfigurationDigest()) || !parent.digest().equals(r.predecessorConfigurationDigest()))throw new IllegalStateException("REPLACEMENT_PREDECESSOR_CONFLICT");
+		for(var deployment:rows.values()) {
+			var c=deployment.configuration();
+			if(!jdbc.sql("select provider=:provider and account_period=:period and owner_authorization=:authority and allowances=cast(:caps as bigint[]) and global_end=:end and max_segments=:maximum as valid from marketdata.capture_deployments where deployment_key=:key")
+				.param("provider",c.template().provider()).param("period",c.template().authority().accountPeriod()).param("authority",c.template().authority().ownerAuthorization())
+				.param("caps",array(c.allowances())).param("end",time(c.globalEnd())).param("maximum",c.maxSegments()).param("key",c.deploymentKey()).query(Boolean.class).single())
+				throw new IllegalStateException("REPLACEMENT_PREDECESSOR_CONFLICT");
+		}
+		lockPeriod(root.configuration().template().authority().accountPeriod());
+		var replay=jdbc.sql("select request_json,request_digest,applied_at,carried,consumed_segments from marketdata.capture_same_period_replacements where successor_deployment_key=:key")
+			.param("key",next.deploymentKey()).query((q,n)->new Object[]{q.getString("request_json"),q.getString("request_digest"),instant(q,"applied_at"),resources(q,"carried"),q.getInt("consumed_segments")}).optional();
+		if(replay.isPresent()) {
+			var p=replay.get();if(!text.equals(p[0]) || !digest.equals(p[1]))throw new IllegalStateException("REPLACEMENT_RECEIPT_CONFLICT");
+			return new io.cryptoresearch.marketdata.api.PumpSwapCaptureSamePeriodReplacement.Receipt((String)p[1],(Instant)p[2],next.deploymentKey(),(Resources)p[3],(Integer)p[4]);
+		}
+		if(!parent.state().equals("STOPPED") || !parent.reason().equals(r.predecessorReason()) || next.deploymentKey().equals(r.predecessorDeploymentKey())
+			|| next.deploymentKey().equals(r.allocationRootKey()) || !replacementTemplate(root.configuration(),parent.configuration(),next))throw new IllegalStateException("REPLACEMENT_PREDECESSOR_CONFLICT");
+		replacementLineage(root,parent);
+		if(lineageChild(r.predecessorDeploymentKey()) || jdbc.sql("select exists(select 1 from marketdata.capture_deployments where deployment_key=:key)").param("key",next.deploymentKey()).query(Boolean.class).single())
+			throw new IllegalStateException("REPLACEMENT_FORK_CONFLICT");
+		var at=replacementDatabaseTime(provider);var period=next.template().authority().accountPeriod();
+		var periodFacts=jdbc.sql("select period_end,ceiling_hundredths,reserved_hundredths::numeric+known_overage_hundredths as held,coalesce((select amended_authority_json from marketdata.capture_authority_amendments where account_period=:period),authority_json) as authority from marketdata.capture_periods where account_period=:period")
+			.param("period",period).query((q,n)->new Object[]{instant(q,"period_end"),q.getLong("ceiling_hundredths"),q.getBigDecimal("held").longValueExact(),q.getString("authority")}).single();
+		var a=next.template().authority();var authority=encode(List.of(a.accountPeriod(),a.periodEnd(),a.source(),a.openingHundredths(),a.otherActivityHundredths(),a.exclusiveAllocation(),a.ceilingHundredths(),
+			a.ceilingUsd().stripTrailingZeros().toPlainString(),a.usdPerMillionCu().stripTrailingZeros().toPlainString(),a.subscriptionCuPerByte().stripTrailingZeros().toPlainString()));
+		if(parent.until().isAfter(at) || !at.isBefore(root.configuration().globalEnd()) || !at.isBefore((Instant)periodFacts[0]) || !periodFacts[0].equals(a.periodEnd())
+			|| (Long)periodFacts[1]!=monetaryCeiling || !authority.equals(periodFacts[3]) || java.time.Duration.between(at,root.configuration().globalEnd()).getSeconds()<next.segmentSeconds())throw new IllegalStateException("REPLACEMENT_TIME_OR_AUTHORITY_CONFLICT");
+		var count=jdbc.sql("""
+			select count(distinct s.session_id) from marketdata.capture_segments s join marketdata.capture_deployments d using(deployment_key)
+			where d.provider=:provider and d.account_period=:period and (d.deployment_key=:root or exists(
+			select 1 from marketdata.capture_same_period_replacements x where x.successor_deployment_key=d.deployment_key and x.allocation_root_key=:root))
+			""").param("provider",provider).param("period",period).param("root",r.allocationRootKey()).query(Long.class).single();
+		if(count!=r.consumedSegments() || count>=root.configuration().maxSegments() || next.maxSegments()!=root.configuration().maxSegments()-count)throw new IllegalStateException("REPLACEMENT_COUNT_CONFLICT");
+		var required=maximum(maximum(root.reserved(),parent.reserved()),replacementKnownCarry(provider,period));
+		if(!r.carried().contains(required) || !next.allowances().contains(r.carried().plus(first)) || (Long)periodFacts[2]>(Long)periodFacts[1]-first.reservedHundredths())
+			throw new IllegalStateException("REPLACEMENT_RESOURCE_LIMIT");
+		insert(next,successorDigest,"replacement-enrollment",at.minusNanos(1000));
+		jdbc.sql("""
+			insert into marketdata.capture_same_period_replacements(successor_deployment_key,predecessor_deployment_key,allocation_root_key,provider,account_period,version,
+			predecessor_digest,root_digest,successor_digest,predecessor_reason,decision_version,owner_decision,request_json,request_digest,applied_at,original_global_end,original_allowances,original_max_segments,carried,consumed_segments)
+			values(:next,:parent,:root,:provider,:period,:version,:parentDigest,:rootDigest,:successorDigest,:reason,:decisionVersion,:decision,:request,:digest,:at,:end,cast(:caps as bigint[]),:maximum,cast(:carry as bigint[]),:consumed)
+			""").param("next",next.deploymentKey()).param("parent",r.predecessorDeploymentKey()).param("root",r.allocationRootKey()).param("provider",provider).param("period",period).param("version",r.version())
+			.param("parentDigest",r.predecessorConfigurationDigest()).param("rootDigest",r.allocationRootConfigurationDigest()).param("successorDigest",successorDigest).param("reason",r.predecessorReason())
+			.param("decisionVersion",r.decisionVersion()).param("decision",r.ownerDecision()).param("request",text).param("digest",digest).param("at",time(at))
+			.param("end",time(root.configuration().globalEnd())).param("caps",array(root.configuration().allowances())).param("maximum",root.configuration().maxSegments()).param("carry",array(r.carried())).param("consumed",r.consumedSegments()).update();
+		return new io.cryptoresearch.marketdata.api.PumpSwapCaptureSamePeriodReplacement.Receipt(digest,at,next.deploymentKey(),r.carried(),r.consumedSegments());
 	}
 	public Deployment lockDeployment(String provider,String key) {
 		return jdbc.sql("select * from marketdata.capture_deployments where provider=:provider and deployment_key=:key for update")
@@ -92,12 +220,13 @@ public class JdbcContinuousCaptureStore {
 			throw new IllegalStateException("CONTINUATION_PREDECESSOR_CONFLICT");
 		var periodEnd=jdbc.sql("select period_end from marketdata.capture_periods where account_period=:period").param("period",a.accountPeriod()).query((q,n)->instant(q,"period_end")).single();
 		if(!periodEnd.equals(a.periodEnd()))throw new IllegalStateException("CONTINUATION_PREDECESSOR_CONFLICT");
+		var childAlreadyExists=lineageChild(old.deploymentKey());
 		var at=capture.inactiveProviderDatabaseTime(provider);
 		if(at.isBefore(a.periodEnd()) || parent.until().isAfter(at) || r.baseline().observedAt().isAfter(at)
 			|| !at.isBefore(b.periodEnd()) || jdbc.sql("select exists(select 1 from marketdata.capture_deployments where provider=:provider and state='RUNNING')")
 			.param("provider",provider).query(Boolean.class).single())throw new IllegalStateException("CONTINUATION_ACTIVE_OR_PERIOD_NOT_READY");
-		if(jdbc.sql("select exists(select 1 from marketdata.capture_period_continuations where predecessor_deployment_key=:key) or exists(select 1 from marketdata.capture_periods where account_period=:period) or exists(select 1 from marketdata.capture_deployments where deployment_key=:next)")
-			.param("key",old.deploymentKey()).param("period",b.accountPeriod()).param("next",next.deploymentKey()).query(Boolean.class).single())throw new IllegalStateException("CONTINUATION_FORK_OR_PERIOD_CONFLICT");
+		if(childAlreadyExists || jdbc.sql("select exists(select 1 from marketdata.capture_periods where account_period=:period) or exists(select 1 from marketdata.capture_deployments where deployment_key=:next)")
+			.param("period",b.accountPeriod()).param("next",next.deploymentKey()).query(Boolean.class).single())throw new IllegalStateException("CONTINUATION_FORK_OR_PERIOD_CONFLICT");
 		var held=jdbc.sql("""
 			select case when count(*) filter(where configuration_json::jsonb->'limits'->>'retainedBytes' is null or (configuration_json::jsonb->'limits'->>'retainedBytes')::numeric<0)>0 then null
 			else coalesce(sum(greatest((configuration_json::jsonb->'limits'->>'retainedBytes')::bigint,retained_bytes)),0) end as held
@@ -236,6 +365,24 @@ public class JdbcContinuousCaptureStore {
 		}
 	}
 	public void periodBoundary(Configuration deployment,io.cryptoresearch.marketdata.api.PumpSwapCapture.Configuration next,Instant at) {
+		if(replacementSchemaPresent()) {
+			var predecessor=jdbc.sql("select predecessor_deployment_key,applied_at from marketdata.capture_same_period_replacements where successor_deployment_key=:key")
+				.param("key",deployment.deploymentKey()).query((r,n)->new Object[]{r.getString("predecessor_deployment_key"),instant(r,"applied_at")}).optional();
+			if(predecessor.isPresent()) {
+				var prior=latest((String)predecessor.get()[0]);
+				for(var pool:next.pools()) {
+					var signature=prior.isEmpty()?null:capture.boundary(prior.get().configuration().sessionId(),pool.address()).orElse(null);
+					Long slot=signature==null?null:jdbc.sql("select slot from marketdata.capture_dispositions where session_id=:session and pool=:pool and signature=:signature")
+						.param("session",prior.get().configuration().sessionId()).param("pool",pool.address()).param("signature",signature).query(Long.class).single();
+					for(var kind:List.of("TRANSACTION","STATE"))jdbc.sql("""
+						insert into marketdata.capture_gaps(session_id,pool,kind,reason,opened_at,status,from_slot,boundary_signature)
+						values(:session,:pool,:kind,:reason,:at,:status,:slot,:signature)
+						""").param("session",next.sessionId()).param("pool",pool.address()).param("kind",kind).param("reason","SAME_PERIOD_BOUNDARY:"+predecessor.get()[0]+":"+deployment.deploymentKey())
+						.param("at",time((Instant)predecessor.get()[1])).param("status",kind.equals("TRANSACTION")?"UNRESOLVED_TRANSACTION_GAP":"UNRESOLVED_STATE_GAP").param("slot",slot).param("signature",signature).update();
+				}
+				return;
+			}
+		}
 		if(!continuationSchemaPresent())return;
 		var parent=jdbc.sql("select predecessor_deployment_key,period_start from marketdata.capture_period_continuations where successor_deployment_key=:key")
 			.param("key",deployment.deploymentKey()).query((r,n)->new Object[]{r.getString("predecessor_deployment_key"),instant(r,"period_start")}).optional();

@@ -169,7 +169,16 @@ public class JdbcCaptureStore {
 			.param("provider",c.provider()).param("period",c.authority().accountPeriod()).query(String.class).optional();
 		if(encoded.isEmpty())return false;
 		var r=json.readValue(encoded.get(),io.cryptoresearch.marketdata.api.PumpSwapCapturePeriodContinuation.class);
-		return r.successor().template().equals(c);
+		if(r.successor().template().equals(c))return true;
+		if(!jdbc.sql("select to_regclass('marketdata.capture_same_period_replacements') is not null").query(Boolean.class).single())return false;
+		var descendants=jdbc.sql("""
+			select x.request_json from marketdata.capture_same_period_replacements x join marketdata.capture_deployments root on root.deployment_key=x.allocation_root_key
+			where x.provider=:provider and x.account_period=:period and x.allocation_root_key=:root and x.root_digest=root.configuration_digest
+			and root.configuration_json=:configuration and x.request_json::jsonb->'successor'->'template'=cast(:template as jsonb)
+			order by x.successor_deployment_key collate "C" limit 1
+			""").param("provider",c.provider()).param("period",c.authority().accountPeriod()).param("root",r.successor().deploymentKey())
+			.param("configuration",encode(r.successor())).param("template",encode(c)).query(String.class).optional();
+		return descendants.isPresent() && json.readValue(descendants.get(),io.cryptoresearch.marketdata.api.PumpSwapCaptureSamePeriodReplacement.class).successor().template().equals(c);
 	}
 	/** Provider and period locks are held by the owning use case; classify after all session locks. */
 	public Instant inactiveProviderDatabaseTime(String provider) {
@@ -328,9 +337,24 @@ public class JdbcCaptureStore {
 						r.getString("status"), r.getString("raw_digest"), r.getString("notification"), r.getString("response"),
 						instant(r,"received_at"), instant(r,"admitted_at"), r.getLong("duplicates"), r.getLong("conflicts"))).list();
 	}
+	public List<Disposition> pendingInbox(UUID id,int limit,long bytes) {
+			var keys=jdbc.sql("SELECT pool,signature,slot,octet_length(notification) AS bytes FROM marketdata.capture_dispositions WHERE session_id=:id AND status='PENDING' ORDER BY slot,pool COLLATE \"C\",signature COLLATE \"C\" LIMIT :limit")
+				.param("id",id).param("limit",Math.min(limit,100)).query((r,n)->new Object[]{r.getString("pool"),r.getString("signature"),r.getLong("slot"),r.getLong("bytes")}).list();
+			long total=0; var selected=new java.util.ArrayList<Object[]>();
+			for(var key:keys) { var length=(long)key[3]; if(length>bytes-total) { if(selected.isEmpty()) throw new IllegalStateException("CAPTURE_PENDING_PAYLOAD_LIMIT"); break; } total+=length; selected.add(key); }
+			if(selected.isEmpty()) return List.of();
+			var predicates=new java.util.ArrayList<String>(); for(var i=0;i<selected.size();i++) predicates.add("(pool=:p"+i+" AND signature=:s"+i+")");
+			var query=jdbc.sql("SELECT pool,signature,slot,notification,received_at FROM marketdata.capture_dispositions WHERE session_id=:id AND status='PENDING' AND ("+String.join(" OR ",predicates)+") ORDER BY slot,pool COLLATE \"C\",signature COLLATE \"C\"").param("id",id);
+			for(var i=0;i<selected.size();i++) query=query.param("p"+i,selected.get(i)[0]).param("s"+i,selected.get(i)[1]);
+			return query.query((r,n)->new Disposition(r.getString("pool"),r.getString("signature"),r.getLong("slot"),"PENDING",null,r.getString("notification"),"",instant(r,"received_at"),null,0,0)).list();
+	}
 	public List<Disposition> pending(UUID id,int limit,long bytes) {
 		return jdbc.sql("WITH selected AS (SELECT pool,signature,slot,notification,received_at FROM marketdata.capture_dispositions WHERE session_id=:id AND status='PENDING' ORDER BY slot,pool COLLATE \"C\",signature COLLATE \"C\" LIMIT :limit) SELECT * FROM (SELECT *,sum(octet_length(notification)) OVER(ORDER BY slot,pool COLLATE \"C\",signature COLLATE \"C\") AS selected_bytes FROM selected) bounded WHERE selected_bytes<=:bytes ORDER BY slot,pool COLLATE \"C\",signature COLLATE \"C\"")
 			.param("id",id).param("limit",limit).param("bytes",bytes).query((r,n)->new Disposition(r.getString("pool"),r.getString("signature"),r.getLong("slot"),"PENDING",null,r.getString("notification"),"",instant(r,"received_at"),null,0,0)).list();
+	}
+	public io.cryptoresearch.marketdata.application.CaptureLedgerUseCase.InboxBacklog inboxBacklog(UUID id) {
+		return jdbc.sql("SELECT count(*) AS n,min(received_at) AS oldest FROM marketdata.capture_dispositions WHERE session_id=:id AND status='PENDING'").param("id",id)
+			.query((r,n)->new io.cryptoresearch.marketdata.application.CaptureLedgerUseCase.InboxBacklog(r.getLong("n"),instant(r,"oldest"))).single();
 	}
 	public java.util.Set<String> successfulPage(UUID id,String pool,List<String> signatures) {
 		if(signatures.isEmpty()) return java.util.Set.of(); if(signatures.size()>100) throw new IllegalArgumentException("RECOVERY_PAGE_KEY_LIMIT");
@@ -386,7 +410,9 @@ public class JdbcCaptureStore {
 	}
 	/** Bounded already-admitted tail; each SQL statement handles the same validated batch. */
 	public void tail(UUID id,Configuration c,List<java.util.Map<String,Object>> rows,Instant now,Runnable guard) {
-		if(rows.isEmpty()) return; var text=json.writeValueAsString(rows);
+		if(rows.isEmpty()) return; tail(id,c,json.writeValueAsString(rows),now,guard,false);
+	}
+	private void tail(UUID id,Configuration c,String text,Instant now,Runnable guard,boolean inbox) {
 		var input="jsonb_to_recordset(CAST(:rows AS jsonb)) AS x(ord integer,pool text,account text,sig text,slot bigint,data text,envelope text,digest text,encoding text,received timestamptz)";
 		guard.run();
 		jdbc.sql("INSERT INTO marketdata.raw_account_snapshots SELECT 'solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp',:provider,x.account,x.slot,x.digest,x.encoding,x.data,x.envelope,x.received,:now,:now FROM (SELECT DISTINCT ON(account COLLATE \"C\",slot,digest COLLATE \"C\") * FROM "+input+" WHERE account IS NOT NULL ORDER BY account COLLATE \"C\",slot,digest COLLATE \"C\",ord) x ON CONFLICT DO NOTHING")
@@ -395,8 +421,20 @@ public class JdbcCaptureStore {
 			.param("rows",text).param("provider",c.provider()).query(Boolean.class).single(); guard.run(); if(conflict) throw new IllegalStateException("ACCOUNT_CONTENT_CONFLICT");
 		jdbc.sql("INSERT INTO marketdata.capture_state_members SELECT :id,'solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp',:provider,account,slot,digest,count(*)-1 FROM "+input+" WHERE account IS NOT NULL GROUP BY account,slot,digest ON CONFLICT(session_id,account,slot,digest) DO UPDATE SET duplicates=marketdata.capture_state_members.duplicates+EXCLUDED.duplicates+1")
 			.param("id",id).param("provider",c.provider()).param("rows",text).update(); guard.run();
-		jdbc.sql("INSERT INTO marketdata.capture_dispositions(session_id,pool,signature,slot,status,notification,received_at) SELECT :id,pool,sig,slot,'PENDING',envelope,received FROM (SELECT DISTINCT ON(pool COLLATE \"C\",sig COLLATE \"C\") * FROM "+input+" WHERE account IS NULL ORDER BY pool COLLATE \"C\",sig COLLATE \"C\",ord) x ON CONFLICT DO NOTHING")
+		var pending=inbox?"INSERT INTO marketdata.capture_dispositions(session_id,pool,signature,slot,status,notification,received_at,duplicates) SELECT :id,pool,sig,slot,'PENDING',envelope,received,duplicate_frames FROM (SELECT DISTINCT ON(pool COLLATE \"C\",sig COLLATE \"C\") *,count(*) OVER(PARTITION BY pool,sig)-1 AS duplicate_frames FROM "+input+" WHERE account IS NULL ORDER BY pool COLLATE \"C\",sig COLLATE \"C\",ord) x ON CONFLICT(session_id,pool,signature) DO UPDATE SET duplicates=marketdata.capture_dispositions.duplicates+EXCLUDED.duplicates+1":
+			"INSERT INTO marketdata.capture_dispositions(session_id,pool,signature,slot,status,notification,received_at) SELECT :id,pool,sig,slot,'PENDING',envelope,received FROM (SELECT DISTINCT ON(pool COLLATE \"C\",sig COLLATE \"C\") * FROM "+input+" WHERE account IS NULL ORDER BY pool COLLATE \"C\",sig COLLATE \"C\",ord) x ON CONFLICT DO NOTHING";
+		jdbc.sql(pending)
 			.param("id",id).param("rows",text).update(); guard.run();
+	}
+	public void inbox(UUID id,Configuration c,String text,Instant now,Runnable guard) {
+		var input="jsonb_to_recordset(CAST(:rows AS jsonb)) AS x(ord integer,pool text,account text,sig text,slot bigint,data text,envelope text,\"envelopeDigest\" text,received timestamptz)";
+		guard.run();
+		jdbc.sql("INSERT INTO marketdata.capture_envelopes SELECT :id,'WEBSOCKET',x.\"envelopeDigest\",x.envelope,x.received FROM (SELECT DISTINCT ON(\"envelopeDigest\" COLLATE \"C\") * FROM "+input+" ORDER BY \"envelopeDigest\" COLLATE \"C\",ord) x ON CONFLICT DO NOTHING")
+			.param("id",id).param("rows",text).update(); guard.run();
+		var conflict=jdbc.sql("SELECT EXISTS (SELECT 1 FROM "+input+" JOIN marketdata.capture_envelopes e ON e.session_id=:id AND e.kind='WEBSOCKET' AND e.digest=x.\"envelopeDigest\" WHERE e.payload<>x.envelope) OR EXISTS (SELECT 1 FROM "+input+" JOIN marketdata.capture_dispositions d ON d.session_id=:id AND d.pool=x.pool AND d.signature=x.sig WHERE d.slot<>x.slot) OR EXISTS (SELECT 1 FROM "+input+" WHERE account IS NULL GROUP BY pool,sig HAVING min(slot)<>max(slot))")
+			.param("id",id).param("rows",text).query(Boolean.class).single(); guard.run();
+		if(conflict) throw new IllegalStateException("CAPTURE_INBOX_CONTENT_CONFLICT");
+		tail(id,c,text,now,guard,true); guard.run();
 	}
 	public List<AccountSnapshot> states(UUID id) {
 		return jdbc.sql("""

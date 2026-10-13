@@ -1,5 +1,7 @@
 # Architecture
 
+**Current capture checkpoint, 2026-10-13:** [v7 durable inbox and manual same-period child](../openspec/changes/add-bounded-pumpswap-pool-collector/design.md#v7-and-manual-child-reviewed-main-union-gate-pending-2026-10-13) have fresh independent union APPROVE and targeted LOCAL verification; Main full union gate/commit-push remain pending. The existing single marketdata writer/application-owned atomic SQL batch now persists bounded notification envelope/PENDING/state facts before releasing mailbox ownership; individual finalized resolution and fixed-v4 derivation remain. Local V17 monthly receipt/V18 manual-child receipt retain original all-vector/count/end authority and linear admission, not a new queue engine/module/ADR or old-session reopen. Actual server remains V16/stopped/disabled, V17+V18 disabled migration is future work; old940PENDING/gaps/holds and missing24h/dashboard evidence remain unchanged. Earlier capture/release paragraphs below are dated checkpoints, not current activation or remote-CI PASS.
+
 ## Architectural style
 
 Crypto Research Core is a synchronous, imperative Spring Modulith modular monolith. It is one Git repository, one Maven module, one deployable JAR and one PostgreSQL database. The same JAR may run as one or more instances with different workload roles. Logical modules and runtime roles are neither Maven modules nor independently owned services.
