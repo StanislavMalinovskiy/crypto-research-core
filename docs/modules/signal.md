@@ -1,5 +1,7 @@
 # signal
 
+**Retained bridge LOCAL qualification, 2026-10-13:** [verified programmatic scope](../../openspec/changes/add-pumpswap-retained-window-diagnostic/design.md#reviewed-local-qualification-2026-10-13) has fresh independent APPROVE/red_suspect=false/all14hashes stable; targeted30 and unchanged regression99/0failures/errors/skips/exits0. One bounded read-only snapshot precedes selected-v5 derivation with actual post-calculation D/K=D; pure/effective statuses remain separate, PENDING/gaps conservatively INSUFFICIENT. Main full gate02 PASS798/0failures/errors/skips/all721inputs unchanged,5/5tasks verified; qualified JAR external-only/scoped commit-push pending; no invocation/UI/deployment, accepted ENTRY or outcome. Current v7 capture/fixed-v4/holds and first24h/4.10 reconciliation remain unchanged.
+
 - **Responsibility:** cutoff-safe `LIQUIDITY_SPIKE` detection, candidate-first risk gating and immutable accepted ENTRY signal evidence for the first slice.
 - **Owned data:** `signal.signal_candidates` and `signal.accepted_signals`. Candidates have an explicit deduplication identity, status and version/fingerprint evidence; accepted signals retain source normalized identities, decision-time risk facts, exact score/confidence and versioned JSONB reasoning.
 - **Public API:** `SignalApi` accepts a dataset fingerprint, asset, decision window/cutoff, validated risk facts and detector/scorer/configuration identities; it returns immutable candidate and accepted-signal snapshots and supports accepted-signal lookup.

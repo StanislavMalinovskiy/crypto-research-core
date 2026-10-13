@@ -23,6 +23,8 @@ import io.cryptoresearch.signal.infrastructure.persistence.JdbcSignalPersistence
 
 @Service
 public class LiquiditySpikeSignalService implements SignalApi {
+    @Autowired private org.springframework.beans.factory.ObjectProvider<RetainedNativeSolPriceRiseDiagnostic> retainedNativePriceDiagnostic;
+    @Override public io.cryptoresearch.signal.api.PumpSwapRetainedNativePriceSignal.Result diagnoseRetainedPumpSwapNativePriceRise(io.cryptoresearch.signal.api.PumpSwapRetainedNativePriceSignal.Request request){return retainedNativePriceDiagnostic.getObject().diagnose(request);}
 
 	private static final String FAMILY = "LIQUIDITY_SPIKE";
 	private static final String DETECTOR_VERSION = "liquidity-spike-v2";

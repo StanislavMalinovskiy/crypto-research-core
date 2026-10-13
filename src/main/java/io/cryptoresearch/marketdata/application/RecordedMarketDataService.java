@@ -22,6 +22,9 @@ import io.cryptoresearch.marketdata.api.MarketDataApi;
 
 @Service
 public class RecordedMarketDataService implements MarketDataApi {
+    @org.springframework.beans.factory.annotation.Autowired
+    private ObjectProvider<ReadPumpSwapRetainedWindowUseCase> retainedWindow;
+    @Override public io.cryptoresearch.marketdata.api.PumpSwapRetainedWindow.Snapshot retainedPumpSwapWindow(io.cryptoresearch.marketdata.api.PumpSwapRetainedWindow.Request request){return retainedWindow.getObject().read(request);}
 
 	private static final Logger LOGGER = LoggerFactory.getLogger(RecordedMarketDataService.class);
 	private static final String ITEM_COUNTER = "crypto.research.marketdata.replay.items";
