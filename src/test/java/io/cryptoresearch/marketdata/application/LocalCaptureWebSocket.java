@@ -37,7 +37,7 @@ final class LocalCaptureWebSocket implements AutoCloseable {
 		this(connections,notifications,false,id->"{\"id\":"+id+",\"result\":"+(10000+id)+"}",1,id->java.util.List.of(),()->{ },afterSent);
 	}
 	private LocalCaptureWebSocket(int connections,java.util.function.BiFunction<Integer,Long,java.util.List<String>> notifications,boolean fragments,LongFunction<String> acknowledgement,int notificationOpcode,LongFunction<java.util.List<String>> beforeAcknowledgement,Runnable betweenFragments,java.util.function.IntConsumer afterSent) throws Exception {
-		server=new ServerSocket(0,1,java.net.InetAddress.getByName("127.0.0.1")); server.setSoTimeout(connections>1?30000:10000);
+		server=new ServerSocket(0,1,java.net.InetAddress.getByName("127.0.0.1")); server.setSoTimeout(30000);
 		thread=Thread.ofPlatform().daemon(true).start(()->{
 			try { for(var index=0;index<connections;index++) { try(var socket=server.accept()) {
 				connection=socket; socket.setSoTimeout(10000); var input=socket.getInputStream(); var output=socket.getOutputStream();
