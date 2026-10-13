@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="ru">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>PumpSwap — локальный оператор</title><script src="/operator/operator.js" defer></script></head>
+<body>
+<h1>PumpSwap — ручной локальный просмотр</h1>
+<p>DIAGNOSTIC_ONLY_NOT_ADMITTED. Native POOL_NET_SOL_PER_BASE — не USD, не цена исполнения, не ENTRY и не торговый приказ.</p>
+<p>INDEPENDENT_PANELS: панели наблюдаются независимо. RUNNING и срок lease не доказывают работающий процесс или транспорт. Очередь памяти, MODEL_COST и ACTUAL_INVOICE — UNKNOWN. DURABLE_PENDING — сохранённые незавершённые записи, не очередь памяти.</p>
+<p>Выбранный received-интервал показывает только видимые сохранённые данные; это не доказательство полной доставки или пропускной способности за 24 часа. Никакого автоматического обновления.</p>
+<section aria-labelledby="monitor-title"><h2 id="monitor-title">Состояние сохранённой сессии</h2>
+<form id="monitor-form"><label>Session UUID <input name="session" required maxlength="256" autocomplete="off"></label><button type="submit">Прочитать / обновить вручную</button></form>
+<p id="monitor-status" role="status">Ещё не запрошено. Возраст панели неизвестен до ручного чтения.</p><div id="monitor-output"></div></section>
+<section aria-labelledby="diagnostic-title"><h2 id="diagnostic-title">Диагностика selected-v5</h2>
+<p>Основной результат — effectiveStatus. INSUFFICIENT остаётся основным даже при pureStatus TRIGGER. R — чтение БД; D — наблюдение после расчёта; K=D; E — конец событийного окна. Это ретроспективная диагностика, не историческая доступность сделки.</p>
+<form id="diagnostic-form">
+<p><label>Session UUID <input name="session" required maxlength="256" autocomplete="off"></label></p>
+<p><label>Received от, включительно (UTC ISO, Z) <input name="receivedFrom" required maxlength="256"></label></p>
+<p><label>Received до, исключительно (UTC ISO, Z) <input name="receivedTo" required maxlength="256"></label></p>
+<p><label>Event от, включительно (UTC, кратно 300 s) <input name="eventFrom" required maxlength="256"></label></p>
+<p><label>Event до, исключительно (UTC, кратно 300 s) <input name="eventTo" required maxlength="256"></label></p>
+<p><label>Chain CAIP-2 <input name="chain" required maxlength="256"></label></p>
+<p><label>Точный pool <input name="pool" required maxlength="256"></label></p>
+<p><label>Точный baseMint <input name="baseMint" required maxlength="256"></label></p>
+<p><label>Точный quoteMint <input name="quoteMint" required maxlength="256"></label></p>
+<p><label>E: конец пары свечей (UTC, кратно 300 s) <input name="eventEnd" required maxlength="256"></label></p>
+<button type="submit">Рассчитать выбранное окно вручную</button></form>
+<p id="diagnostic-status" role="status">Ещё не запрошено. Нет автоматического выбора session, pool или окна.</p><div id="diagnostic-output"></div></section>
+</body></html>

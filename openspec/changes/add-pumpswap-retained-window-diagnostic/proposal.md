@@ -1,6 +1,6 @@
 ## Why
 
-**Current LOCAL qualification, 2026-10-13:** [fresh independent APPROVE](design.md#reviewed-local-qualification-2026-10-13), exact14 hashes, targeted30 and unchanged regression99/0failures/errors/skips/exits0. Main full gate02 PASS798/0failures/errors/skips/all721inputs unchanged; all5tasks verified. Qualified JAR copied to external evidence only; scoped commit/push pending. APIs only, no working invocation/UI/deployment or current capture interruption.
+**Current LOCAL qualification, 2026-10-13:** [fresh independent APPROVE](design.md#reviewed-local-qualification-2026-10-13), exact14 hashes, targeted30 and unchanged regression99/0failures/errors/skips/exits0. Main full gate02 PASS798/0failures/errors/skips/all721inputs unchanged; all5tasks verified. Qualified JAR copied to external evidence only; scoped commit/push `68c6b92be647664373e0bd3729bc55edbb546c34` verified/local+origin identical; LinuxCI38353522644 SUCCESS798/70suites/0failures/errors/skips and portableNode744PASS/0failed/cancelled/skipped/todo/exit0. Bridge APIs only/not deployed; the adjacent screen is separately LOCAL verified with Main full gate01 PASS810/74suites/0failures/errors/skips and scoped commit-push pending, not a working production UI or current capture interruption.
 
 The qualified v5 pool-net candles/native-SOL diagnostic accepts recorded batches, while continuous capture still publishes fixed-v4 evidence. The first screen needs an explicit bounded on-demand route from retained capture facts without changing capture or claiming accepted strategy/evaluation evidence.
 

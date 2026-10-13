@@ -1,5 +1,7 @@
 ## Why
 
+**Current LOCAL screen qualification, 2026-10-13:** [same fresh Reviewer APPROVE](design.md#reviewed-local-screen-qualification-2026-10-13)/red_suspect=false/all9hashes stable; correct-first52GREEN and separate11unitPASS/0failures/errors/skips, not summed or relabeled RED/TDD. All5tasks verified after Main full gate01 PASS810/74suites/0failures/errors/skips/all730inputs unchanged; scoped commit/push pending. Default-off read-only screen locally tested, NOT deployed or a working production UI. CORE_RISK/guarantees and [task-specific evidence-mode history](design.md#task-specific-test-evidence-replan-2026-10-13) remain; current capture/first24h unchanged.
+
 The retained-window bridge provides programmatic APIs, not an operator invocation route. The standing owner sequence authorizes a simple screen after capture and diagnostics: a local-only manual adapter makes existing committed facts and nonadmitted native-SOL diagnostics inspectable without changing collection.
 
 ## What Changes
